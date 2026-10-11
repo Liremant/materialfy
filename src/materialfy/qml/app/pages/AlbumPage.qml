@@ -46,6 +46,7 @@ TrackListPage {
             text: page.saved ? I18n.t("In library") : I18n.t("Save")
             icon: page.saved ? "library_add_check" : "library_add"
             style: "tonal"
+            size: "m"
             checkable: true
             checked: page.saved
             autoToggle: false

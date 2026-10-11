@@ -193,6 +193,7 @@ TrackListPage {
             text: followed ? I18n.t("Following") : I18n.t("Follow")
             icon: followed ? "check" : "add"
             style: "tonal"
+            size: "m"
             checkable: true
             autoToggle: false
             checked: followed
