@@ -30,7 +30,9 @@ Window {
     readonly property bool wayland: Qt.platform.pluginName.indexOf("wayland") === 0
     readonly property bool canPin: !wayland
     flags: Qt.Window | Qt.FramelessWindowHint | (pinnedOnTop ? Qt.WindowStaysOnTopHint : 0)
-    color: Theme.surface
+    // Linux/macOS: окно прозрачное, фон и скруглённые углы рисует WindowFrame (альфа-канал окна
+    // включается цветом при создании, поэтому цвет не меняется по ходу работы)
+    color: Qt.platform.os === "windows" ? Theme.surface : "transparent"
 
     // Раскладка по размеру окна. Порог с гистерезисом: вход в режим — у порога, выход — на 24 px дальше,
     // поэтому у границы режим не дёргается туда-обратно. Сжатие переключает сразу (старая раскладка уже
@@ -578,6 +580,8 @@ Window {
     }
 
     ResizeEdges { window: win }
+    // забирает всё содержимое окна к себе: фон окна и скругление углов (см. WindowFrame)
+    WindowFrame { window: win }
 
     Loader {
         active: typeof materialfyDebugFps !== "undefined" && materialfyDebugFps

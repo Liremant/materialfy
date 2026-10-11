@@ -488,9 +488,9 @@ settings! {
 }
 
 impl qobject::Settings {
-    /// Windows: рамку рисует приложение, кнопки окна нужны всегда (запись сохраняется, но не влияет).
+    /// Кнопки окна приложение рисует на всех ОС; настройки больше нет (старое значение читается, но не влияет).
     fn window_buttons_value(&self) -> bool {
-        cfg!(target_os = "windows") || self.window_buttons
+        true
     }
 
     fn refresh_audio_devices(self: Pin<&mut Self>) {

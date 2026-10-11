@@ -95,6 +95,8 @@ Taken with a Premium account and music playing; the colours follow the cover of 
   Animations can be shortened or follow the system setting.
 - Three window layouts: full, compact for a narrow window, and a mini player with an "Always on top" option
   (not available on Wayland).
+- Its own window frame on every OS: Material 3 minimize, maximize and close buttons, rounded corners (on Windows 11
+  drawn by the system; Windows 10 keeps square ones), square corners when maximized.
 - Media keys, the SMTC tile on Windows and MPRIS on Linux, a tray icon with minimize-on-close, single running
   instance.
 - Interface in English or Russian. By default it follows the system language; Settings → Language switches it.

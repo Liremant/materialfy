@@ -10,8 +10,8 @@
 //! Запись как `_write`: если новое значение равно текущему — ничего не происходит и событие не шлётся.
 //! Все методы потокобезопасны; запись на диск — сразу (синхронно, файл маленький).
 //!
-//! Windows: `get(WindowButtons)` всегда true (кнопки окна нужны без системной рамки); запись сохраняется,
-//! сравнение при записи идёт с сохранённым значением (`get_stored`).
+//! `get(WindowButtons)` всегда true: кнопки окна приложение рисует на всех ОС, настройки больше нет. Старое
+//! значение в конфиге читается и сохраняется, но не влияет; сравнение при записи — с `get_stored`.
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -441,13 +441,13 @@ impl SettingsStore {
     }
 
     pub fn get(&self, key: SettingKey) -> SettingValue {
-        if cfg!(target_os = "windows") && key == SettingKey::WindowButtons {
+        if key == SettingKey::WindowButtons {
             return SettingValue::Bool(true);
         }
         self.get_stored(key)
     }
 
-    /// Сохранённое значение без платформенных подмен (windowButtons на Windows).
+    /// Сохранённое значение без подмен (windowButtons всегда true в `get`).
     pub fn get_stored(&self, key: SettingKey) -> SettingValue {
         self.backend
             .read(key.name())
@@ -971,11 +971,12 @@ mod tests {
     fn window_buttons() {
         let store = SettingsStore::in_memory();
         assert!(!store.get_stored(SettingKey::WindowButtons).eq(&SettingValue::Bool(true)));
-        assert_eq!(store.get_bool(SettingKey::WindowButtons), cfg!(target_os = "windows"));
+        assert!(store.get_bool(SettingKey::WindowButtons));
         assert!(store.set(SettingKey::WindowButtons, SettingValue::Bool(true)));
         assert!(store.get_bool(SettingKey::WindowButtons));
         assert!(store.set(SettingKey::WindowButtons, SettingValue::Bool(false)));
         assert_eq!(store.get_stored(SettingKey::WindowButtons), SettingValue::Bool(false));
+        assert!(store.get_bool(SettingKey::WindowButtons));
     }
 
     #[test]

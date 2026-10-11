@@ -148,9 +148,9 @@ Item {
         }
     }
 
-    // Кнопки окна не висят постоянно: пилюля в углу появляется при наведении («свернуть», «закрыть»);
-    // закреплённое окно всегда показывает булавку — клик открепляет. «Развернуть» и «Поверх всех окон» —
-    // в меню по ПКМ, развернуть — ещё и двойным кликом.
+    // Кнопки окна не висят постоянно: пилюля в углу появляется при наведении («свернуть», «развернуть» —
+    // обратно в обычную раскладку, «закрыть»); закреплённое окно всегда показывает булавку — клик открепляет.
+    // «Развернуть» есть и в меню по ПКМ и по двойному клику, «Поверх всех окон» — в меню.
     HoverHandler { id: hover }
     Rectangle {
         id: chrome
@@ -183,8 +183,24 @@ Item {
                 iconColor: checked ? Theme.fgSecondaryContainer : Theme.fgSurface
                 onClicked: root.window.pinnedOnTop = !chrome.pinned
             }
-            IconButton { visible: hover.hovered && !chrome.shift; icon: "remove"; size: "xs"; iconColor: Theme.fgSurface; onClicked: root.window.showMinimized() }
-            IconButton { visible: hover.hovered && !chrome.shift; icon: "close"; size: "xs"; iconColor: Theme.fgSurface; onClicked: root.window.close() }
+            IconButton {
+                visible: hover.hovered && !chrome.shift
+                icon: "remove"; size: "xs"; iconColor: Theme.fgSurface
+                Accessible.role: Accessible.Button; Accessible.name: I18n.t("Minimize")
+                onClicked: root.window.showMinimized()
+            }
+            IconButton {
+                visible: hover.hovered && !chrome.shift
+                icon: "open_in_full"; size: "xs"; iconColor: Theme.fgSurface
+                Accessible.role: Accessible.Button; Accessible.name: I18n.t("Expand")
+                onClicked: root.expandRequested()
+            }
+            IconButton {
+                visible: hover.hovered && !chrome.shift
+                icon: "close"; size: "xs"; iconColor: hovered ? Theme.error : Theme.fgSurface
+                Accessible.role: Accessible.Button; Accessible.name: I18n.t("Close")
+                onClicked: root.window.close()
+            }
         }
     }
 

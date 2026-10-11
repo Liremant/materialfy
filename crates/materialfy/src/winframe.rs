@@ -1,5 +1,6 @@
-//! Окно без рамки на Windows: нативный ресайз и Aero Snap (cpp/winframe.cpp). См. контракт §7.
-//! На других ОС — пусто (ресайз делает QML ResizeEdges через startSystemResize).
+//! Окно без рамки на Windows: нативный ресайз, Aero Snap, тень и скруглённые углы Windows 11 через DWM
+//! (cpp/winframe.cpp). См. контракт §7. На других ОС — пусто: ресайз делает QML ResizeEdges через
+//! startSystemResize, углы скругляет QML WindowFrame (окно прозрачное).
 
 /// Ширина зоны ресайза, логические пиксели (как ResizeEdges.grip).
 pub const GRIP: i32 = 6;

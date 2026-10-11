@@ -3,7 +3,7 @@ import QtQuick.Layouts
 import Md3
 import Materialfy.Core
 
-// Верхняя панель контента: назад, заголовок прокрученной страницы, кнопки страницы, кнопки окна (опционально).
+// Верхняя панель контента: назад, заголовок прокрученной страницы, кнопки страницы, кнопки окна.
 // Пустое место тянет окно (startSystemMove), двойной клик — развернуть.
 Item {
     id: root
@@ -34,7 +34,7 @@ Item {
     }
     TapHandler {
         acceptedButtons: Qt.LeftButton
-        onDoubleTapped: root.window.visibility = root.window.visibility === Window.Maximized ? Window.Windowed : Window.Maximized
+        onDoubleTapped: windowButtons.toggleMaximized()
     }
 
     RowLayout {
@@ -98,16 +98,9 @@ Item {
             sourceComponent: root.page ? root.page.toolbar ?? null : null
         }
 
-        Row {
-            visible: Settings.windowButtons
-            spacing: 4
-            IconButton { icon: "remove"; size: "xs"; onClicked: root.window.showMinimized() }
-            IconButton {
-                icon: root.window.visibility === Window.Maximized ? "collapse_content" : "expand_content"
-                size: "xs"
-                onClicked: root.window.visibility = root.window.visibility === Window.Maximized ? Window.Windowed : Window.Maximized
-            }
-            IconButton { icon: "close"; size: "xs"; onClicked: root.window.close() }
+        WindowButtons {
+            id: windowButtons
+            window: root.window
         }
     }
 }

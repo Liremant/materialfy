@@ -174,6 +174,28 @@ Item {
                     }
                 }
             }
+            // плеер закрывает всё окно — кнопки окна и перетаскивание за пустое место панели здесь свои
+            WindowButtons {
+                id: windowButtons
+                Layout.alignment: Qt.AlignVCenter
+                Layout.leftMargin: 4
+                window: root.Window.window
+            }
+
+            DragHandler {
+                property bool manual: false
+                target: null
+                grabPermissions: PointerHandler.TakeOverForbidden
+                onActiveChanged: if (active) manual = !root.Window.window.startSystemMove()
+                onCentroidChanged: if (active && manual && root.Window.window.visibility === Window.Windowed) {
+                    root.Window.window.x += centroid.scenePosition.x - centroid.scenePressPosition.x
+                    root.Window.window.y += centroid.scenePosition.y - centroid.scenePressPosition.y
+                }
+            }
+            TapHandler {
+                acceptedButtons: Qt.LeftButton
+                onDoubleTapped: windowButtons.toggleMaximized()
+            }
         }
 
         RowLayout {

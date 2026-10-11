@@ -168,9 +168,15 @@ winframe_install(QObject* object, int grip)
 
   apply_frame_style(hwnd);
 
-  // Тень и скругления Windows 11
+  // Тень DWM (Windows 10 и 11)
   const MARGINS margins{ 0, 0, 0, 1 };
   DwmExtendFrameIntoClientArea(hwnd, &margins);
+
+  // Windows 11: скруглённые углы MD3. DWM рисует их сам (вместе с тонкой обводкой) и делает прямыми
+  // у развёрнутого окна и на весь экран. Windows 10 атрибута не знает — вызов вернёт ошибку, углы прямые.
+  constexpr DWORD corner_preference = 33; // DWMWA_WINDOW_CORNER_PREFERENCE (SDK 10.0.22000+)
+  constexpr int corner_round = 2;         // DWMWCP_ROUND
+  DwmSetWindowAttribute(hwnd, corner_preference, &corner_round, sizeof(corner_round));
   return true;
 }
 

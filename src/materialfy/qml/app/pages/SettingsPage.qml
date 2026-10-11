@@ -1098,11 +1098,6 @@ Page {
             Switch { checked: Settings.closeToTray; onToggled: c => Settings.closeToTray = c }
         }
         SettingRow {
-            title: I18n.t("Window buttons")
-            description: I18n.t("Minimize, maximize and close — for non-tiling environments")
-            Switch { checked: Settings.windowButtons; onToggled: c => Settings.windowButtons = c }
-        }
-        SettingRow {
             title: I18n.t("Mouse wheel scroll step")
             description: I18n.t("{0} px per notch; grows up to ×2 when scrolling fast", Settings.wheelStep)
             Slider {
