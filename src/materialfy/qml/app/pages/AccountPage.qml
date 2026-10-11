@@ -49,7 +49,7 @@ Page {
     // рейл / низкое окно: меньше арт, короткие тексты, шаги без меток
     readonly property bool compact: width < 860 || height < 700
 
-    title: login ? "Вход" : "Аккаунт"
+    title: login ? I18n.t("Sign-in") : I18n.t("Account")
     showHeader: !login
 
     function _go(name, props) {
@@ -58,18 +58,20 @@ Page {
     }
     function _proxy() { _go("settings", { section: "network" }) }
 
-    // Пояснения к ошибкам входа (тексты ошибок — из Auth.errorText)
+    // Пояснения к ошибкам входа (тексты ошибок — из Auth.errorText, уже переведены в Rust;
+    // подсказку выбираем по стабильному коду Auth.errorCode)
     function _errorHint(text) {
-        if (text.indexOf("Free") >= 0)
-            return "Без Premium можно войти иначе — через Web API: будут медиатека, поиск и пульт для телефона и колонок, но не музыка на этом компьютере. Spotify иногда ограничивает такие запросы."
-        if (text.indexOf("отменён") >= 0)
-            return "На странице Spotify нажата «Отмена». Попробуйте ещё раз — разрешение можно отозвать в настройках аккаунта Spotify."
-        if (text.indexOf("занят") >= 0)
-            return "Закройте программу, которая слушает этот порт, или перезапустите компьютер и повторите вход."
-        if (text.indexOf("не отвечает") >= 0)
-            return "Проверьте подключение к интернету. Если Spotify доступен только через прокси — включите его в настройках сети."
-        if (text.indexOf("разным аккаунтам") >= 0)
-            return "Выйдите на accounts.spotify.com из лишнего аккаунта и войдите заново."
+        const code = text !== "" ? (Auth.errorCode ?? "") : ""
+        if (code === "free" || text.indexOf("Free") >= 0)
+            return I18n.t("Without Premium you can sign in another way — through the Web API: you get your library, search and a remote for phones and speakers, but no music on this computer. Spotify sometimes limits these requests.")
+        if (code === "cancelled")
+            return I18n.t("You pressed “Cancel” on the Spotify page. Try again — you can revoke the permission in your Spotify account settings.")
+        if (code === "portBusy")
+            return I18n.t("Close the program listening on this port, or restart your computer and sign in again.")
+        if (code === "noResponse")
+            return I18n.t("Check your internet connection. If Spotify is only reachable through a proxy, turn it on in network settings.")
+        if (code === "accountMismatch")
+            return I18n.t("Sign out of the extra account on accounts.spotify.com and sign in again.")
         return ""
     }
 
@@ -163,12 +165,12 @@ Page {
                     Layout.fillWidth: true
                     horizontalAlignment: Text.AlignHCenter
                     text: ({
-                        checking: "Подключаемся к Spotify…",
-                        connecting: "Подключаемся к Spotify…",
-                        browser: "Подтвердите вход в браузере",
-                        error: "Не получилось войти",
-                        welcome: "Готово" + (page.displayName !== "" ? ", " + page.displayName : "")
-                    })[page.shown] ?? "Войдите через Spotify"
+                        checking: I18n.t("Connecting to Spotify…"),
+                        connecting: I18n.t("Connecting to Spotify…"),
+                        browser: I18n.t("Confirm sign-in in your browser"),
+                        error: I18n.t("Couldn't sign in"),
+                        welcome: page.displayName !== "" ? I18n.t("All set, {0}", page.displayName) : I18n.t("All set")
+                    })[page.shown] ?? I18n.t("Sign in through Spotify")
                     type: page.compact ? "headlineSmall" : "headlineMedium"
                     wrapMode: Text.WordWrap
                     elide: Text.ElideNone
@@ -180,18 +182,18 @@ Page {
                     visible: text !== ""
                     horizontalAlignment: Text.AlignHCenter
                     text: ({
-                        checking: "Проверяем сохранённую сессию",
-                        connecting: "Проверяем аккаунт и подключаемся к Spotify",
-                        browser: page.compact ? "Нажмите «Принять» на accounts.spotify.com — окно вернётся само."
-                                              : "Мы открыли страницу accounts.spotify.com. Нажмите там «Принять», и окно вернётся само.",
+                        checking: I18n.t("Checking your saved session"),
+                        connecting: I18n.t("Checking your account and connecting to Spotify"),
+                        browser: page.compact ? I18n.t("Press “Accept” on accounts.spotify.com — this window comes back on its own.")
+                                              : I18n.t("We opened accounts.spotify.com. Press “Accept” there, and this window comes back on its own."),
                         error: "",
                         welcome: page.playbackHere
-                                 ? "Медиатека, поиск, пульт и музыка на этом компьютере уже работают."
-                                 : "Медиатека, поиск и пульт для ваших устройств уже работают. Слушать на этом компьютере можно со Spotify Premium."
-                    })[page.shown] ?? (page.compact ? "Один вход со Spotify Premium — и медиатека, и музыка здесь. Пароль вводится только на сайте Spotify." : "Один вход со Spotify Premium открывает медиатеку и музыку на этом компьютере. Вход — в браузере: пароль вводится только на сайте Spotify, Materialfy его не видит. "
-                                       + (Qt.platform.os === "windows" ? "Ключи хранятся в диспетчере учётных данных Windows."
-                                          : Qt.platform.os === "osx" ? "Ключи хранятся в связке ключей macOS."
-                                          : "Ключи хранятся в связке ключей системы."))
+                                 ? I18n.t("Library, search, remote and music on this computer are ready.")
+                                 : I18n.t("Library, search and a remote for your devices are ready. Listening on this computer needs Spotify Premium.")
+                    })[page.shown] ?? (page.compact ? I18n.t("One sign-in with Spotify Premium — your library and music here. You enter your password only on the Spotify website.") : I18n.t("One sign-in with Spotify Premium opens your library and music on this computer. You sign in in the browser: the password is entered only on the Spotify website, Materialfy never sees it.") + " "
+                                       + (Qt.platform.os === "windows" ? I18n.t("Keys are stored in Windows Credential Manager.")
+                                          : Qt.platform.os === "osx" ? I18n.t("Keys are stored in the macOS Keychain.")
+                                          : I18n.t("Keys are stored in the system keychain.")))
                     type: "bodyMedium"
                     color: Theme.fgSurfaceVariant
                     wrapMode: Text.WordWrap
@@ -220,7 +222,7 @@ Page {
                             spacing: 2
                             Label {
                                 Layout.fillWidth: true
-                                text: Auth.errorText !== "" ? Auth.errorText : "Spotify не ответил"
+                                text: Auth.errorText !== "" ? Auth.errorText : I18n.t("Spotify didn't respond")
                                 type: "titleSmall"
                                 color: Theme.fgErrorContainer
                                 wrapMode: Text.WordWrap
@@ -248,7 +250,7 @@ Page {
                     active: page.shown === "welcome" ? 2 : page.shown === "browser" || page.shown === "connecting" ? 1 : 0
                     done1: page.shown === "welcome"
                     done2: page.shown === "welcome" && page.playbackHere
-                    waitingText: page.shown === "browser" ? "Ждём подтверждения…" : page.shown === "connecting" ? "Входим…" : ""
+                    waitingText: page.shown === "browser" ? I18n.t("Waiting for confirmation…") : page.shown === "connecting" ? I18n.t("Signing in…") : ""
                 }
 
                 BrowserWaitRow {
@@ -266,34 +268,34 @@ Page {
 
                     Button {
                         visible: page.shown === "signedOut"
-                        text: "Войти через Spotify"
+                        text: I18n.t("Sign in with Spotify")
                         icon: "open_in_new"
                         size: "m"
                         onClicked: Auth.startLogin()
                     }
                     Button {
                         visible: page.shown === "signedOut"
-                        text: "Без Premium"
+                        text: I18n.t("Without Premium")
                         style: "text"
                         onClicked: Auth.startWebLogin()
                     }
                     Button {
                         visible: page.shown === "error" && page.freeRefused
-                        text: "Войти без Premium"
+                        text: I18n.t("Sign in without Premium")
                         icon: "open_in_new"
                         size: "m"
                         onClicked: Auth.startWebLogin()
                     }
                     Button {
                         visible: page.shown === "error" && !page.freeRefused
-                        text: "Повторить"
+                        text: I18n.t("Retry")
                         icon: "refresh"
                         size: "m"
                         onClicked: Auth.retry()
                     }
                     Button {
                         visible: page.shown === "signedOut" || page.shown === "error"
-                        text: "Настройки прокси"
+                        text: I18n.t("Proxy settings")
                         icon: "lan"
                         style: "text"
                         onClicked: page._proxy()
@@ -301,14 +303,14 @@ Page {
                     // в рейле — кнопки вместо карточки «Браузер не открылся?»
                     Button {
                         visible: page.shown === "browser" && page.compact
-                        text: "Открыть снова"
+                        text: I18n.t("Open again")
                         icon: "open_in_new"
                         style: "tonal"
                         onClicked: Auth.reopenBrowser()
                     }
                     Button {
                         visible: page.shown === "browser" && page.compact
-                        text: "Ссылка"
+                        text: I18n.t("Link")
                         icon: "content_copy"
                         style: "outlined"
                         onClicked: Auth.copyAuthUrl()
@@ -331,7 +333,7 @@ Page {
                                 Icon { anchors.verticalCenter: parent.verticalCenter; name: "lock"; size: 16; color: Theme.fgSurfaceVariant }
                                 Label {
                                     anchors.verticalCenter: parent.verticalCenter
-                                    text: "Ответ придёт на 127.0.0.1:" + (Auth.authPort > 0 ? Auth.authPort : 8898) + " · ваш компьютер"
+                                    text: I18n.t("The reply comes to 127.0.0.1:{0} · your computer", Auth.authPort > 0 ? Auth.authPort : 8898)
                                     type: "labelMedium"
                                     color: Theme.fgSurfaceVariant
                                 }
@@ -340,13 +342,13 @@ Page {
                     }
                     Button {
                         visible: page.shown === "browser"
-                        text: "Отмена"
+                        text: I18n.t("Cancel")
                         style: "text"
                         onClicked: Auth.cancelLogin()
                     }
                     Button {
                         visible: page.shown === "welcome" && page.playbackHere
-                        text: "Начать"
+                        text: I18n.t("Get started")
                         icon: "arrow_forward"
                         size: "m"
                         onClicked: page.router ? page.router.reset("home") : null
@@ -354,14 +356,14 @@ Page {
                     // вошли без Premium (Web API): звук здесь — отдельным входом через сессию, если Premium есть
                     Button {
                         visible: page.shown === "welcome" && !page.playbackHere && page.premium
-                        text: "Дальше: слушать здесь"
+                        text: I18n.t("Next: listen here")
                         icon: "speaker"
                         size: "m"
                         onClicked: page._go("playback")
                     }
                     Button {
                         visible: page.shown === "welcome" && !page.playbackHere
-                        text: page.premium ? "Позже, только пульт" : "Дальше"
+                        text: page.premium ? I18n.t("Later, remote only") : I18n.t("Next")
                         style: "text"
                         onClicked: page.router ? page.router.reset("home") : null
                     }
@@ -371,7 +373,7 @@ Page {
                     visible: !page.compact && (page.shown === "signedOut" || page.shown === "error")
                     Layout.alignment: Qt.AlignHCenter
                     Layout.topMargin: 24
-                    text: "Materialfy · не связан со Spotify AB"
+                    text: I18n.t("Materialfy · not affiliated with Spotify AB")
                     type: "bodySmall"
                     color: Theme.fgSurfaceVariant
                 }
@@ -413,7 +415,7 @@ Page {
                             Layout.fillWidth: true
                             Layout.preferredWidth: 0      // чипы переносятся, а не распирают карточку
                             spacing: 4
-                            Label { Layout.fillWidth: true; text: page.displayName !== "" ? page.displayName : "Аккаунт Spotify"; type: "headlineSmall"; weight: 600 }
+                            Label { Layout.fillWidth: true; text: page.displayName !== "" ? page.displayName : I18n.t("Spotify account"); type: "headlineSmall"; weight: 600 }
                             Label {
                                 Layout.fillWidth: true
                                 visible: text !== ""
@@ -431,13 +433,13 @@ Page {
                                 }
                                 Chip {
                                     visible: Auth.tokenStorage === "keyring"
-                                    text: Qt.platform.os === "windows" ? "Ключи в диспетчере учётных данных" : "Ключи в связке ключей"
+                                    text: Qt.platform.os === "windows" ? I18n.t("Keys in Credential Manager") : I18n.t("Keys in the keychain")
                                     icon: "lock"
                                 }
                                 Chip {
-                                    text: Auth.playbackState === "ready" ? "Играет на этом компьютере"
-                                        : Auth.playbackState === "premiumRequired" ? "Только пульт"
-                                        : "Воспроизведение здесь не настроено"
+                                    text: Auth.playbackState === "ready" ? I18n.t("Playing on this computer")
+                                        : Auth.playbackState === "premiumRequired" ? I18n.t("Remote only")
+                                        : I18n.t("Playback here isn't set up")
                                     icon: Auth.playbackState === "ready" ? "computer" : "cast"
                                     onClicked: page._go("playback")
                                 }
@@ -448,8 +450,8 @@ Page {
                                 Layout.fillWidth: true
                                 Layout.topMargin: 8
                                 spacing: 8
-                                Button { text: "Воспроизведение"; icon: "speaker"; style: "tonal"; onClicked: page._go("playback") }
-                                Button { text: "Выйти"; icon: "logout"; style: "outlined"; onClicked: Auth.signOut() }
+                                Button { text: I18n.t("Playback"); icon: "speaker"; style: "tonal"; onClicked: page._go("playback") }
+                                Button { text: I18n.t("Sign out"); icon: "logout"; style: "outlined"; onClicked: Auth.signOut() }
                             }
                         }
                         ColumnLayout {
@@ -457,8 +459,8 @@ Page {
                             Layout.fillWidth: false
                             Layout.alignment: Qt.AlignTop
                             spacing: 8
-                            Button { Layout.fillWidth: true; text: "Воспроизведение"; icon: "speaker"; style: "tonal"; onClicked: page._go("playback") }
-                            Button { Layout.fillWidth: true; text: "Выйти"; icon: "logout"; style: "outlined"; onClicked: Auth.signOut() }
+                            Button { Layout.fillWidth: true; text: I18n.t("Playback"); icon: "speaker"; style: "tonal"; onClicked: page._go("playback") }
+                            Button { Layout.fillWidth: true; text: I18n.t("Sign out"); icon: "logout"; style: "outlined"; onClicked: Auth.signOut() }
                         }
                     }
                 }
@@ -470,7 +472,7 @@ Page {
 
                 Label {
                     Layout.fillWidth: true
-                    text: "Выход удаляет ключи этого компьютера из хранилища. Разрешения приложения можно отозвать на spotify.com в разделе «Приложения»."
+                    text: I18n.t("Signing out removes this computer's keys from storage. You can revoke the app's permissions on spotify.com under “Apps”.")
                     type: "bodySmall"
                     color: Theme.fgSurfaceVariant
                     wrapMode: Text.WordWrap

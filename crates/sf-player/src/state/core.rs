@@ -60,16 +60,16 @@ pub enum RemoteAction {
 }
 
 impl RemoteAction {
-    fn label(&self) -> &'static str {
+    fn label(&self) -> String {
         match self {
-            Self::Play => "Воспроизведение",
-            Self::Pause => "Пауза",
-            Self::Next => "Следующий трек",
-            Self::Previous => "Предыдущий трек",
-            Self::Seek(_) => "Перемотка",
-            Self::Volume(_) => "Громкость",
-            Self::Shuffle(_) => "Перемешивание",
-            Self::Repeat(_) => "Повтор",
+            Self::Play => mf_i18n::t("Playback"),
+            Self::Pause => mf_i18n::t("Pause"),
+            Self::Next => mf_i18n::t("Next track"),
+            Self::Previous => mf_i18n::t("Previous track"),
+            Self::Seek(_) => mf_i18n::t("Seek"),
+            Self::Volume(_) => mf_i18n::t("Volume"),
+            Self::Shuffle(_) => mf_i18n::t("Shuffling"),
+            Self::Repeat(_) => mf_i18n::t("Repeat"),
         }
     }
 }
@@ -878,7 +878,7 @@ impl Core {
             self.queue_start_pending = None;
             self.intent_track = None;
             self.assumed_context = None;
-            self.notice("Выберите устройство или включите воспроизведение на этом компьютере");
+            self.notice(mf_i18n::t("Choose a device or turn on playback on this computer"));
         }
     }
 
@@ -920,7 +920,7 @@ impl Core {
                     self.intent_track = None;
                 }
                 self.error_text = message.clone();
-                self.notice(format!("Воспроизведение на этом компьютере: {message}"));
+                self.notice(mf_i18n::tf("Playback on this computer: {0}", &[message]));
             }
             LocalPlayback::Connecting => {}
         }
@@ -969,17 +969,17 @@ impl Core {
                     self.unavailable_at.clear();
                     self.last_unavailable_reconnect = Some(now);
                     self.effects.push(Effect::Reconnect);
-                    self.notice("Звук Spotify отключился. Переподключаем воспроизведение…");
+                    self.notice(mf_i18n::t("Spotify audio dropped out. Reconnecting playback…"));
                 }
             }
         }
         if error_is_no_device(state.error.as_deref()) {
-            self.error_text = "Нет устройства для воспроизведения".into();
+            self.error_text = mf_i18n::t("No playback device");
         } else if error_is_no_device(self.local.error.as_deref()) && state.error.is_none() {
             self.error_text.clear();
         }
         if let Some(seed) = autoplay_seed(self.local_list.as_deref(), self.autoplay, &self.local, &state) {
-            tracing::info!("список кончился; дальше — автоплей Spotify от {seed}");
+            tracing::info!("the list ended; continuing with Spotify autoplay from {seed}");
             self.local_list = None;
             self.engine(PlayerCommand::Load(LoadSpec {
                 context_uri: Some(seed),
@@ -1271,10 +1271,10 @@ impl Core {
         if let Some(transfer) = &self.transfer
             && now >= transfer.at + TRANSFER_TIMEOUT
         {
-            let name = if transfer.name.is_empty() { "Устройство".to_owned() } else { transfer.name.clone() };
+            let name = if transfer.name.is_empty() { mf_i18n::t("Device") } else { transfer.name.clone() };
             self.transfer = None;
             self.local_transfer_sequence = None;
-            self.notice(format!("{name} не ответил"));
+            self.notice(mf_i18n::tf("{0} didn't respond", &[&name]));
         }
         if let Some((_, at)) = self.optimistic_playing
             && at.elapsed() >= PLAYBACK_HOLD
@@ -1392,7 +1392,7 @@ impl Core {
             };
             skips = position + 1;
             let mut items: Vec<QItem> = queue.next.drain(..=position).collect();
-            let chosen = items.pop().expect("выбранная строка только что снята");
+            let chosen = items.pop().expect("the chosen row was just taken");
             consumed = items.iter().map(|item| item.uri().to_owned()).collect();
             consumed.push(chosen.uri().to_owned());
             let track = chosen.track.clone();
@@ -1490,7 +1490,7 @@ impl Core {
         self.engine(PlayerCommand::ClearQueue);
         // свежий запрос уберёт строки, добавленные с других устройств
         self.queue_recheck_at = Some(Instant::now() + QUEUE_RECHECK);
-        self.notice("Очередь очищена");
+        self.notice(mf_i18n::t("Queue cleared"));
     }
 
     /// Next: голова «Далее» сразу становится текущей (если очередь «заякорена» на текущий трек).
@@ -1652,7 +1652,7 @@ impl Core {
                 self.queue = Some(queue);
                 self.reconcile_pending_queue();
             }
-            Err(error) => tracing::debug!("очередь недоступна: {error:#}"),
+            Err(error) => tracing::debug!("queue unavailable: {error:#}"),
         }
     }
 
@@ -1665,7 +1665,7 @@ impl Core {
             return;
         }
         if !matches!(uri_kind(&uri), Some("track" | "episode")) {
-            self.notice("В очередь можно поставить трек, выпуск или альбом");
+            self.notice(mf_i18n::t("Only a track, episode or album can be queued"));
             return;
         }
         if self.queued_moments_ago(&uri) {
@@ -1699,9 +1699,9 @@ impl Core {
         self.pending_album_queues.insert(request, PendingAlbumQueue { label: label.clone(), target: self.target() });
         self.api(ApiCall::AlbumTracks { request, id });
         if label.is_empty() {
-            self.notice("Загружаем альбом в очередь…");
+            self.notice(mf_i18n::t("Adding the album to the queue…"));
         } else {
-            self.notice(format!("Загружаем «{label}» в очередь…"));
+            self.notice(mf_i18n::tf("Adding “{0}” to the queue…", &[&label]));
         }
     }
 
@@ -1710,14 +1710,17 @@ impl Core {
             return;
         };
         if pending.target != self.target() {
-            self.notice("Устройство воспроизведения сменилось. Добавьте альбом в очередь ещё раз");
+            self.notice(mf_i18n::t("The playback device changed. Add the album to the queue again"));
             return;
         }
         match result {
             Ok(tracks) => self.queue_album_tracks(tracks, pending.label),
             Err(error) => {
-                let name = if pending.label.is_empty() { "альбом".to_owned() } else { format!("«{}»", pending.label) };
-                self.notice(format!("Не удалось добавить {name} в очередь: {error}"));
+                if pending.label.is_empty() {
+                    self.notice(mf_i18n::tf("Couldn't add the album to the queue: {0}", &[&error]));
+                } else {
+                    self.notice(mf_i18n::tf("Couldn't add “{0}” to the queue: {1}", &[&pending.label, &error]));
+                }
             }
         }
     }
@@ -1735,15 +1738,15 @@ impl Core {
             uris.push(uri);
         }
         if uris.is_empty() {
-            self.notice("В альбоме нет треков, которые можно поставить в очередь");
+            self.notice(mf_i18n::t("This album has no tracks that can be queued"));
             return;
         }
         let count = uris.len();
-        let songs = plural(count, "трек", "трека", "треков");
+        let songs = mf_i18n::n(count as i64, "{0} track", "{0} tracks");
         if label.is_empty() {
-            self.notice(format!("В очереди {count} {songs} из альбома"));
+            self.notice(mf_i18n::tf("Queued {0} from the album", &[&songs]));
         } else {
-            self.notice(format!("В очереди {count} {songs} из «{label}»"));
+            self.notice(mf_i18n::tf("Queued {0} from “{1}”", &[&songs, &label]));
         }
         if self.local.is_active() && self.target() == Target::Local {
             for uri in uris {
@@ -1774,8 +1777,8 @@ impl Core {
     }
 
     fn queued_notice(&mut self, count: usize) {
-        let songs = plural(count, "трек", "трека", "треков");
-        self.notice(format!("В очередь добавлено: {count} {songs}"));
+        let songs = mf_i18n::n(count as i64, "{0} track", "{0} tracks");
+        self.notice(mf_i18n::tf("Added to queue: {0}", &[&songs]));
     }
 
     /// librespot умеет только дописывать и очищать: перестановка = ClearQueue + AddToQueue каждой.
@@ -1800,9 +1803,9 @@ impl Core {
         self.show_queued_song(item);
         if announce {
             if title.is_empty() {
-                self.notice("Добавлено в очередь");
+                self.notice(mf_i18n::t("Added to queue"));
             } else {
-                self.notice(format!("«{title}» в очереди"));
+                self.notice(mf_i18n::tf("“{0}” added to queue", &[&title]));
             }
         }
         if self.local.is_active() && matches!(self.target(), Target::Local) {
@@ -2120,7 +2123,7 @@ impl Core {
                     self.queued_play = None;
                     self.intent_track = None;
                     self.assumed_context = None;
-                    self.notice("Выберите устройство или включите воспроизведение на этом компьютере");
+                    self.notice(mf_i18n::t("Choose a device or turn on playback on this computer"));
                 }
             }
         }
@@ -2156,7 +2159,7 @@ impl Core {
             _ => {
                 let (uris, index) = playable_list(&items, row);
                 if uris.is_empty() {
-                    self.notice("Этот трек недоступен");
+                    self.notice(mf_i18n::t("This track isn't available"));
                     return;
                 }
                 let (uris, index) = cap_uris(&uris, index as u32);
@@ -2182,7 +2185,7 @@ impl Core {
     pub fn shuffle_from(&mut self, items: Vec<TrackItem>, context: PlayContext) {
         let available: Vec<usize> = (0..items.len()).filter(|&i| playable(&items[i])).collect();
         if available.is_empty() {
-            self.notice("Нечего перемешивать");
+            self.notice(mf_i18n::t("Nothing to shuffle"));
             return;
         }
         let row = available[fastrand::usize(..available.len())];
@@ -2274,7 +2277,7 @@ impl Core {
             return false;
         };
         if !self.local_ready {
-            self.notice("Воспроизведение на этом компьютере не включено");
+            self.notice(mf_i18n::t("Playback on this computer is off"));
             return true;
         }
         let position = self.lost_position();
@@ -2317,7 +2320,7 @@ impl Core {
                         return;
                     }
                     if !self.resume_last() {
-                        self.notice("Выберите, что послушать");
+                        self.notice(mf_i18n::t("Choose something to play"));
                     }
                     return;
                 }
@@ -2326,7 +2329,7 @@ impl Core {
                 if device.is_none() && self.remote_fresh().is_none() {
                     // нигде ничего не известно (свежий старт до готовности движка) — прошлая сессия
                     if !self.resume_last() {
-                        self.notice("Выберите трек, альбом или плейлист");
+                        self.notice(mf_i18n::t("Choose a track, album or playlist"));
                     }
                     return;
                 }
@@ -2563,7 +2566,7 @@ impl Core {
     /// Удалённая команда; без активного устройства запрос не шлётся.
     fn remote(&mut self, action: RemoteAction, device: Option<String>) {
         if device.is_none() && self.remote_fresh().is_none() {
-            self.notice("Ничего не играет. Сначала выберите, что слушать");
+            self.notice(mf_i18n::t("Nothing is playing. Choose something to play first"));
             return;
         }
         self.api(ApiCall::Remote { action, device });
@@ -2579,7 +2582,7 @@ impl Core {
             return;
         }
         if !self.local_ready {
-            self.notice("Воспроизведение на этом компьютере не включено");
+            self.notice(mf_i18n::t("Playback on this computer is off"));
             return;
         }
         self.selected_device = None;
@@ -2687,9 +2690,9 @@ impl Core {
                         }
                         let hint = if error.status() == Some(404) {
                             self.mark_device_lost();
-                            " Сначала выберите устройство."
+                            format!(" {}", mf_i18n::t("Choose a device first."))
                         } else {
-                            ""
+                            String::new()
                         };
                         self.notice(format!("{}: {error}.{hint}", action.label()));
                     }
@@ -2717,7 +2720,7 @@ impl Core {
                             self.transfer = None;
                             self.selected_device = None;
                         }
-                        self.notice(format!("Не удалось переключить устройство: {error}"));
+                        self.notice(mf_i18n::tf("Couldn't switch device: {0}", &[&error]));
                     }
                 }
             }
@@ -2735,7 +2738,7 @@ impl Core {
                     }
                 }
                 if let Err(error) = result {
-                    self.notice(format!("Не удалось добавить в очередь: {error}"));
+                    self.notice(mf_i18n::tf("Couldn't add to queue: {0}", &[&error]));
                 }
                 self.refresh_queue(true);
             }
@@ -2770,7 +2773,7 @@ impl Core {
                 if error.status() == Some(404) {
                     self.mark_device_lost();
                 }
-                tracing::debug!("состояние воспроизведения недоступно: {error:#}");
+                tracing::debug!("playback state unavailable: {error:#}");
                 return;
             }
         };
@@ -3087,26 +3090,26 @@ fn error_is_no_device(error: Option<&str>) -> bool {
     error.is_some_and(|error| error == crate::engine::sink::NO_DEVICE)
 }
 
+/// Ошибка движка (LocalState.error — непереведённый английский, его сравнивает ядро) → текст интерфейса.
 fn engine_error_text(error: &str) -> String {
-    if error == crate::engine::sink::NO_DEVICE {
-        return "Нет устройства для воспроизведения".into();
+    use crate::engine::{player, sink};
+    if error == sink::NO_DEVICE {
+        return mf_i18n::t("No playback device");
     }
     if error.starts_with("This item isn't available") {
-        return "Этот трек недоступен".into();
+        return mf_i18n::t("This track isn't available");
+    }
+    if error == player::AUDIO_KEY_REFUSED {
+        return mf_i18n::t(player::AUDIO_KEY_REFUSED);
+    }
+    if error == sink::OUTPUT_STOPPED {
+        return mf_i18n::t(sink::OUTPUT_STOPPED);
+    }
+    if let Some(rest) = error.strip_prefix(player::UNAVAILABLE) {
+        return format!("{}{rest}", mf_i18n::t(player::UNAVAILABLE));
+    }
+    if let Some(rest) = error.strip_prefix(sink::OPEN_FAILED) {
+        return format!("{}{rest}", mf_i18n::t(sink::OPEN_FAILED));
     }
     error.to_owned()
-}
-
-pub fn plural(count: usize, one: &'static str, few: &'static str, many: &'static str) -> &'static str {
-    let tens = count % 100;
-    let units = count % 10;
-    if (11..=14).contains(&tens) {
-        many
-    } else if units == 1 {
-        one
-    } else if (2..=4).contains(&units) {
-        few
-    } else {
-        many
-    }
 }

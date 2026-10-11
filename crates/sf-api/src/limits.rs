@@ -151,16 +151,18 @@ impl WebApiLimits {
 
     /// Пояснение под заголовком «Web API ограничен»; пусто — ограничений нет.
     pub fn user_text(&self) -> String {
-        let line = |limit: &Limit, whose: &str| {
+        let line = |limit: &Limit, shared: bool| {
             let until = clock_after(limit.until.saturating_duration_since(Instant::now()));
-            match limit.kind {
-                LimitKind::Quota => format!("Квота {whose} исчерпана, примерно до {until}"),
-                LimitKind::RateLimited => format!("Spotify притормозил {whose} до {until}"),
+            match (limit.kind, shared) {
+                (LimitKind::Quota, true) => mf_i18n::tf("The shared Client ID quota is used up until about {0}", &[&until]),
+                (LimitKind::Quota, false) => mf_i18n::tf("The personal app quota is used up until about {0}", &[&until]),
+                (LimitKind::RateLimited, true) => mf_i18n::tf("Spotify slowed down the shared Client ID until {0}", &[&until]),
+                (LimitKind::RateLimited, false) => mf_i18n::tf("Spotify slowed down the personal app until {0}", &[&until]),
             }
         };
         let parts: Vec<String> = [
-            self.shared.as_ref().map(|limit| line(limit, "общего Client ID")),
-            self.personal.as_ref().map(|limit| line(limit, "личного приложения")),
+            self.shared.as_ref().map(|limit| line(limit, true)),
+            self.personal.as_ref().map(|limit| line(limit, false)),
         ]
         .into_iter()
         .flatten()
@@ -168,7 +170,7 @@ impl WebApiLimits {
         if parts.is_empty() {
             return String::new();
         }
-        format!("{}. Что идёт через сессию Spotify, работает; остальное подождёт.", parts.join(". "))
+        mf_i18n::tf("{0}. Anything that goes through the Spotify session still works; the rest will wait.", &[&parts.join(". ")])
     }
 }
 
@@ -244,7 +246,7 @@ impl SourceState {
             return Decision::Go;
         }
         match priority {
-            Priority::Interactive => unreachable!("страницам окно не ограничено"),
+            Priority::Interactive => unreachable!("pages have no window limit"),
             Priority::Polling => Decision::Fail(LimitKind::RateLimited),
             // место появится, когда из окна выйдет запрос, который держит долю фона
             Priority::Background => Decision::Wait((self.sent[used - allowed] + WINDOW).saturating_duration_since(now)),
@@ -388,7 +390,7 @@ impl Limits {
             match decision {
                 Decision::Go => return Ok(()),
                 Decision::Fail(kind) => {
-                    tracing::debug!("Web API source={source}: {priority:?} не пущен, охлаждение {kind:?}");
+                    tracing::debug!("Web API source={source}: {priority:?} held back, cooldown {kind:?}");
                     return Err(kind.error());
                 }
                 Decision::Wait(wait) => {
@@ -644,7 +646,7 @@ mod tests {
         let limit = state.visible(start).unwrap();
         assert_eq!(limit.kind, LimitKind::Quota);
         let text = WebApiLimits { shared: Some(limit), personal: None }.user_text();
-        assert!(text.starts_with("Квота общего Client ID исчерпана"), "{text}");
+        assert!(text.starts_with("The shared Client ID quota is used up"), "{text}");
         assert!(WebApiLimits::default().user_text().is_empty());
     }
 

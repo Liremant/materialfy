@@ -11,6 +11,6 @@ pub fn install(window: *mut cxx_qt::QObject) {
     }
     // SAFETY: window — живой корневой объект движка, вызов из GUI-потока
     if !unsafe { crate::qt::ffi::ffi::winframe_install(window, GRIP) } {
-        tracing::warn!("рамка окна: корень не QWindow или нет HWND — ресайз через QML");
+        tracing::warn!("window frame: root is not a QWindow or has no HWND — resizing via QML");
     }
 }

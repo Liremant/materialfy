@@ -33,7 +33,7 @@ const VOLUME_DEBOUNCE: Duration = Duration::from_millis(150);
 const VOLUME_HOLD: Duration = Duration::from_millis(2500);
 /// Имя, которым мы представляемся приёмнику при addUser.
 const CLIENT_NAME: &str = "Materialfy";
-const NEED_PLAYBACK: &str = "Сначала включите воспроизведение на этом компьютере — так приёмнику будет кого подключить";
+const NEED_PLAYBACK: &str = "Turn on playback on this computer first — the receiver needs something to connect to";
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct DevicesSnapshot {
@@ -136,7 +136,7 @@ impl DevicesService {
                             st.fetched_at = Some(Instant::now());
                         }
                         // прежний список остаётся, ошибка видна в меню
-                        Err(e) => st.error_text = format!("Не удалось получить список устройств: {e}"),
+                        Err(e) => st.error_text = mf_i18n::tf("Couldn’t get the device list: {0}", &[&e]),
                     }
                 }
                 me.recompute();
@@ -151,11 +151,11 @@ impl DevicesService {
                 let receivers = match found {
                     Ok(Ok(receivers)) => Some(receivers),
                     Ok(Err(e)) => {
-                        tracing::debug!("приёмники в сети не найдены: {e:#}");
+                        tracing::debug!("no receivers found on the network: {e:#}");
                         None
                     }
                     Err(e) => {
-                        tracing::warn!("поиск приёмников упал: {e}");
+                        tracing::warn!("receiver discovery failed: {e}");
                         None
                     }
                 };
@@ -230,7 +230,7 @@ impl DevicesService {
             // сначала через сессию (connect-state), Web API — только если её нет или она отказала
             let connect = me.player.connect_volume(&device_id, percent).await;
             if let Some(Err(e)) = &connect {
-                tracing::debug!("громкость через сессию не прошла ({e}); пробуем Web API");
+                tracing::debug!("volume via session failed ({e}); trying Web API");
             }
             let result = match connect {
                 Some(Ok(())) => Ok(()),
@@ -250,7 +250,7 @@ impl DevicesService {
                     }
                 }
                 me.recompute();
-                me.notice(format!("Не удалось изменить громкость «{name}»: {e}"));
+                me.notice(mf_i18n::tf("Couldn’t change the volume of “{0}”: {1}", &[&name, &e]));
             }
         });
     }
@@ -259,11 +259,11 @@ impl DevicesService {
     pub fn activate_receiver(&self, name: String) {
         let receiver = lock(&self.state).receivers.iter().find(|r| r.name == name).cloned();
         let Some(receiver) = receiver else {
-            self.notice(format!("«{name}» больше не виден в сети"));
+            self.notice(mf_i18n::tf("“{0}” is no longer visible on the network", &[&name]));
             return;
         };
         let Some(session) = self.player.session() else {
-            self.notice(NEED_PLAYBACK.into());
+            self.notice(mf_i18n::t(NEED_PLAYBACK));
             return;
         };
         let credentials = zeroconf::Credentials {
@@ -273,7 +273,7 @@ impl DevicesService {
             auth_data: session.auth_data(),
         };
         if credentials.username.is_empty() || credentials.auth_data.is_empty() {
-            self.notice(NEED_PLAYBACK.into());
+            self.notice(mf_i18n::t(NEED_PLAYBACK));
             return;
         }
         let row = connect::receiver_row_id(&receiver);
@@ -387,7 +387,7 @@ impl DevicesService {
         .await
         .map_err(|e| e.to_string())
         .and_then(|r| r)
-        .map_err(|e| format!("Не удалось подключить «{name}»: {e}"))?;
+        .map_err(|e| mf_i18n::tf("Couldn’t connect “{0}”: {1}", &[&name, &e]))?;
         let wanted_id = receiver.device_id.clone().filter(|id| !id.is_empty()).or_else(|| {
             let id = handed.device_id.clone();
             (!id.is_empty()).then_some(id)
@@ -416,7 +416,7 @@ impl DevicesService {
                 }
             }
             if Instant::now() >= deadline {
-                return Err(format!("«{name}» не появился в Spotify Connect — попробуйте ещё раз"));
+                return Err(mf_i18n::tf("“{0}” didn’t show up in Spotify Connect — try again", &[&name]));
             }
             tokio::time::sleep(RECEIVER_POLL).await;
         }

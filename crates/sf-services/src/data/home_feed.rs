@@ -27,8 +27,10 @@ use sf_player::Session;
 use super::persisted;
 
 const URL: &str = "https://api-partner.spotify.com/pathfinder/v2/query";
-/// Язык подписей Spotify (интерфейс приложения — русский).
-pub const LOCALE: &str = "ru";
+/// Язык подписей Spotify — язык интерфейса приложения ("en" | "ru").
+pub fn locale() -> &'static str {
+    mf_i18n::lang().code()
+}
 const TIMEOUT: Duration = Duration::from_secs(12);
 /// Хэши сохранённых запросов веб-плеера (web-player.dbd3aa01.js и чанки, 2026-10).
 const HOME_HASH: &str = "5fb7da7a03ee2776c0670856609cb85a189a3cecc36cc160b91cde79063b9cf1";
@@ -221,8 +223,8 @@ fn graphql_error(body: &Value, root: &str) -> anyhow::Result<()> {
         return Ok(());
     }
     match body.get("errors") {
-        Some(errors) => Err(anyhow!("ошибки GraphQL: {errors}")),
-        None => Err(anyhow!("нет {root}")),
+        Some(errors) => Err(anyhow!("GraphQL errors: {errors}")),
+        None => Err(anyhow!("no {root}")),
     }
 }
 
@@ -240,7 +242,7 @@ pub fn parse_browse(body: &Value) -> anyhow::Result<Vec<FeedSection>> {
 
 /// Ответ spclient homeview: плоский body — заголовок раздела, за ним его карточки.
 pub fn parse_homeview(body: &Value) -> anyhow::Result<Vec<FeedSection>> {
-    let nodes = body.get("body").and_then(Value::as_array).ok_or_else(|| anyhow!("homeview: нет body"))?;
+    let nodes = body.get("body").and_then(Value::as_array).ok_or_else(|| anyhow!("homeview: no body"))?;
     let mut sections: Vec<FeedSection> = Vec::new();
     for node in nodes {
         let section = text(node, "/metadata/sectionId");
@@ -392,7 +394,7 @@ async fn query(http: &Http, session: &Session, operation: &str, hash: &str, vari
         .header("app-platform", "WebPlayer")
         .header(reqwest::header::USER_AGENT, persisted::USER_AGENT)
         .header(reqwest::header::ACCEPT, "application/json")
-        .header(reqwest::header::ACCEPT_LANGUAGE, LOCALE)
+        .header(reqwest::header::ACCEPT_LANGUAGE, locale())
         .json(&body)
         .timeout(TIMEOUT)
         .send()
@@ -405,7 +407,7 @@ async fn query(http: &Http, session: &Session, operation: &str, hash: &str, vari
         .and_then(Value::as_array)
         .is_some_and(|errors| errors.iter().any(|e| text(e, "/message") == "PersistedQueryNotFound"));
     if retired {
-        tracing::debug!("pathfinder {operation}: семя отозвано, ищу свежий хэш");
+        tracing::debug!("pathfinder {operation}: seed hash retired, looking for a fresh one");
         return persisted::query(http, session, operation, &[], &variables).await;
     }
     anyhow::ensure!(status.is_success(), "pathfinder {operation} {status}: {answer}");
@@ -432,7 +434,7 @@ pub async fn home(http: &Http, session: &Session) -> anyhow::Result<Vec<FeedSect
         Ok(sections) if !sections.is_empty() => Ok(sections),
         Ok(_) => homeview(session).await,
         Err(error) => {
-            tracing::debug!("главная через GraphQL: {error:#}; беру homeview");
+            tracing::debug!("home via GraphQL: {error:#}; falling back to homeview");
             homeview(session).await.map_err(|e| e.context(format!("GraphQL home: {error:#}")))
         }
     }
@@ -440,9 +442,9 @@ pub async fn home(http: &Http, session: &Session) -> anyhow::Result<Vec<FeedSect
 
 /// Главная мобильного клиента (spclient homeview).
 pub async fn homeview(session: &Session) -> anyhow::Result<Vec<FeedSection>> {
-    let path = format!("/homeview/v1/home?platform=android&locale={LOCALE}");
+    let path = format!("/homeview/v1/home?platform=android&locale={}", locale());
     let read = session.spclient().request_as_json(&reqwest::Method::GET, &path, None, None);
-    let bytes = tokio::time::timeout(TIMEOUT, read).await.map_err(|_| anyhow!("homeview: таймаут"))??;
+    let bytes = tokio::time::timeout(TIMEOUT, read).await.map_err(|_| anyhow!("homeview: timeout"))??;
     parse_homeview(&serde_json::from_slice(&bytes)?)
 }
 
@@ -487,7 +489,7 @@ pub async fn recently_played(session: &Session, limit: u32) -> anyhow::Result<Ve
         "/recently-played/v3/user/{user}/recently-played?format=json&offset=0&limit={limit}&filter=default,collection-new-episodes"
     );
     let read = session.spclient().request_as_json(&reqwest::Method::GET, &path, None, None);
-    match tokio::time::timeout(TIMEOUT, read).await.map_err(|_| anyhow!("recently-played: таймаут"))? {
+    match tokio::time::timeout(TIMEOUT, read).await.map_err(|_| anyhow!("recently-played: timeout"))? {
         Ok(bytes) => Ok(parse_recently_played(&serde_json::from_slice(&bytes)?)),
         // librespot_core не в зависимостях sf-services: вид ошибки — по имени
         Err(error) if format!("{:?}", error.kind) == "NotFound" => Ok(Vec::new()),
@@ -545,14 +547,14 @@ mod tests {
             { "uri": "spotify:section:empty", "data": { "title": { "transformedLabel": "Пусто" } }, "sectionItems": { "items": [] } }
         ] } } } } });
         let sections = parse_home(&body).unwrap();
-        assert_eq!(sections.len(), 1, "пустые разделы пропускаются");
+        assert_eq!(sections.len(), 1, "empty sections are skipped");
         let s = &sections[0];
         assert_eq!((s.uri.as_str(), s.title.as_str()), ("spotify:section:st", "Рекомендуемые станции"));
-        assert_eq!(s.cards.len(), 2, "неизвестные сущности пропускаются");
+        assert_eq!(s.cards.len(), 2, "unknown entities are skipped");
         let radio = &s.cards[0];
         assert_eq!((radio.kind(), radio.id()), ("playlist", "37i9dQZF1E4x"));
         assert_eq!(radio.subtitle, "With Noisia & more");
-        assert_eq!(radio.cover, "https://mid", "ближе к 300 px");
+        assert_eq!(radio.cover, "https://mid", "closest to 300 px");
         assert!(radio.made_for);
         assert_eq!((radio.owner.as_str(), radio.owner_id.as_str(), radio.format.as_str()), ("Spotify", "spotify", "inspiredby-mix"));
         assert_eq!((s.cards[1].kind(), s.cards[1].title.as_str(), s.cards[1].cover.as_str()), ("artist", "IMANU", "https://face"));

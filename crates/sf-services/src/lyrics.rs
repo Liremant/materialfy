@@ -158,11 +158,11 @@ impl LyricsService {
             match result {
                 Ok(result) => {
                     let status = LyricsStatus::of(&result);
-                    tracing::info!("текст {track_id}: {} {}", if result.source.is_empty() { "—" } else { &result.source }, result.kind);
+                    tracing::info!("lyrics {track_id}: {} {}", if result.source.is_empty() { "—" } else { &result.source }, result.kind);
                     me.set(track_id, status, (status == LyricsStatus::Ok).then_some(result));
                 }
                 Err(e) => {
-                    tracing::warn!("текст не загрузился: {e}");
+                    tracing::warn!("lyrics failed to load: {e}");
                     me.set(track_id, LyricsStatus::Error, None);
                 }
             }
@@ -199,7 +199,7 @@ fn spotify_lrc(player: PlayerHandle, uri: String) -> ExtraLrc {
             match tokio::time::timeout(SPOTIFY_TIMEOUT, player.lyrics_json(&uri)).await {
                 Ok(Ok(json)) => Ok(json.as_ref().and_then(mf_lyrics::lrc_from_spotify)),
                 Ok(Err(e)) => Err(e),
-                Err(_) => Err("Spotify не ответил".to_owned()),
+                Err(_) => Err("Spotify didn’t respond".to_owned()),
             }
         }
         .boxed()

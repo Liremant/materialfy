@@ -24,10 +24,15 @@ pub mod qobject {
         #[qobject]
         #[qproperty(QString, state, READ, NOTIFY = state_changed)]
         #[qproperty(QString, error_text, cxx_name = "errorText", READ, NOTIFY = error_changed)]
+        /// стабильный код errorText для подсказок (текст переведён): "" | "free" | "cancelled" | "portBusy" |
+        /// "noResponse" | "accountMismatch" | "otherAccount" | "audioKey"
+        #[qproperty(QString, error_code, cxx_name = "errorCode", READ, NOTIFY = error_changed)]
         #[qproperty(QString, auth_url, cxx_name = "authUrl", READ, NOTIFY = auth_url_changed)]
         #[qproperty(i32, auth_port, cxx_name = "authPort", READ, NOTIFY = auth_url_changed)]
         #[qproperty(QString, playback_state, cxx_name = "playbackState", READ, NOTIFY = playback_changed)]
         #[qproperty(QString, playback_error, cxx_name = "playbackError", READ, NOTIFY = playback_changed)]
+        /// код playbackError, значения как у errorCode
+        #[qproperty(QString, playback_error_code, cxx_name = "playbackErrorCode", READ, NOTIFY = playback_changed)]
         #[qproperty(QString, token_storage, cxx_name = "tokenStorage", READ, NOTIFY = storage_changed)]
         #[qproperty(QMap_QString_QVariant, account, READ, NOTIFY = account_changed)]
         #[qproperty(bool, premium, READ, NOTIFY = account_changed)]
@@ -129,10 +134,12 @@ pub struct AuthRust {
     snapshot: AuthSnapshot,
     state: QString,
     error_text: QString,
+    error_code: QString,
     auth_url: QString,
     auth_port: i32,
     playback_state: QString,
     playback_error: QString,
+    playback_error_code: QString,
     token_storage: QString,
     account: QVariantMap,
     premium: bool,
@@ -147,10 +154,12 @@ impl Default for AuthRust {
         Self {
             state: QString::from(snapshot.state.as_str()),
             error_text: QString::default(),
+            error_code: QString::default(),
             auth_url: QString::default(),
             auth_port: 0,
             playback_state: QString::from(snapshot.playback.as_str()),
             playback_error: QString::default(),
+            playback_error_code: QString::default(),
             token_storage: QString::default(),
             account: QVariantMap::default(),
             premium: false,
@@ -222,8 +231,10 @@ impl qobject::Auth {
             self.as_mut().rust_mut().state = QString::from(next.state.as_str());
             self.as_mut().state_changed();
         }
-        if prev.error_text != next.error_text {
-            self.as_mut().rust_mut().error_text = QString::from(next.error_text.as_str());
+        if prev.error_text != next.error_text || prev.error_code != next.error_code {
+            let mut this = self.as_mut().rust_mut();
+            this.error_text = QString::from(next.error_text.as_str());
+            this.error_code = QString::from(next.error_code.as_str());
             self.as_mut().error_changed();
         }
         if prev.auth_url != next.auth_url || prev.auth_port != next.auth_port {
@@ -232,10 +243,14 @@ impl qobject::Auth {
             this.auth_port = i32::from(next.auth_port);
             self.as_mut().auth_url_changed();
         }
-        if prev.playback != next.playback || prev.playback_error != next.playback_error {
+        if prev.playback != next.playback
+            || prev.playback_error != next.playback_error
+            || prev.playback_error_code != next.playback_error_code
+        {
             let mut this = self.as_mut().rust_mut();
             this.playback_state = QString::from(next.playback.as_str());
             this.playback_error = QString::from(next.playback_error.as_str());
+            this.playback_error_code = QString::from(next.playback_error_code.as_str());
             self.as_mut().playback_changed();
         }
         if prev.token_storage != next.token_storage {

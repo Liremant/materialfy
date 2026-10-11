@@ -159,16 +159,16 @@ page_data!(qobject::EpisodeData, EpisodePage);
 /// Текст ошибки загрузки страницы — по-русски.
 pub(crate) fn error_text(error: &ServiceError) -> String {
     match error {
-        ServiceError::NotSignedIn | ServiceError::Api(ApiError::NotSignedIn) => "Войдите в аккаунт".into(),
-        ServiceError::Api(ApiError::SignInExpired { .. }) => "Вход истёк — войдите снова".into(),
-        ServiceError::Api(ApiError::Status { status: 404, .. }) => "Не найдено в Spotify".into(),
+        ServiceError::NotSignedIn | ServiceError::Api(ApiError::NotSignedIn) => mf_i18n::t("Sign in to your account"),
+        ServiceError::Api(ApiError::SignInExpired { .. }) => mf_i18n::t("Sign-in expired — sign in again"),
+        ServiceError::Api(ApiError::Status { status: 404, .. }) => mf_i18n::t("Not found on Spotify"),
         ServiceError::Api(ApiError::RateLimited | ApiError::QuotaExhausted) => {
-            "Spotify ограничил запросы — попробуйте позже".into()
+            mf_i18n::t("Spotify is limiting requests — try again later")
         }
-        ServiceError::Api(ApiError::Network(_)) => "Нет соединения со Spotify".into(),
-        ServiceError::Api(_) => "Не удалось загрузить".into(),
+        ServiceError::Api(ApiError::Network(_)) => mf_i18n::t("No connection to Spotify"),
+        ServiceError::Api(_) => mf_i18n::t("Couldn't load"),
         ServiceError::Other(text) if !text.is_empty() => text.clone(),
-        ServiceError::Other(_) => "Не удалось загрузить".into(),
+        ServiceError::Other(_) => mf_i18n::t("Couldn't load"),
     }
 }
 
@@ -439,7 +439,7 @@ impl qobject::ShowData {
                     with_model(&mut this.episodes, |m| m.append_rows(to_rows(&fresh)));
                 }
             }
-            Err(error) => tracing::warn!("выпуски шоу: {error}"),
+            Err(error) => tracing::warn!("show episodes: {error}"),
         }
         self.changed();
     }

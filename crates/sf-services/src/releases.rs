@@ -264,7 +264,7 @@ impl ReleasesService {
                 None
             }
             Err(error) => {
-                tracing::debug!("новинки: {error}");
+                tracing::debug!("new releases: {error}");
                 // неудача не ждёт 6 часов: следующее открытие страницы спросит снова
                 lock(&self.state).loaded_at = None;
                 Some(error)
@@ -338,21 +338,21 @@ impl ReleasesService {
             match tokio::time::timeout(RADAR_TIMEOUT, new_releases::release_radar(&session)).await {
                 Ok(Ok(Some(radar))) => return (Some(map(&radar)), true),
                 Ok(Ok(None)) => session_answered = true,
-                Ok(Err(error)) => tracing::debug!("«Радар новинок» на главной Spotify: {error:#}"),
-                Err(_) => tracing::debug!("«Радар новинок» на главной Spotify: не успела"),
+                Ok(Err(error)) => tracing::debug!("Release Radar on the Spotify home: {error:#}"),
+                Err(_) => tracing::debug!("Release Radar on the Spotify home: timed out"),
             }
             match tokio::time::timeout(RADAR_TIMEOUT, browse_radar(&self.http, &session)).await {
                 Ok(Ok(Some(radar))) => return (Some(map(&radar)), true),
                 Ok(Ok(None)) => session_answered = true,
-                Ok(Err(error)) => tracing::debug!("«Радар новинок» на странице «Для тебя»: {error:#}"),
-                Err(_) => tracing::debug!("«Радар новинок» на странице «Для тебя»: не успела"),
+                Ok(Err(error)) => tracing::debug!("Release Radar on the “Made for you” page: {error:#}"),
+                Err(_) => tracing::debug!("Release Radar on the “Made for you” page: timed out"),
             }
         }
         if !session_answered {
             match sf_api::limits::background(within(WEB_TIMEOUT, shared_radar(&api))).await {
                 Ok(Some(radar)) => return (Some(map(&radar)), false),
                 Ok(None) => {}
-                Err(error) => tracing::debug!("«Радар новинок» общим ключом: {error}"),
+                Err(error) => tracing::debug!("Release Radar with the shared key: {error}"),
             }
         }
         (radar_in_library(&self.library.playlists()), session_answered)
@@ -399,8 +399,8 @@ impl ReleasesService {
                     answered = true;
                     followed = ids;
                 }
-                Ok(Err(error)) => tracing::debug!("новинки: подписки через сессию: {error:#}"),
-                Err(_) => tracing::debug!("новинки: подписки через сессию не успели"),
+                Ok(Err(error)) => tracing::debug!("new releases: follows via session: {error:#}"),
+                Err(_) => tracing::debug!("new releases: follows via session timed out"),
             }
         }
         if followed.is_empty() {
@@ -412,7 +412,7 @@ impl ReleasesService {
                     answered = true;
                     followed = ids;
                 }
-                Err(error) => tracing::debug!("новинки: подписки через Web API: {error}"),
+                Err(error) => tracing::debug!("new releases: follows via Web API: {error}"),
             }
         }
         let plays: Vec<Vec<String>> = self
@@ -423,7 +423,7 @@ impl ReleasesService {
             .collect();
         let pool = artist_pool(&followed, &frequent_artists(&plays, FREQUENT_ARTISTS), MAX_ARTISTS);
         if pool.is_empty() && !answered {
-            return Err("Spotify не отдал ваши подписки — новинки обновятся позже".to_owned());
+            return Err(mf_i18n::t("Spotify didn’t return the artists you follow — new releases will update later"));
         }
         Ok(pool)
     }
@@ -457,7 +457,7 @@ impl ReleasesService {
                             via_session: false,
                         })
                         .map_err(|error| ServiceError::from(error).to_string()),
-                    Err(_) => Err("Spotify долго не отвечает — новинки обновятся позже".to_owned()),
+                    Err(_) => Err(mf_i18n::t("Spotify is taking too long to respond — new releases will update later")),
                 }
             }
         }
@@ -494,10 +494,10 @@ impl ReleasesService {
         tokio::task::spawn_blocking(move || match serde_json::to_vec(&cache) {
             Ok(bytes) => {
                 if let Err(error) = fsio::write_atomic(&path, &bytes) {
-                    tracing::debug!("кэш новинок не записан: {error:#}");
+                    tracing::debug!("new releases cache not written: {error:#}");
                 }
             }
-            Err(error) => tracing::debug!("кэш новинок не записан: {error:#}"),
+            Err(error) => tracing::debug!("new releases cache not written: {error:#}"),
         });
     }
 
@@ -606,7 +606,7 @@ async fn session_crawl(
                 match tokio::time::timeout(READ_TIMEOUT, new_releases::artist_releases(&session, &artist_id)).await {
                     Ok(Ok(refs)) => (rank, Some(refs)),
                     Ok(Err(error)) => {
-                        tracing::debug!("новинки: исполнитель {artist_id}: {error:#}");
+                        tracing::debug!("new releases: artist {artist_id}: {error:#}");
                         (rank, None)
                     }
                     Err(_) => (rank, None),
@@ -617,7 +617,7 @@ async fn session_crawl(
         .collect()
         .await;
     if answers.iter().all(|(_, refs)| refs.is_none()) {
-        return Err("Spotify не ответил — новинки обновятся позже".to_owned());
+        return Err(mf_i18n::t("Spotify didn’t respond — new releases will update later"));
     }
     let refs = best_refs(answers.into_iter().filter_map(|(rank, refs)| Some((rank, refs?))));
 
@@ -632,7 +632,7 @@ async fn session_crawl(
                 match tokio::time::timeout(READ_TIMEOUT, new_releases::release_details(&session, &batch)).await {
                     Ok(Ok(albums)) => albums,
                     Ok(Err(error)) => {
-                        tracing::debug!("новинки: подробности релизов: {error:#}");
+                        tracing::debug!("new releases: release details: {error:#}");
                         Vec::new()
                     }
                     Err(_) => Vec::new(),
@@ -711,7 +711,7 @@ fn needs_details(
 async fn within<T>(limit: Duration, request: impl Future<Output = Result<T, ApiError>>) -> Result<T, ApiError> {
     tokio::time::timeout(limit, request)
         .await
-        .unwrap_or_else(|_| Err(ApiError::Network("Spotify не ответил вовремя".into())))
+        .unwrap_or_else(|_| Err(ApiError::Network("Spotify didn’t respond in time".into())))
 }
 
 /// Личные плейлисты Spotify («Радар», Discover Weekly) — у них подпись дочитывается, если её нет.
@@ -817,7 +817,7 @@ async fn web_crawl(api: &ApiGateway, pool: &[String], today: Date) -> Result<Vec
                 candidates.extend(found);
             }
             Err(error) => {
-                tracing::debug!("новинки: релизы исполнителя через Web API: {error}");
+                tracing::debug!("new releases: artist releases via Web API: {error}");
                 first_error.get_or_insert(error);
             }
         }
@@ -841,7 +841,7 @@ async fn web_artist_releases(client: &ApiClient, artist_id: &str) -> Result<Vec<
     if more_singles {
         match client.artist_albums(artist_id, "single", 0, SINGLES_PER_ARTIST).await {
             Ok(singles) => albums.extend(singles.items),
-            Err(error) => tracing::debug!("новинки: синглы {artist_id}: {error}"),
+            Err(error) => tracing::debug!("new releases: singles {artist_id}: {error}"),
         }
     }
     Ok(albums)
@@ -935,34 +935,51 @@ pub fn is_fresh(day: Date, today: Date, window_days: i64) -> bool {
     since <= day && day <= today
 }
 
-const MONTHS: [&str; 12] = [
-    "января",
-    "февраля",
-    "марта",
-    "апреля",
-    "мая",
-    "июня",
-    "июля",
-    "августа",
-    "сентября",
-    "октября",
-    "ноября",
-    "декабря",
+/// «{0}» — число месяца (ключи словаря: по-русски «{0} января»).
+const MONTH_DAY: [&str; 12] = [
+    "January {0}",
+    "February {0}",
+    "March {0}",
+    "April {0}",
+    "May {0}",
+    "June {0}",
+    "July {0}",
+    "August {0}",
+    "September {0}",
+    "October {0}",
+    "November {0}",
+    "December {0}",
 ];
 
-/// «Сегодня», «Вчера», «3 октября», в другом году — «28 декабря 2025».
+/// То же с годом: «{0}» — число, «{1}» — год.
+const MONTH_DAY_YEAR: [&str; 12] = [
+    "January {0}, {1}",
+    "February {0}, {1}",
+    "March {0}, {1}",
+    "April {0}, {1}",
+    "May {0}, {1}",
+    "June {0}, {1}",
+    "July {0}, {1}",
+    "August {0}, {1}",
+    "September {0}, {1}",
+    "October {0}, {1}",
+    "November {0}, {1}",
+    "December {0}, {1}",
+];
+
+/// «Today», «Yesterday», «October 3», в другом году — «December 28, 2025» (по-русски «3 октября», «28 декабря 2025»).
 pub fn date_label(day: Date, today: Date) -> String {
     if day == today {
-        return "Сегодня".into();
+        return mf_i18n::t("Today");
     }
     if today.yesterday().ok() == Some(day) {
-        return "Вчера".into();
+        return mf_i18n::t("Yesterday");
     }
-    let month = MONTHS[(day.month() - 1).clamp(0, 11) as usize];
+    let month = (day.month() - 1).clamp(0, 11) as usize;
     if day.year() == today.year() {
-        format!("{} {month}", day.day())
+        mf_i18n::tf(MONTH_DAY[month], &[&day.day()])
     } else {
-        format!("{} {month} {}", day.day(), day.year())
+        mf_i18n::tf(MONTH_DAY_YEAR[month], &[&day.day(), &day.year()])
     }
 }
 
@@ -1059,13 +1076,13 @@ mod tests {
     }
 
     #[test]
-    fn dates_are_labelled_in_russian() {
+    fn dates_are_labelled() {
         let today = date("2026-10-11");
-        assert_eq!(date_label(today, today), "Сегодня");
-        assert_eq!(date_label(date("2026-10-10"), today), "Вчера");
-        assert_eq!(date_label(date("2026-10-03"), today), "3 октября");
-        assert_eq!(date_label(date("2026-05-01"), today), "1 мая");
-        assert_eq!(date_label(date("2025-12-28"), date("2026-01-05")), "28 декабря 2025");
+        assert_eq!(date_label(today, today), "Today");
+        assert_eq!(date_label(date("2026-10-10"), today), "Yesterday");
+        assert_eq!(date_label(date("2026-10-03"), today), "October 3");
+        assert_eq!(date_label(date("2026-05-01"), today), "May 1");
+        assert_eq!(date_label(date("2025-12-28"), date("2026-01-05")), "December 28, 2025");
     }
 
     #[test]
@@ -1088,7 +1105,7 @@ mod tests {
             "same day: the higher-ranked artist first"
         );
         assert_eq!(picked[0].group, "single");
-        assert_eq!(picked[0].date_label, "9 октября");
+        assert_eq!(picked[0].date_label, "October 9");
         assert_eq!(picked[2].release_date, "2026-10-02");
         assert_eq!(picked[2].album.uri, "spotify:album:lp");
         assert!(select(vec![found(0, "a", "single", "2026-10-01")], today, 42, 0).is_empty());
@@ -1218,7 +1235,7 @@ mod tests {
         let json = serde_json::to_value(&release).unwrap();
         assert_eq!(json["albumId"], "lp");
         assert_eq!(json["releaseDate"], "2026-10-02");
-        assert_eq!(json["dateLabel"], "2 октября");
+        assert_eq!(json["dateLabel"], "October 2");
         assert_eq!(json["group"], "album");
         assert!(json["kind"].is_string());
         let back: NewRelease = serde_json::from_value(json).unwrap();

@@ -348,7 +348,7 @@ pub async fn collection_contains(
         let flags = parse_contains(&post(session, "/collection/v2/contains", &body).await?);
         anyhow::ensure!(
             flags.len() == chunk.len(),
-            "коллекция ответила на {} URI из {}",
+            "the collection answered for {} URIs out of {}",
             flags.len(),
             chunk.len()
         );
@@ -377,7 +377,7 @@ fn by_set(uris: &[String]) -> (Vec<(&'static str, Vec<usize>)>, Vec<usize>) {
 pub async fn write(session: &Session, uris: &[String], add: bool) -> anyhow::Result<()> {
     let (groups, unknown) = by_set(uris);
     if let Some(&index) = unknown.first() {
-        anyhow::bail!("{} не хранится в коллекции", uris[index]);
+        anyhow::bail!("{} isn't stored in the collection", uris[index]);
     }
     for (set, places) in groups {
         let chunk: Vec<String> = places.iter().map(|&index| uris[index].clone()).collect();
@@ -391,7 +391,7 @@ pub async fn write(session: &Session, uris: &[String], add: bool) -> anyhow::Res
 pub async fn contains(session: &Session, uris: &[String]) -> anyhow::Result<Vec<bool>> {
     let (groups, unknown) = by_set(uris);
     if let Some(&index) = unknown.first() {
-        anyhow::bail!("{} не хранится в коллекции", uris[index]);
+        anyhow::bail!("{} isn't stored in the collection", uris[index]);
     }
     let mut found = vec![false; uris.len()];
     for (set, places) in groups {

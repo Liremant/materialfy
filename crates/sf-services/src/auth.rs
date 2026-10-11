@@ -90,6 +90,11 @@ pub struct AuthSnapshot {
     pub auth_port: u16,
     pub playback: PlaybackAuthState,
     pub playback_error: String,
+    /// стабильный код error_text для подсказок в QML (текст переведён): "" | "free" | "cancelled" | "portBusy" |
+    /// "noResponse" | "accountMismatch" | "otherAccount" | "audioKey"
+    pub error_code: String,
+    /// то же для playback_error
+    pub playback_error_code: String,
     pub account: Option<Account>,
     /// "keyring" | ""
     pub token_storage: String,
@@ -126,11 +131,16 @@ pub struct ProxyInput {
     pub password: String,
 }
 
-const PREMIUM_NEEDED: &str = "Для воспроизведения на этом ПК нужен Spotify Premium";
-const OTHER_ACCOUNT: &str = "В браузере выбран другой аккаунт Spotify — разрешите воспроизведение тем же аккаунтом";
-const EXPIRED: &str = "Вход в Spotify истёк — войдите снова";
+const PREMIUM_NEEDED: &str = "Playing on this computer requires Spotify Premium";
+const OTHER_ACCOUNT: &str = "A different Spotify account was chosen in the browser — allow playback with the same account";
+const EXPIRED: &str = "Your Spotify sign-in has expired — sign in again";
 /// Вход через сессию librespot на Free: librespot такой аккаунт не обслуживает.
-const FREE_ACCOUNT: &str = "Это аккаунт Spotify Free — слушать в Materialfy можно только с Premium";
+const FREE_ACCOUNT: &str = "This is a Spotify Free account — Materialfy can only play music with Premium";
+const PORT_BUSY: &str = "Port {0} is in use by another program";
+const SIGN_IN_REFUSED: &str = "Sign-in was cancelled in the browser";
+const NO_RESPONSE: &str = "Spotify isn't responding — check your proxy";
+const ACCOUNT_MISMATCH: &str = "Permissions were granted to different Spotify accounts";
+const NETWORK_MISCONFIGURED: &str = "Network settings are invalid: {0}";
 /// librespot может зависнуть на рукопожатии; у движка свой срок (75 с) с понятным текстом — этот страхующий
 const CONNECT_DEADLINE: Duration = Duration::from_secs(90);
 /// Чей токен воспроизведения: публичный профиль отдаётся и со scope streaming.
@@ -252,36 +262,63 @@ fn web_slot(source: ApiSource) -> Slot {
 fn oauth_error_text(error: &anyhow::Error, port: u16) -> Option<String> {
     let text = format!("{error:#}");
     let lower = text.to_lowercase();
+    // oauth::CANCELLED и прочие ошибки sf-auth — непереведённый английский
     Some(if lower.contains("cancelled") {
         return None;
     } else if lower.contains("unable to listen") {
-        format!("Порт {port} занят другой программой")
+        mf_i18n::tf(PORT_BUSY, &[&port])
     } else if lower.contains("timed out") {
-        "Браузер не ответил за 10 минут — попробуйте снова".to_owned()
+        mf_i18n::t("The browser didn't respond within 10 minutes — try again")
     } else if lower.contains("refused") || lower.contains("declined") {
-        "Вход отменён в браузере".to_owned()
+        mf_i18n::t(SIGN_IN_REFUSED)
     } else if lower.contains("state mismatch") {
-        "Ответ браузера не совпал с запросом — попробуйте снова".to_owned()
+        mf_i18n::t("The browser's response didn't match the request — try again")
     } else if lower.contains("client id") || lower.contains("application settings") {
-        "Spotify не принял Client ID приложения".to_owned()
+        mf_i18n::t("Spotify didn't accept the app's Client ID")
     } else if lower.contains("token request failed") || lower.contains("answered") || lower.contains("unreadable") {
-        "Spotify не отвечает — проверьте прокси".to_owned()
+        mf_i18n::t(NO_RESPONSE)
     } else {
-        format!("Не удалось войти: {text}")
+        mf_i18n::tf("Couldn't sign in: {0}", &[&text])
     })
+}
+
+/// Стабильный код ошибки для QML: тексты уже переведены, сравнивать их там нельзя.
+/// Сравнение — с переводом на текущем языке (текст переведён тем же языком при записи в снимок).
+fn error_code(text: &str) -> &'static str {
+    if text.is_empty() {
+        return "";
+    }
+    let is = |key: &str| text == mf_i18n::t(key);
+    if is(FREE_ACCOUNT) {
+        "free"
+    } else if is(SIGN_IN_REFUSED) {
+        "cancelled"
+    } else if is(NO_RESPONSE) {
+        "noResponse"
+    } else if is(ACCOUNT_MISMATCH) || is(sf_api::gateway::ACCOUNT_MISMATCH) {
+        "accountMismatch"
+    } else if is(OTHER_ACCOUNT) {
+        "otherAccount"
+    } else if [oauth::WEB_REDIRECT_PORT, oauth::PLAYBACK_REDIRECT_PORT].iter().any(|port| text == mf_i18n::tf(PORT_BUSY, &[port])) {
+        "portBusy"
+    } else if text.starts_with(&mf_i18n::t(sf_player::engine::player::AUDIO_KEY_REFUSED)) {
+        "audioKey"
+    } else {
+        ""
+    }
 }
 
 /// Ошибка подключения librespot по-русски.
 fn connect_error_text(text: &str) -> String {
     let lower = text.to_lowercase();
     if lower.contains("badcredentials") || lower.contains("bad credentials") {
-        "Spotify отклонил разрешение воспроизведения — разрешите его снова".to_owned()
+        mf_i18n::t("Spotify rejected the playback permission — allow it again")
     } else if lower.contains("premium") {
-        PREMIUM_NEEDED.to_owned()
+        mf_i18n::t(PREMIUM_NEEDED)
     } else if lower.contains("dns") || lower.contains("connect") || lower.contains("resolve") {
-        "Нет связи со Spotify — проверьте сеть и прокси".to_owned()
+        mf_i18n::t("Can't reach Spotify — check your network and proxy")
     } else if text.is_empty() {
-        "Воспроизведение на этом ПК недоступно".to_owned()
+        mf_i18n::t("Playback on this computer is unavailable")
     } else {
         text.to_owned()
     }
@@ -402,6 +439,12 @@ impl AuthService {
         self.snapshot.send_if_modified(|snapshot| {
             let before = snapshot.clone();
             change(snapshot);
+            if snapshot.error_text != before.error_text {
+                snapshot.error_code = error_code(&snapshot.error_text).to_owned();
+            }
+            if snapshot.playback_error != before.playback_error {
+                snapshot.playback_error_code = error_code(&snapshot.playback_error).to_owned();
+            }
             *snapshot != before
         });
     }
@@ -433,7 +476,7 @@ impl AuthService {
     fn open_browser(&self, url: String) {
         self.rt.spawn_blocking(move || {
             if let Err(error) = sf_auth::open_browser(&url) {
-                tracing::warn!("не удалось открыть браузер: {error:#}");
+                tracing::warn!("could not open the browser: {error:#}");
             }
         });
     }
@@ -445,7 +488,7 @@ impl AuthService {
             if error == StoreError::Stale {
                 return;
             }
-            tracing::warn!("хранилище учётных данных: {error:#}");
+            tracing::warn!("credential store: {error:#}");
             if let Some(service) = me.upgrade()
                 && matches!(error, StoreError::Unavailable | StoreError::Locked | StoreError::Verification)
             {
@@ -500,7 +543,7 @@ impl AuthService {
         let password = match self.store.lease(Slot::Proxy).load().await {
             Ok(loaded) => {
                 if let Some(warning) = loaded.warning {
-                    tracing::warn!("пароль прокси: {warning}");
+                    tracing::warn!("proxy password: {warning}");
                 }
                 match loaded.grant {
                     Some(StoredGrant::Proxy(password)) => Some(password),
@@ -508,7 +551,7 @@ impl AuthService {
                 }
             }
             Err(error) => {
-                tracing::warn!("пароль прокси не прочитан: {error:#}");
+                tracing::warn!("proxy password not read: {error:#}");
                 None
             }
         };
@@ -531,13 +574,13 @@ impl AuthService {
             let grant = match loaded {
                 Ok(loaded) => {
                     if let Some(warning) = loaded.warning {
-                        tracing::warn!("сохранённый вход: {warning}");
+                        tracing::warn!("saved sign-in: {warning}");
                         self.update(|s| s.error_text = warning.to_string());
                     }
                     loaded.grant
                 }
                 Err(error) => {
-                    tracing::warn!("сохранённый вход не прочитан: {error:#}");
+                    tracing::warn!("saved sign-in not read: {error:#}");
                     self.update(|s| s.error_text = error.to_string());
                     None
                 }
@@ -576,7 +619,7 @@ impl AuthService {
                 (Slot::Shared, Some(StoredGrant::Web(_))) => {
                     self.api.clear(ApiSource::Shared);
                     self.update(|s| {
-                        s.error_text = "Разрешения Spotify изменились — войдите снова".to_owned();
+                        s.error_text = mf_i18n::t("Spotify permissions changed — sign in again");
                         s.web_state = "error".to_owned();
                     });
                 }
@@ -643,14 +686,14 @@ impl AuthService {
                 }
                 Err(error @ ApiError::SignInExpired { .. }) => break Err(error),
                 Err(ApiError::RateLimited) if installed => {
-                    tracing::info!("проверка входа: Spotify ограничил частоту, профиль — из прошлой проверки");
+                    tracing::info!("sign-in check: Spotify rate-limited, using the profile from the previous check");
                     return;
                 }
                 Err(error) if error.status().is_some_and(|status| status < 500) => break Err(error),
                 Err(error) => {
-                    tracing::warn!("проверка входа повторится: {error:#}");
+                    tracing::warn!("sign-in check will be retried: {error:#}");
                     if source == ApiSource::Shared && !installed {
-                        self.update(|s| s.error_text = "Spotify не отвечает — проверьте прокси".to_owned());
+                        self.update(|s| s.error_text = mf_i18n::t(NO_RESPONSE));
                     }
                     tokio::time::sleep(wait).await;
                     wait = (wait * 2).min(Duration::from_secs(60));
@@ -721,7 +764,7 @@ impl AuthService {
             lock(&self.inner).web_tokens[source_index(source)] = None;
         }
         let text = match &error {
-            ApiError::SignInExpired { .. } => EXPIRED.to_owned(),
+            ApiError::SignInExpired { .. } => mf_i18n::t(EXPIRED),
             other => crate::data::route::api_error_text(other),
         };
         let expired = matches!(error, ApiError::SignInExpired { .. });
@@ -756,7 +799,7 @@ impl AuthService {
     fn forget_web_grant(&self, source: ApiSource) {
         let slot = web_slot(source);
         if let Err(error) = self.store.revoke(slot) {
-            tracing::warn!("отзыв гранта: {error:#}");
+            tracing::warn!("grant revocation: {error:#}");
         }
         self.delete_slot(slot);
         let _ = std::fs::remove_file(profile_file(source));
@@ -782,7 +825,7 @@ impl AuthService {
                 let was_signed_in = self.snapshot.borrow().state == AuthState::SignedIn;
                 self.update(|s| {
                     s.state = AuthState::SignedOut;
-                    s.error_text = EXPIRED.to_owned();
+                    s.error_text = mf_i18n::t(EXPIRED);
                     s.account = None;
                 });
                 if was_signed_in {
@@ -803,7 +846,7 @@ impl AuthService {
                             s.state = AuthState::Error;
                         }
                         s.web_state = "error".to_owned();
-                        s.error_text = format!("Сеть настроена с ошибкой: {error}");
+                        s.error_text = mf_i18n::tf(NETWORK_MISCONFIGURED, &[&error]);
                     }),
                     ApiSource::Personal => self.update(|s| s.personal_state = "error".to_owned()),
                 }
@@ -998,7 +1041,7 @@ impl AuthService {
             inner.started = true;
         }
         if let Err(error) = self.store.revoke_spotify() {
-            tracing::warn!("отзыв входа: {error:#}");
+            tracing::warn!("sign-in revocation: {error:#}");
         }
         self.api.clear_all();
         sf_player::engine::player::note_account_product(None);
@@ -1071,7 +1114,7 @@ impl AuthService {
             match result {
                 Ok(user) => service.on_confirmed(ApiSource::Shared, user),
                 Err(error) => {
-                    tracing::warn!("профиль не обновился: {error:#}");
+                    tracing::warn!("profile not refreshed: {error:#}");
                     service.note_api_error(&error);
                 }
             }
@@ -1096,7 +1139,7 @@ impl AuthService {
             self.player.expect_local(false);
             self.update(|s| {
                 s.playback = PlaybackAuthState::PremiumRequired;
-                s.playback_error = PREMIUM_NEEDED.to_owned();
+                s.playback_error = mf_i18n::t(PREMIUM_NEEDED);
                 s.engine_restart_pending = false;
             });
             self.emit(AuthEvent::PremiumRequired);
@@ -1146,7 +1189,7 @@ impl AuthService {
             lock(&self.inner).playback_grant = None;
             self.update(|s| {
                 s.playback = PlaybackAuthState::None;
-                s.playback_error = OTHER_ACCOUNT.to_owned();
+                s.playback_error = mf_i18n::t(OTHER_ACCOUNT);
             });
             return;
         }
@@ -1158,7 +1201,7 @@ impl AuthService {
             self.player.expect_local(false);
             self.update(|s| {
                 s.playback = PlaybackAuthState::Error;
-                s.playback_error = format!("Сеть настроена с ошибкой: {error}");
+                s.playback_error = mf_i18n::tf(NETWORK_MISCONFIGURED, &[&error]);
             });
             return;
         }
@@ -1210,9 +1253,9 @@ impl AuthService {
                             service.player.disconnect_local();
                             service.update(|s| {
                                 s.playback = PlaybackAuthState::Error;
-                                s.playback_error = OTHER_ACCOUNT.to_owned();
+                                s.playback_error = mf_i18n::t(OTHER_ACCOUNT);
                             });
-                            service.session_login_failed(OTHER_ACCOUNT);
+                            service.session_login_failed(&mf_i18n::t(OTHER_ACCOUNT));
                             return;
                         }
                         lock(&service.inner).playback_grant = Some(reusable.clone());
@@ -1235,7 +1278,7 @@ impl AuthService {
                     service.emit(AuthEvent::PlaybackReady(started.device_id));
                 }
                 Ok(Err(error)) => {
-                    tracing::warn!("движок не подключился: {error:#}");
+                    tracing::warn!("engine failed to connect: {error:#}");
                     // прежний движок (если был) host.connect уже остановил
                     lock(&service.inner).engine_running = None;
                     let lower = error.to_lowercase();
@@ -1252,7 +1295,7 @@ impl AuthService {
                             if premium { PlaybackAuthState::PremiumRequired } else { PlaybackAuthState::Error };
                         s.playback_error = connect_error_text(&error);
                     });
-                    service.session_login_failed(&if premium { FREE_ACCOUNT.to_owned() } else { connect_error_text(&error) });
+                    service.session_login_failed(&if premium { mf_i18n::t(FREE_ACCOUNT) } else { connect_error_text(&error) });
                     if !rejected && !premium {
                         service.continue_engine_retries();
                     }
@@ -1260,7 +1303,7 @@ impl AuthService {
                 Err(_) => {
                     lock(&service.inner).engine_running = None;
                     service.player.expect_local(false);
-                    let text = "Spotify не ответил вовремя — попробуйте снова";
+                    let text = &mf_i18n::t("Spotify didn't respond in time — try again");
                     service.update(|s| {
                         s.playback = PlaybackAuthState::Error;
                         s.playback_error = text.to_owned();
@@ -1377,7 +1420,7 @@ impl AuthService {
         if premium == Some(false) {
             self.update(|s| {
                 s.playback = PlaybackAuthState::PremiumRequired;
-                s.playback_error = PREMIUM_NEEDED.to_owned();
+                s.playback_error = mf_i18n::t(PREMIUM_NEEDED);
             });
             self.emit(AuthEvent::PremiumRequired);
             return;
@@ -1392,7 +1435,7 @@ impl AuthService {
         let http = match self.http.client() {
             Ok(http) => http,
             Err(error) => {
-                let text = format!("Сеть настроена с ошибкой: {error}");
+                let text = mf_i18n::tf(NETWORK_MISCONFIGURED, &[&error]);
                 self.update(|s| {
                     s.playback = PlaybackAuthState::Error;
                     s.playback_error = text.clone();
@@ -1478,7 +1521,7 @@ impl AuthService {
                         service.player.expect_local(false);
                         service.update(|s| {
                             s.playback = PlaybackAuthState::Error;
-                            s.playback_error = OTHER_ACCOUNT.to_owned();
+                            s.playback_error = mf_i18n::t(OTHER_ACCOUNT);
                         });
                         return;
                     }
@@ -1518,9 +1561,9 @@ impl AuthService {
         self.player.expect_local(false);
         self.update(|s| {
             s.state = AuthState::Error;
-            s.error_text = FREE_ACCOUNT.to_owned();
+            s.error_text = mf_i18n::t(FREE_ACCOUNT);
             s.playback = PlaybackAuthState::PremiumRequired;
-            s.playback_error = PREMIUM_NEEDED.to_owned();
+            s.playback_error = mf_i18n::t(PREMIUM_NEEDED);
         });
     }
 
@@ -1564,7 +1607,7 @@ impl AuthService {
         self.player.expect_local(false);
         self.update(|s| {
             s.state = AuthState::SignedOut;
-            s.error_text = EXPIRED.to_owned();
+            s.error_text = mf_i18n::t(EXPIRED);
             s.account = None;
         });
         if was_signed_in {
@@ -1628,7 +1671,7 @@ impl AuthService {
 
     /// Web API вошёл в другой аккаунт, чем уже открытый (сессия или другое приложение).
     fn on_other_web_account(&self, source: ApiSource) {
-        let text = "Разрешения выданы разным аккаунтам Spotify".to_owned();
+        let text = mf_i18n::t(ACCOUNT_MISMATCH);
         match source {
             ApiSource::Shared => self.update(|s| {
                 if s.state != AuthState::SignedIn {
@@ -1645,7 +1688,7 @@ impl AuthService {
     fn on_confirmed(&self, source: ApiSource, user: sf_api::models::User) {
         let installed = self.api.state(source).account().cloned();
         if user.id.is_empty() || installed.as_ref().is_some_and(|account| account.as_str() != user.id) {
-            tracing::warn!("Web API ответил за другой аккаунт Spotify");
+            tracing::warn!("Web API answered for a different Spotify account");
             self.api.clear(source);
             lock(&self.inner).web_tokens[source_index(source)] = None;
             if self.api.account().is_none() {
@@ -1691,7 +1734,7 @@ impl AuthService {
         self.api.set_session_account(None);
         self.player.disconnect_local();
         if let Err(error) = self.store.revoke(Slot::Playback) {
-            tracing::warn!("отзыв разрешения воспроизведения: {error:#}");
+            tracing::warn!("playback permission revocation: {error:#}");
         }
         self.delete_slot(Slot::Playback);
         self.settings.set(SettingKey::PlaybackAuthorized, SettingValue::Bool(false));
@@ -1756,7 +1799,7 @@ impl AuthService {
             self.cancel_waiting();
         }
         if let Err(error) = self.store.revoke(Slot::Personal) {
-            tracing::warn!("отзыв личного приложения: {error:#}");
+            tracing::warn!("personal app revocation: {error:#}");
         }
         self.delete_slot(Slot::Personal);
         lock(&self.inner).web_tokens[1] = None;
@@ -1790,7 +1833,7 @@ impl AuthService {
                 self.publish_proxy(config);
             }
             Err(error) => {
-                tracing::warn!("настройки прокси неверны: {error:#}");
+                tracing::warn!("proxy settings are invalid: {error:#}");
                 self.http.block(error.clone());
                 lock(&self.inner).proxy = ProxyConfig::Invalid(error.clone());
                 self.publish_proxy(ProxyConfig::Invalid(error.clone()));
@@ -1819,7 +1862,7 @@ impl AuthService {
             };
             let mode_name = input.mode.trim().to_lowercase();
             if !ProxyMode::ALL.iter().any(|mode| mode.as_str() == mode_name) {
-                return fail("Неизвестный режим прокси".to_owned());
+                return fail(mf_i18n::t("Unknown proxy mode"));
             }
             let mode = ProxyMode::from_setting(&mode_name);
             let (host, port, username) =
@@ -1840,7 +1883,7 @@ impl AuthService {
             };
             let client = match sf_api::http::build_client(&config) {
                 Ok(client) => client,
-                Err(text) => return fail(format!("Прокси не принят: {text}")),
+                Err(text) => return fail(mf_i18n::tf("Proxy rejected: {0}", &[&text])),
             };
             let settings = &service.settings;
             settings.set(SettingKey::ProxyMode, SettingValue::Str(mode.as_str().to_owned()));
@@ -1854,7 +1897,7 @@ impl AuthService {
                 if let Some(record) = config.password_record() {
                     service.store.invalidate(Slot::Proxy);
                     if let Err(error) = service.store.lease(Slot::Proxy).save(StoredGrant::Proxy(record)).await {
-                        tracing::warn!("пароль прокси не сохранён: {error:#}");
+                        tracing::warn!("proxy password not saved: {error:#}");
                     }
                 } else {
                     let _ = service.store.revoke(Slot::Proxy);
@@ -1938,12 +1981,12 @@ async fn token_owner(http: &reqwest::Client, token: &str) -> Option<String> {
     let response = match http.get(ME_URL).bearer_auth(token).timeout(Duration::from_secs(15)).send().await {
         Ok(response) => response,
         Err(error) => {
-            tracing::warn!("владелец токена воспроизведения не проверен: {}", error.without_url());
+            tracing::warn!("playback token owner not verified: {}", error.without_url());
             return None;
         }
     };
     if !response.status().is_success() {
-        tracing::warn!("владелец токена воспроизведения не проверен: {}", response.status());
+        tracing::warn!("playback token owner not verified: {}", response.status());
         return None;
     }
     owner_id(&response.text().await.ok()?)
@@ -2046,7 +2089,7 @@ fn write_profile(path: &std::path::Path, client_id: &str, user: &sf_api::models:
             std::fs::write(path, text)
         });
     if let Err(error) = written {
-        tracing::warn!("профиль для входа не сохранён: {error}");
+        tracing::warn!("sign-in profile not saved: {error}");
     }
 }
 
@@ -2062,12 +2105,22 @@ mod tests {
     }
 
     #[test]
-    fn browser_errors_read_in_russian() {
+    fn error_codes_survive_translation() {
+        let busy = oauth_error_text(&anyhow::anyhow!("unable to listen on 127.0.0.1:8898"), 8898).unwrap();
+        assert_eq!(error_code(&busy), "portBusy");
+        assert_eq!(error_code(&mf_i18n::t(FREE_ACCOUNT)), "free");
+        assert_eq!(error_code(&mf_i18n::t(OTHER_ACCOUNT)), "otherAccount");
+        assert_eq!(error_code("something else"), "");
+        assert_eq!(error_code(""), "");
+    }
+
+    #[test]
+    fn browser_errors_become_user_text() {
         let busy = anyhow::anyhow!("unable to listen on 127.0.0.1:8989 for the Spotify redirect");
-        assert_eq!(oauth_error_text(&busy, 8989).unwrap(), "Порт 8989 занят другой программой");
+        assert_eq!(oauth_error_text(&busy, 8989).unwrap(), "Port 8989 is in use by another program");
         assert!(oauth_error_text(&anyhow::anyhow!("sign-in cancelled"), 8989).is_none());
         let refused = anyhow::anyhow!("Spotify refused the sign-in. Try again.");
-        assert_eq!(oauth_error_text(&refused, 8989).unwrap(), "Вход отменён в браузере");
+        assert_eq!(oauth_error_text(&refused, 8989).unwrap(), "Sign-in was cancelled in the browser");
         assert_eq!(connect_error_text("needs Premium"), PREMIUM_NEEDED);
     }
 

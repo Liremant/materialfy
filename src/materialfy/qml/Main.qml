@@ -11,6 +11,10 @@ Window {
     id: win
 
     property string startPage: "home"     // --set startPage=settings | artist:<id> (для разработки)
+    // --set autoPlay=<spotify uri> — включить контекст, как только поднялось воспроизведение; --set openNowPlaying=true —
+    // затем раскрыть «Сейчас играет» (для скриншотов документации)
+    property string autoPlay: ""
+    property bool openNowPlaying: false
 
     // размер и положение — последние сохранённые (см. _restoreGeometry); окно показывается уже на месте
     width: 1280
@@ -197,19 +201,19 @@ Window {
             menu: Platform.Menu {
                 id: trayMenu
                 Platform.MenuItem {
-                    text: win.visible ? "Скрыть окно" : "Показать окно"
+                    text: win.visible ? I18n.t("Hide window") : I18n.t("Show window")
                     onTriggered: win.visible ? win.hide() : win.showWindow()
                 }
                 Platform.MenuSeparator {}
                 Platform.MenuItem {
-                    text: Player.playing ? "Пауза" : "Играть"
+                    text: Player.playing ? I18n.t("Pause") : I18n.t("Resume")
                     enabled: Player.hasTrack
                     onTriggered: Player.togglePlay()
                 }
-                Platform.MenuItem { text: "Следующий трек"; enabled: Player.hasTrack; onTriggered: Player.next() }
-                Platform.MenuItem { text: "Предыдущий трек"; enabled: Player.hasTrack; onTriggered: Player.previous() }
+                Platform.MenuItem { text: I18n.t("Next track"); enabled: Player.hasTrack; onTriggered: Player.next() }
+                Platform.MenuItem { text: I18n.t("Previous track"); enabled: Player.hasTrack; onTriggered: Player.previous() }
                 Platform.MenuSeparator {}
-                Platform.MenuItem { text: "Выход"; onTriggered: Qt.quit() }
+                Platform.MenuItem { text: I18n.t("Quit"); onTriggered: Qt.quit() }
             }
         }
     }
@@ -324,6 +328,23 @@ Window {
                             Auth.playbackChanged.connect(open)
                             open()
                         }
+                    }
+                    Connections {
+                        target: Auth
+                        enabled: win.autoPlay !== ""
+                        function onPlaybackChanged() {
+                            if (Auth.playbackState !== "ready")
+                                return
+                            Player.playContext(win.autoPlay, "")
+                            win.autoPlay = ""
+                            if (win.openNowPlaying)
+                                nowPlayingTimer.start()
+                        }
+                    }
+                    Timer {
+                        id: nowPlayingTimer
+                        interval: 4000
+                        onTriggered: nowPlaying.show(Qt.point(win.width / 2, win.height - 60))
                     }
                 }
 
@@ -463,7 +484,7 @@ Window {
             router.reset("home")
         else if (router.currentItem && router.currentItem.scrollToTop)
             router.currentItem.scrollToTop()
-        notify("Радио «" + title + "»: 50 треков", "Слушать", () => Radio.play())
+        notify(I18n.t("“{0}” radio: 50 tracks", title), I18n.t("Play"), () => Radio.play())
     }
 
     function trackMenuAction(id, track, item) {
@@ -478,7 +499,7 @@ Window {
             win.radioFrom("spotify:artist:" + artistId, ref ? ref.name : (track.artists ?? ""))
         } else if (id === "addqueue") {
             Player.addToQueue(track)
-            snackbar.show("Добавлено в очередь")
+            snackbar.show(I18n.t("Added to queue"))
         } else if (id === "dislike") {
             Library.dislike(track)
         } else if (id === "like") {
@@ -487,7 +508,7 @@ Window {
             const uri = track.isEpisode ? (track.uri ?? "") : "spotify:album:" + (track.albumId ?? "")
             const was = Library.isSaved(uri)
             Library.toggleSaved(uri)
-            snackbar.show(was ? "Удалено из библиотеки" : "Сохранено в библиотеке")
+            snackbar.show(was ? I18n.t("Removed from library") : I18n.t("Saved to library"))
         } else if (id === "removefromplaylist") {
             const page = router.currentItem
             if (router.currentName === "playlist" && page && typeof track.pos === "number")
@@ -509,10 +530,10 @@ Window {
             Library.addToPlaylist(track, id.slice("playlist:".length))
         } else if (id === "share:track") {
             Catalog.copyLink(Catalog.trackUrl(track))
-            snackbar.show("Ссылка скопирована")
+            snackbar.show(I18n.t("Link copied"))
         } else if (id.startsWith("share:artist:")) {
             Catalog.copyLink(Catalog.artistUrl(id.slice("share:artist:".length)))
-            snackbar.show("Ссылка скопирована")
+            snackbar.show(I18n.t("Link copied"))
         } else if (id === "goto:track") {
             Catalog.openAlbum(track.albumId, track.trackId)
         } else if (id === "goto:album") {

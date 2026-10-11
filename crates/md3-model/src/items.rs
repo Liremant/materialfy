@@ -58,15 +58,14 @@ impl TrackItem {
 /// Подпись типа альбома по-русски: album_type Spotify (+ число треков для EP).
 pub fn album_kind_label(album_type: &str, total_tracks: i64) -> String {
     match album_type {
-        "single" if total_tracks > 1 => "EP",
-        "single" => "Сингл",
-        "compilation" => "Сборник",
-        "ep" => "EP",
-        "audiobook" => "Аудиокнига",
-        "podcast" | "show" => "Подкаст",
-        _ => "Альбом",
+        "single" if total_tracks > 1 => "EP".to_owned(),
+        "single" => mf_i18n::t("Single"),
+        "compilation" => mf_i18n::t("Compilation"),
+        "ep" => "EP".to_owned(),
+        "audiobook" => mf_i18n::t("Audiobook"),
+        "podcast" | "show" => mf_i18n::t("Podcast"),
+        _ => mf_i18n::t("Album"),
     }
-    .to_owned()
 }
 
 /// ALBUM_KEYS: albumId, uri, title, version, artists, artistRefs, year, kind, trackCount, cover, coverLarge, explicit, saved.

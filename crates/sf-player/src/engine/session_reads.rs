@@ -682,7 +682,7 @@ pub async fn artist(session: &Session, id: &str) -> Result<ArtistOverview, Failu
             })
             .collect(),
         Err(error) => {
-            tracing::debug!("популярное исполнителя {id} через сессию: {error:?}");
+            tracing::debug!("artist {id} top tracks via the session: {error:?}");
             Vec::new()
         }
     };
@@ -759,7 +759,7 @@ async fn releases(session: &Session, groups: &[(&AlbumGroups, &str)]) -> Vec<Alb
             match release_details(session, chunk, group).await {
                 Ok(albums) => found.extend(albums),
                 Err(error) => {
-                    tracing::debug!("релизы исполнителя ({group}) через сессию: {error:#}")
+                    tracing::debug!("artist releases ({group}) via the session: {error:#}")
                 }
             }
         }

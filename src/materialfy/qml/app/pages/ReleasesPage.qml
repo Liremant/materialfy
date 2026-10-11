@@ -9,8 +9,8 @@ import ".."
 Page {
     id: page
 
-    title: "Новинки"
-    subtitle: "Свежая музыка от исполнителей, которых вы слушаете"
+    title: I18n.t("New releases")
+    subtitle: I18n.t("Fresh music from artists you listen to")
 
     readonly property var radar: Releases.radar ?? ({})
     readonly property string radarId: radar.playlistId ?? ""
@@ -29,12 +29,6 @@ Page {
     Component.onCompleted: Releases.refresh(false)
     onVisibleChanged: if (visible) Releases.refresh(false)
 
-    function plural(n, one, few, many) {
-        const m10 = n % 10, m100 = n % 100
-        if (m10 === 1 && m100 !== 11) return one
-        if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few
-        return many
-    }
     function openRadar() {
         router.push("playlist", { playlistId: radarId, playlistTitle: radar.title ?? "", cover: radar.cover ?? "" })
     }
@@ -54,8 +48,8 @@ Page {
 
     // ---- «Радар новинок» ----
     SectionHeader {
-        text: "Радар новинок"
-        actionText: page.radarId !== "" ? "Открыть плейлист" : ""
+        text: I18n.t("Release Radar")
+        actionText: page.radarId !== "" ? I18n.t("Open playlist") : ""
         onAction: page.openRadar()
     }
 
@@ -94,10 +88,10 @@ Page {
             ColumnLayout {
                 Layout.fillWidth: true
                 spacing: 2
-                Label { Layout.fillWidth: true; text: "«Радар новинок» не нашёлся"; type: "titleMedium"; weight: 600 }
+                Label { Layout.fillWidth: true; text: I18n.t("Release Radar wasn't found"); type: "titleMedium"; weight: 600 }
                 Label {
                     Layout.fillWidth: true
-                    text: "Spotify собирает его по пятницам для тех, кто слушает достаточно музыки. Если он есть в вашем Spotify, сохраните его в библиотеку — и он появится здесь."
+                    text: I18n.t("Spotify builds it on Fridays for people who listen to enough music. If it's in your Spotify, save it to your library and it will show up here.")
                     type: "bodyMedium"
                     color: Theme.fgSurfaceVariant
                     wrapMode: Text.WordWrap
@@ -124,7 +118,7 @@ Page {
         ColumnLayout {
             Layout.fillWidth: true
             spacing: 4
-            Label { text: "ПЛЕЙЛИСТ · SPOTIFY"; type: "labelLarge"; color: Theme.primary; font.letterSpacing: 1.2 }
+            Label { text: I18n.t("Playlist").toUpperCase() + " · SPOTIFY"; type: "labelLarge"; color: Theme.primary; font.letterSpacing: 1.2 }
             Label {
                 Layout.fillWidth: true
                 text: page.radar.title ?? ""
@@ -145,13 +139,13 @@ Page {
                 Layout.topMargin: 10
                 spacing: 12
                 Button {
-                    text: page.radarPlaying && Player.playing ? "Пауза" : "Слушать"
+                    text: page.radarPlaying && Player.playing ? I18n.t("Pause") : I18n.t("Play")
                     icon: page.radarPlaying && Player.playing ? "pause" : "play_arrow"
                     size: "m"
                     onClicked: page.playRadar()
                 }
                 Button {
-                    text: "Перемешать"
+                    text: I18n.t("Shuffle")
                     icon: "shuffle"
                     style: "tonal"
                     size: "m"
@@ -204,7 +198,7 @@ Page {
             Layout.alignment: Qt.AlignLeft
             Layout.topMargin: 4
             visible: page.radarTracks !== null && page.radarTracks.count > page.shownTracks
-            text: page.allTracks ? "Свернуть" : "Все " + page.radarTracks.count + " " + page.plural(page.radarTracks.count, "трек", "трека", "треков")
+            text: page.allTracks ? I18n.t("Show less") : I18n.n(page.radarTracks.count, "All {0} track", "All {0} tracks")
             style: "text"
             onClicked: page.allTracks = !page.allTracks
         }
@@ -212,8 +206,8 @@ Page {
 
     // ---- Новые релизы ----
     SectionHeader {
-        text: "Новые релизы ваших исполнителей"
-        actionText: Releases.loading ? "" : "Обновить"
+        text: I18n.t("New releases from your artists")
+        actionText: Releases.loading ? "" : I18n.t("Refresh")
         onAction: Releases.refresh(true)
     }
     RowLayout {
@@ -221,12 +215,12 @@ Page {
         Layout.topMargin: -12
         spacing: 8
         visible: page.releases.length > 0
-        Chip { text: "Все"; selected: page.filter === "all"; onClicked: page.filter = "all" }
-        Chip { text: "Альбомы"; selected: page.filter === "album"; onClicked: page.filter = "album" }
-        Chip { text: "Синглы и EP"; selected: page.filter === "single"; onClicked: page.filter = "single" }
+        Chip { text: I18n.t("All"); selected: page.filter === "all"; onClicked: page.filter = "all" }
+        Chip { text: I18n.t("Albums"); selected: page.filter === "album"; onClicked: page.filter = "album" }
+        Chip { text: I18n.t("Singles and EPs"); selected: page.filter === "single"; onClicked: page.filter = "single" }
         Item { Layout.fillWidth: true }
         Label {
-            text: "за 6 недель"
+            text: I18n.t("past 6 weeks")
             type: "bodyMedium"
             color: Theme.fgSurfaceVariant
         }
@@ -244,10 +238,10 @@ Page {
         Layout.topMargin: 24
         visible: !Releases.loading && page.releases.length === 0
         icon: "album"
-        title: Releases.errorText !== "" ? "Новинки не загрузились" : "Пока ничего нового"
+        title: Releases.errorText !== "" ? I18n.t("New releases didn't load") : I18n.t("Nothing new yet")
         text: Releases.errorText !== "" ? Releases.errorText
-              : "За последние 6 недель у ваших исполнителей не было релизов. Подпишитесь на исполнителей — их новинки появятся здесь."
-        actionText: Releases.errorText !== "" ? "Повторить" : ""
+              : I18n.t("Your artists haven't released anything in the past 6 weeks. Follow artists and their new releases will show up here.")
+        actionText: Releases.errorText !== "" ? I18n.t("Retry") : ""
         actionIcon: "refresh"
         onAction: Releases.refresh(true)
     }
@@ -281,7 +275,7 @@ Page {
     Button {
         Layout.alignment: Qt.AlignHCenter
         visible: page.shown.length > tilesPerRow.value * 3
-        text: page.allReleases ? "Свернуть" : "Показать все (" + page.shown.length + ")"
+        text: page.allReleases ? I18n.t("Show less") : I18n.t("Show all ({0})", page.shown.length)
         style: "tonal"
         onClicked: page.allReleases = !page.allReleases
     }

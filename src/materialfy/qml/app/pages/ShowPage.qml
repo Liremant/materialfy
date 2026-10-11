@@ -25,8 +25,8 @@ Page {
     readonly property bool heroTitle: true     // название — в шапке; в верхней панели — после прокрутки
 
     readonly property var filters: [
-        { key: "all", text: "Все" }, { key: "unfinished", text: "Недослушанные" },
-        { key: "new", text: "Новые" }, { key: "saved", text: "Сохранённые" }
+        { key: "all", text: I18n.t("All") }, { key: "unfinished", text: I18n.t("In progress") },
+        { key: "new", text: I18n.t("New") }, { key: "saved", text: I18n.t("Saved") }
     ]
 
     // ---- Выпуски: фильтр и порядок на стороне QML ----
@@ -72,12 +72,6 @@ Page {
             Player.playEpisode(resumeEpisode.uri, resumeEpisode.resumeMs)
         else if (allEpisodes.length > 0)
             Player.playEpisode(allEpisodes[0].uri, allEpisodes[0].fullyPlayed ? 0 : (allEpisodes[0].resumeMs ?? 0))
-    }
-    function _episodesWord(n) {
-        const m10 = n % 10, m100 = n % 100
-        if (m10 === 1 && m100 !== 11) return "выпуск"
-        if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return "выпуска"
-        return "выпусков"
     }
     // идёт догрузка следующей страницы (ShowData.loadingMore; повторный loadMore() безопасен)
     readonly property bool loadingMore: show !== null && show.loadingMore === true
@@ -132,7 +126,7 @@ Page {
             ColumnLayout {
                 Layout.fillWidth: true
                 spacing: 4
-                Label { text: "ПОДКАСТ"; type: "labelMedium"; color: Theme.primary; font.letterSpacing: 1.2 }
+                Label { text: I18n.t("Podcast").toUpperCase(); type: "labelMedium"; color: Theme.primary; font.letterSpacing: 1.2 }
                 Label {
                     Layout.fillWidth: true
                     text: page.info.name ?? ""
@@ -153,7 +147,7 @@ Page {
                     visible: text !== ""
                     text: {
                         const n = (page.show && page.show.total) || (page.info.totalEpisodes ?? 0)
-                        return [n > 0 ? n + " " + page._episodesWord(n) : "", page.info.explicit ? "18+" : ""].filter(x => x).join(" · ")
+                        return [n > 0 ? I18n.n(n, "{0} episode", "{0} episodes") : "", page.info.explicit ? "18+" : ""].filter(x => x).join(" · ")
                     }
                     type: "bodyMedium"
                     color: Theme.fgSurfaceVariant
@@ -167,16 +161,16 @@ Page {
                         size: "m"
                         enabled: page.allEpisodes.length > 0
                         icon: page.playingEpisode && Player.playing ? "pause" : "play_arrow"
-                        text: page.playingEpisode ? (Player.playing ? "Пауза" : "Продолжить")
-                            : page.resumeEpisode ? "Продолжить" + (page.resumeEpisode.number ? " · вып. " + page.resumeEpisode.number : "")
-                            : "Слушать последний"
+                        text: page.playingEpisode ? (Player.playing ? I18n.t("Pause") : I18n.t("Continue"))
+                            : page.resumeEpisode ? (page.resumeEpisode.number ? I18n.t("Continue · ep. {0}", page.resumeEpisode.number) : I18n.t("Continue"))
+                            : I18n.t("Play latest")
                         onClicked: page.mainAction()
                     }
                     Button {
                         size: "m"
                         style: "tonal"
                         icon: page.saved ? "library_add_check" : "library_add"
-                        text: page.compact ? "" : page.saved ? "В библиотеке" : "Подписаться"
+                        text: page.compact ? "" : page.saved ? I18n.t("In library") : I18n.t("Follow")
                         onClicked: Library.toggleSaved(page.info.uri ?? "")
                     }
                     IconButton {
@@ -184,7 +178,7 @@ Page {
                         icon: "share"
                         onClicked: {
                             Catalog.copyLink(Catalog.uriUrl(page.info.uri ?? ""))
-                            snackbar.show("Ссылка скопирована")
+                            snackbar.show(I18n.t("Link copied"))
                         }
                     }
                 }
@@ -216,7 +210,7 @@ Page {
         }
         Button {
             visible: fullText.implicitHeight > 2 * 24 + 2
-            text: page.descriptionOpen ? "Свернуть" : "Ещё"
+            text: page.descriptionOpen ? I18n.t("Show less") : I18n.t("More")
             style: "text"
             size: "xs"
             onClicked: page.descriptionOpen = !page.descriptionOpen
@@ -226,7 +220,7 @@ Page {
     // ---- Выпуски ----
     SectionHeader {
         visible: (page.info.name ?? "") !== ""
-        text: "Выпуски"
+        text: I18n.t("Episodes")
     }
     RowLayout {
         Layout.fillWidth: true
@@ -258,7 +252,7 @@ Page {
         Chip {
             icon: "swap_vert"
             // в узкой странице — только значок: место нужнее фильтрам
-            text: page.width < 640 ? "" : page.newestFirst ? "Сначала новые" : "Сначала старые"
+            text: page.width < 640 ? "" : page.newestFirst ? I18n.t("Newest first") : I18n.t("Oldest first")
             onClicked: page.newestFirst = !page.newestFirst
         }
     }
@@ -323,11 +317,11 @@ Page {
         visible: page.show !== null && !page.show.loading && page.show.errorText === ""
                  && page.allEpisodes.length > 0 && page.shownEpisodes.length === 0
         icon: page.filter === "saved" ? "bookmark" : "podcasts"
-        title: page.filter === "unfinished" ? "Нет недослушанных выпусков"
-             : page.filter === "new" ? "Новых выпусков нет"
-             : "Нет сохранённых выпусков"
-        text: page.hasMore ? "Подгружены не все выпуски — прокрутите ниже или загрузите ещё" : ""
-        actionText: page.hasMore ? "Загрузить ещё" : ""
+        title: page.filter === "unfinished" ? I18n.t("No episodes in progress")
+             : page.filter === "new" ? I18n.t("No new episodes")
+             : I18n.t("No saved episodes")
+        text: page.hasMore ? I18n.t("Not all episodes are loaded — scroll down or load more") : ""
+        actionText: page.hasMore ? I18n.t("Load more") : ""
         actionIcon: "expand_more"
         onAction: page.loadMore()
     }
@@ -336,7 +330,7 @@ Page {
         Layout.topMargin: 48
         visible: page.show !== null && !page.show.loading && page.show.errorText !== ""
         icon: "cloud_off"
-        title: "Подкаст не загрузился"
+        title: I18n.t("Podcast didn't load")
         text: page.show ? page.show.errorText : ""
     }
 
@@ -349,7 +343,7 @@ Page {
     Button {
         Layout.alignment: Qt.AlignHCenter
         visible: page.hasMore && page.show !== null && !page.show.loading && !page.loadingMore && page.shownEpisodes.length > 0
-        text: "Ещё выпуски"
+        text: I18n.t("More episodes")
         icon: "expand_more"
         style: "text"
         onClicked: page.loadMore()

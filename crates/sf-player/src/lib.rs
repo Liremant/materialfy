@@ -267,9 +267,9 @@ pub struct PlayerSubscription {
 pub enum PlayerError {
     #[error("{0}")]
     Engine(String),
-    #[error("нужен Spotify Premium")]
+    #[error("Spotify Premium required")]
     PremiumRequired,
-    #[error("нет устройства для воспроизведения")]
+    #[error("no playback device")]
     NoDevice,
 }
 

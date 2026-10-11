@@ -27,7 +27,7 @@ const WEB_DEADLINE: Duration = Duration::from_secs(12);
 async fn web<T>(call: impl Future<Output = Result<T, ApiError>>) -> Result<T, ApiError> {
     tokio::time::timeout(WEB_DEADLINE, call)
         .await
-        .unwrap_or_else(|_| Err(ApiError::Network("Spotify не ответил вовремя".to_owned())))
+        .unwrap_or_else(|_| Err(ApiError::Network("Spotify did not answer in time".to_owned())))
 }
 
 // --- «Любимые треки» ---------------------------------------------------------------------------------
@@ -55,11 +55,11 @@ impl LikedFeed {
         match tokio::time::timeout(READ_TIMEOUT, collection::collection_all(&session, SET_COLLECTION)).await {
             Ok(Ok(rows)) => Some(Self { session: Some(session), ..Self::new(rows) }),
             Ok(Err(error)) => {
-                tracing::debug!("«Любимые треки» через сессию: {error:#}; спрашиваю Web API");
+                tracing::debug!("Liked Songs via session: {error:#}; asking Web API");
                 None
             }
             Err(_) => {
-                tracing::debug!("«Любимые треки» через сессию не успели; спрашиваю Web API");
+                tracing::debug!("Liked Songs via session timed out; asking Web API");
                 None
             }
         }
@@ -75,15 +75,15 @@ impl LikedFeed {
         match tokio::time::timeout(PAGE_TIMEOUT, page).await {
             Ok(Ok(page)) => Some(page),
             Ok(Err(Failure::Retry(error))) => {
-                tracing::debug!("страница «Любимых треков» через сессию: {error:#}; спрашиваю Web API");
+                tracing::debug!("Liked Songs page via session: {error:#}; asking Web API");
                 None
             }
             Ok(Err(Failure::Definitive(error))) => {
-                tracing::debug!("страница «Любимых треков» через сессию: {error}; спрашиваю Web API");
+                tracing::debug!("Liked Songs page via session: {error}; asking Web API");
                 None
             }
             Err(_) => {
-                tracing::debug!("страница «Любимых треков» через сессию не успела; спрашиваю Web API");
+                tracing::debug!("Liked Songs page via session timed out; asking Web API");
                 None
             }
         }
@@ -166,11 +166,11 @@ where
     match tokio::time::timeout(READ_TIMEOUT, read(session)).await {
         Ok(Ok(value)) => Some(value),
         Ok(Err(error)) => {
-            tracing::debug!("{what} через сессию: {error:#}; спрашиваю Web API");
+            tracing::debug!("{what} via session: {error:#}; asking Web API");
             None
         }
         Err(_) => {
-            tracing::debug!("{what} через сессию не успели; спрашиваю Web API");
+            tracing::debug!("{what} via session timed out; asking Web API");
             None
         }
     }
@@ -188,8 +188,8 @@ pub async fn write(api: &ApiGateway, player: &PlayerHandle, uris: &[String], add
                 api.forget_cached();
                 return Ok(());
             }
-            Ok(Err(error)) => tracing::debug!("запись коллекции через сессию: {error:#}; пишу через Web API"),
-            Err(_) => tracing::debug!("запись коллекции через сессию не успела; пишу через Web API"),
+            Ok(Err(error)) => tracing::debug!("collection write via session: {error:#}; writing via Web API"),
+            Err(_) => tracing::debug!("collection write via session timed out; writing via Web API"),
         }
     }
     web(async {
@@ -204,8 +204,8 @@ pub async fn contains(api: &ApiGateway, player: &PlayerHandle, uris: &[String]) 
     if let Some(session) = route::account_session(api, player) {
         match tokio::time::timeout(SESSION_TIMEOUT, collection::contains(&session, uris)).await {
             Ok(Ok(found)) => return Ok(found),
-            Ok(Err(error)) => tracing::debug!("проверка коллекции через сессию: {error:#}; спрашиваю Web API"),
-            Err(_) => tracing::debug!("проверка коллекции через сессию не успела; спрашиваю Web API"),
+            Ok(Err(error)) => tracing::debug!("collection check via session: {error:#}; asking Web API"),
+            Err(_) => tracing::debug!("collection check via session timed out; asking Web API"),
         }
     }
     web(async { api.client_for(Operation::UserData).await?.contains(uris).await }).await

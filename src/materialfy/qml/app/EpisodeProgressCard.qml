@@ -27,8 +27,7 @@ Rectangle {
         return h > 0 ? h + ":" + String(mm).padStart(2, "0") + ":" + ss : mm + ":" + ss
     }
     function _minutes(ms) {
-        const min = Math.max(1, Math.round(ms / 60000))
-        return min >= 60 ? Math.floor(min / 60) + " ч " + (min % 60 ? (min % 60) + " мин" : "") : min + " мин"
+        return I18n.duration(Math.max(60000, ms))
     }
     function play() {
         if (isCurrent)
@@ -71,16 +70,17 @@ Rectangle {
                 spacing: 2
                 Label {
                     Layout.fillWidth: true
-                    text: root.isCurrent ? (Player.playing ? "Играет" : "На паузе") + " · осталось " + root._minutes(root.durationMs - root.positionMs)
-                        : episode.fullyPlayed === true ? "Прослушано"
-                        : root.resumeMs > 0 ? "Вы остановились на " + root._clock(root.resumeMs)
-                        : "Ещё не слушали"
+                    text: root.isCurrent ? (Player.playing ? I18n.t("Playing · {0} left", root._minutes(root.durationMs - root.positionMs))
+                                                          : I18n.t("Paused · {0} left", root._minutes(root.durationMs - root.positionMs)))
+                        : episode.fullyPlayed === true ? I18n.t("Played")
+                        : root.resumeMs > 0 ? I18n.t("You stopped at {0}", root._clock(root.resumeMs))
+                        : I18n.t("Not played yet")
                     type: "titleMedium"
                     color: root.isCurrent ? Theme.primary : Theme.fgSurface
                 }
                 Label {
                     Layout.fillWidth: true
-                    text: root.durationMs > 0 ? "Длительность " + root._minutes(root.durationMs) : ""
+                    text: root.durationMs > 0 ? I18n.t("Duration {0}", root._minutes(root.durationMs)) : ""
                     visible: text !== ""
                     type: "bodySmall"
                     color: Theme.fgSurfaceVariant
@@ -122,21 +122,21 @@ Rectangle {
             Layout.fillWidth: true
             spacing: 8
             Button {
-                text: "С начала"
+                text: I18n.t("From the start")
                 icon: "restart_alt"
                 style: "tonal"
                 size: "xs"
                 onClicked: root.playFrom(0)
             }
             Button {
-                text: "В очередь"
+                text: I18n.t("Queue it")
                 icon: "add_to_queue"
                 style: "outlined"
                 size: "xs"
                 onClicked: Player.addUriToQueue(root.uri)
             }
             Button {
-                text: root.saved ? "В «Ваших выпусках»" : "Сохранить в «Ваши выпуски»"
+                text: root.saved ? I18n.t("In Your Episodes") : I18n.t("Save to Your Episodes")
                 icon: root.saved ? "bookmark_added" : "bookmark"
                 style: "outlined"
                 size: "xs"
@@ -146,7 +146,7 @@ Rectangle {
                 onClicked: Library.toggleSaved(root.uri)
             }
             Button {
-                text: root.compact ? "" : "Поделиться"
+                text: root.compact ? "" : I18n.t("Share")
                 icon: "share"
                 style: "outlined"
                 size: "xs"

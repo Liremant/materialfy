@@ -7,7 +7,7 @@ Item {
     id: root
 
     property bool active: false
-    property string text: "Перетащите трек сюда — он заиграет следующим"
+    property string text: I18n.t("Drop a track here to play it next")
 
     implicitHeight: 72
     implicitWidth: 280

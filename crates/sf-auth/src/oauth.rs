@@ -55,7 +55,7 @@ pub const WEB_SCOPES: &[&str] = &[
 const AUTHORIZE_URL: &str = "https://accounts.spotify.com/authorize";
 const TOKEN_URL: &str = "https://accounts.spotify.com/api/token";
 /// Текст ошибки `wait_for_code` при отмене (её не показывают как сбой).
-pub const CANCELLED: &str = "Вход отменён";
+pub const CANCELLED: &str = "Sign-in cancelled";
 const LOGIN_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 /// Обновлять токен за столько до истечения.
 const REFRESH_MARGIN: Duration = Duration::from_secs(90);
@@ -88,7 +88,7 @@ impl Grant {
     pub fn personal_web_api(client_id: &str) -> Result<Self> {
         let client_id = client_id.trim();
         if client_id.is_empty() {
-            bail!("Укажите Client ID своего приложения Spotify");
+            bail!("Enter the Client ID of your Spotify app");
         }
         Ok(Self {
             client_id: client_id.to_string(),
@@ -159,21 +159,21 @@ pub async fn wait_for_code(
     let address: SocketAddr = ([127, 0, 0, 1], port).into();
     let listener = TcpListener::bind(address).await.map_err(|error| match error.kind() {
         std::io::ErrorKind::AddrInUse | std::io::ErrorKind::PermissionDenied => {
-            anyhow!("Порт {port} занят другой программой — закройте её и попробуйте снова")
+            anyhow!("Unable to listen on port {port}: another program is using it — close it and try again")
         }
-        _ => anyhow!("Не удалось открыть порт {port} для ответа Spotify"),
+        _ => anyhow!("Unable to listen on port {port} for the Spotify redirect"),
     })?;
     let deadline = tokio::time::sleep(LOGIN_TIMEOUT);
     tokio::pin!(deadline);
 
     loop {
         let (mut stream, _) = tokio::select! {
-            accepted = listener.accept() => accepted.context("ожидание ответа Spotify прервалось")?,
+            accepted = listener.accept() => accepted.context("waiting for the Spotify redirect was interrupted")?,
             _ = cancel.changed() => {
                 if *cancel.borrow() { bail!(CANCELLED); }
                 continue;
             }
-            _ = &mut deadline => bail!("Время ожидания входа истекло — попробуйте снова"),
+            _ = &mut deadline => bail!("Sign-in timed out — try again"),
         };
 
         let mut reader = BufReader::new(&mut stream);
@@ -196,7 +196,7 @@ pub async fn wait_for_code(
             Ok(code) => return Ok(code),
             Err(error) => {
                 // favicon или старая вкладка — не редирект, ждём дальше
-                tracing::debug!("loopback: пропущен запрос: {error}");
+                tracing::debug!("loopback: skipped request: {error}");
                 continue;
             }
         }
@@ -207,10 +207,10 @@ fn parse_request_line(line: &str, expected_state: &str) -> Result<String> {
     let target = line
         .split_whitespace()
         .nth(1)
-        .ok_or_else(|| anyhow!("неверный запрос"))?;
+        .ok_or_else(|| anyhow!("{}", mf_i18n::t("Invalid request")))?;
     let (path, query) = target.split_once('?').unwrap_or((target, ""));
     if path != REDIRECT_PATH {
-        bail!("неожиданный адрес запроса");
+        bail!("{}", mf_i18n::t("Unexpected request address"));
     }
     let mut code = None;
     let mut state = None;
@@ -228,12 +228,12 @@ fn parse_request_line(line: &str, expected_state: &str) -> Result<String> {
         }
     }
     if error.is_some() {
-        bail!("Вход отменён в браузере");
+        bail!("{}", mf_i18n::t("Sign-in was cancelled in the browser"));
     }
     if state.as_deref() != Some(expected_state) {
-        bail!("ответ не относится к этому входу");
+        bail!("{}", mf_i18n::t("This response doesn't belong to this sign-in"));
     }
-    code.ok_or_else(|| anyhow!("Spotify не вернул код авторизации"))
+    code.ok_or_else(|| anyhow!("{}", mf_i18n::t("Spotify didn't return an authorization code")))
 }
 
 pub async fn exchange_code(
@@ -275,10 +275,10 @@ pub async fn refresh(
 #[derive(Debug, thiserror::Error)]
 pub enum TokenEndpointError {
     /// Spotify отклонил сам грант — нужен новый вход через браузер.
-    #[error("Spotify отклонил запрос токена ({status}): {detail}")]
+    #[error("Spotify rejected the token request ({status}): {detail}")]
     Rejected { status: u16, detail: String },
     /// Сервер не ответил — грант, возможно, ещё действует.
-    #[error("Не удалось получить токен: {0}")]
+    #[error("Token request failed: {0}")]
     Unreachable(String),
 }
 
@@ -303,19 +303,19 @@ fn decode_token_response(
 ) -> std::result::Result<TokenResponse, TokenEndpointError> {
     // 429/408 — «подождите», а не отказ: грант остаётся
     if status == reqwest::StatusCode::TOO_MANY_REQUESTS || status == reqwest::StatusCode::REQUEST_TIMEOUT {
-        return Err(TokenEndpointError::Unreachable(format!("Spotify просит подождать ({status})")));
+        return Err(TokenEndpointError::Unreachable(format!("Spotify asks to wait ({status})")));
     }
     if status.is_client_error() {
         let value = serde_json::from_str::<serde_json::Value>(text).ok();
         // описание ошибки и битое тело могут содержать секреты: только известные классы, без текста ответа
         let detail = match value.as_ref().and_then(|value| value["error"].as_str()) {
-            Some("invalid_grant") => "разрешение истекло или отозвано — войдите снова",
-            Some("invalid_client") | Some("unauthorized_client") => "проверьте Client ID приложения Spotify",
-            Some("invalid_scope") => "Spotify не принял запрошенные разрешения",
-            Some("access_denied") => "доступ не разрешён",
-            Some(_) => "войдите снова и проверьте настройки приложения Spotify",
+            Some("invalid_grant") => "the grant expired or was revoked — sign in again",
+            Some("invalid_client") | Some("unauthorized_client") => "check the Client ID of the Spotify app",
+            Some("invalid_scope") => "Spotify didn't accept the requested permissions",
+            Some("access_denied") => "access was declined",
+            Some(_) => "sign in again and check the Spotify application settings",
             // 4xx без кода OAuth (прокси, CDN) — не отказ гранта
-            None => return Err(TokenEndpointError::Unreachable(format!("Spotify ответил {status}"))),
+            None => return Err(TokenEndpointError::Unreachable(format!("Spotify answered {status}"))),
         };
         return Err(TokenEndpointError::Rejected {
             status: status.as_u16(),
@@ -324,11 +324,11 @@ fn decode_token_response(
     }
     if !status.is_success() {
         return Err(TokenEndpointError::Unreachable(format!(
-            "Spotify ответил {status}"
+            "Spotify answered {status}"
         )));
     }
     serde_json::from_str(text).map_err(|_| {
-        TokenEndpointError::Unreachable("Spotify вернул нечитаемый ответ".into())
+        TokenEndpointError::Unreachable("Spotify returned an unreadable response".into())
     })
 }
 
@@ -353,7 +353,7 @@ impl StoredToken {
         let refresh_token = response
             .refresh_token
             .or_else(|| previous_refresh.map(str::to_string))
-            .ok_or_else(|| anyhow!("Spotify не вернул refresh-токен"))?;
+            .ok_or_else(|| anyhow!("Spotify didn't return a refresh token"))?;
         Ok(Self {
             client_id: client_id.to_string(),
             access_token: response.access_token,
@@ -448,21 +448,22 @@ fn now_secs() -> u64 {
 
 const LOGO: &str = include_str!("logo.svg");
 
-fn page(title: &str, heading: &str, body: &str, accent: &str) -> String {
+fn page(heading: &str, body: &str, accent: &str) -> String {
+    let lang = mf_i18n::lang().code();
+    let title = format!("{heading} — Materialfy");
     format!(
-        "<!doctype html><html lang=\"ru\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{title}</title><style>:root{{color-scheme:dark}}body{{margin:0;min-height:100vh;display:grid;place-items:center;background:#141218;color:#e6e0e9;font-family:\"Segoe UI\",Roboto,system-ui,sans-serif}}main{{max-width:28rem;margin:1rem;padding:2.5rem;border-radius:1.75rem;background:#211f26;box-shadow:0 20px 60px rgba(0,0,0,.5);text-align:center}}.logo svg{{width:72px;height:72px;display:block;margin:0 auto 1rem}}.brand{{font-size:.875rem;letter-spacing:.02em;color:#cac4d0;margin:0 0 1.25rem}}h1{{font-size:1.5rem;margin:.25rem 0 .5rem;color:{accent}}}p{{color:#cac4d0;line-height:1.5;margin:0}}</style><main><div class=\"logo\">{LOGO}</div><p class=\"brand\">Materialfy</p><h1>{heading}</h1><p>{body}</p></main><script>setTimeout(function(){{window.close()}},1500)</script></html>"
+        "<!doctype html><html lang=\"{lang}\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{title}</title><style>:root{{color-scheme:dark}}body{{margin:0;min-height:100vh;display:grid;place-items:center;background:#141218;color:#e6e0e9;font-family:\"Segoe UI\",Roboto,system-ui,sans-serif}}main{{max-width:28rem;margin:1rem;padding:2.5rem;border-radius:1.75rem;background:#211f26;box-shadow:0 20px 60px rgba(0,0,0,.5);text-align:center}}.logo svg{{width:72px;height:72px;display:block;margin:0 auto 1rem}}.brand{{font-size:.875rem;letter-spacing:.02em;color:#cac4d0;margin:0 0 1.25rem}}h1{{font-size:1.5rem;margin:.25rem 0 .5rem;color:{accent}}}p{{color:#cac4d0;line-height:1.5;margin:0}}</style><main><div class=\"logo\">{LOGO}</div><p class=\"brand\">Materialfy</p><h1>{heading}</h1><p>{body}</p></main><script>setTimeout(function(){{window.close()}},1500)</script></html>"
     )
 }
 
 fn success_page() -> String {
-    page("Вход выполнен — Materialfy", "Вход выполнен", "Вкладку можно закрыть и вернуться в Materialfy.", "#cfbcff")
+    page(&mf_i18n::t("Signed in"), &mf_i18n::t("You can close this tab and return to Materialfy."), "#cfbcff")
 }
 
 fn failure_page(reason: &str) -> String {
     page(
-        "Вход не завершён — Materialfy",
-        "Вход не завершён",
-        &format!("{}. Вернитесь в Materialfy и попробуйте снова.", html_escape(reason)),
+        &mf_i18n::t("Sign-in not completed"),
+        &mf_i18n::tf("{0}. Return to Materialfy and try again.", &[&html_escape(reason)]),
         "#ffb4ab",
     )
 }
@@ -621,14 +622,14 @@ mod tests {
     }
 
     #[test]
-    fn pages_are_russian_branded_and_escape_reasons() {
+    fn pages_are_localized_branded_and_escape_reasons() {
         let ok = success_page();
-        assert!(ok.contains("lang=\"ru\""));
+        assert!(ok.contains("lang=\"en\""));
         assert!(ok.contains("Materialfy"));
-        assert!(ok.contains("Вход выполнен"));
+        assert!(ok.contains("Signed in"));
         let failed = failure_page("<script>x</script>");
         assert!(failed.contains("&lt;script&gt;"));
-        assert!(failed.contains("Вход не завершён"));
+        assert!(failed.contains("Sign-in not completed"));
     }
 
     #[tokio::test]
@@ -649,7 +650,7 @@ mod tests {
         let mut reply = String::new();
         tokio::io::AsyncReadExt::read_to_string(&mut stream, &mut reply).await.unwrap();
         assert!(reply.starts_with("HTTP/1.1 200 OK"));
-        assert!(reply.contains("Вход выполнен"));
+        assert!(reply.contains("Signed in"));
         assert_eq!(waiting.await.unwrap().unwrap(), "c1");
 
         let (cancel_tx, cancel_rx) = watch::channel(false);
@@ -660,11 +661,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_busy_port_is_reported_in_russian() {
+    async fn a_busy_port_is_reported() {
         let busy = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = busy.local_addr().unwrap().port();
         let (_cancel_tx, cancel_rx) = watch::channel(false);
         let error = wait_for_code(port, "s", cancel_rx).await.unwrap_err().to_string();
-        assert!(error.contains(&format!("Порт {port} занят")), "{error}");
+        assert!(error.contains(&format!("Unable to listen on port {port}")), "{error}");
     }
 }

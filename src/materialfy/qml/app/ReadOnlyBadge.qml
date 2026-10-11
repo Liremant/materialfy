@@ -5,7 +5,7 @@ import Md3
 Rectangle {
     id: root
 
-    property string text: "только чтение"
+    property string text: I18n.t("read-only")
     property string icon: "lock"
 
     implicitWidth: row.implicitWidth + 16

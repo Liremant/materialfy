@@ -56,14 +56,14 @@ impl Cover {
 
 pub fn read(path: &Path) -> Result<Cover, String> {
     let file = std::fs::File::open(path)
-        .map_err(|_| "Не удалось открыть изображение. Проверьте, что файл на месте.".to_string())?;
+        .map_err(|_| mf_i18n::t("Couldn't open the image. Make sure the file is still there."))?;
     if !file.metadata().is_ok_and(|metadata| metadata.is_file()) {
-        return Err("Выберите файл JPEG или PNG.".into());
+        return Err(mf_i18n::t("Choose a JPEG or PNG file."));
     }
     let mut bytes = Vec::new();
     file.take((MAX_FILE + 1) as u64)
         .read_to_end(&mut bytes)
-        .map_err(|_| "Не удалось прочитать изображение. Попробуйте другой файл.".to_string())?;
+        .map_err(|_| mf_i18n::t("Couldn't read the image. Try another file."))?;
     prepare(&bytes)
 }
 
@@ -86,7 +86,7 @@ pub fn prepare(bytes: &[u8]) -> Result<Cover, String> {
             let mut jpeg = Vec::new();
             image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, quality)
                 .encode_image(&rgb)
-                .map_err(|_| "Не удалось сжать изображение. Попробуйте другой файл.")?;
+                .map_err(|_| mf_i18n::t("Couldn't compress the image. Try another file."))?;
             let encoded = STANDARD.encode(&jpeg);
             if encoded.len() <= MAX_PAYLOAD {
                 use sha2::{Digest, Sha256};
@@ -99,16 +99,16 @@ pub fn prepare(bytes: &[u8]) -> Result<Cover, String> {
             }
         }
     }
-    Err("Изображение слишком детальное для лимита Spotify. Выберите изображение поменьше.".into())
+    Err(mf_i18n::t("The image is too detailed for Spotify's limit. Choose a smaller image."))
 }
 
 fn bounded_decode(bytes: &[u8]) -> Result<image::DynamicImage, String> {
     if bytes.len() > MAX_FILE {
-        return Err("Выберите изображение меньше 20 МБ.".into());
+        return Err(mf_i18n::t("Choose an image smaller than 20 MB."));
     }
-    let format = image::guess_format(bytes).map_err(|_| "Выберите изображение JPEG или PNG.")?;
+    let format = image::guess_format(bytes).map_err(|_| mf_i18n::t("Choose a JPEG or PNG image."))?;
     if !matches!(format, ImageFormat::Jpeg | ImageFormat::Png) {
-        return Err("Выберите изображение JPEG или PNG.".into());
+        return Err(mf_i18n::t("Choose a JPEG or PNG image."));
     }
     let mut limits = image::Limits::default();
     limits.max_image_width = Some(8192);
@@ -125,21 +125,19 @@ fn decode(
     let mut reader = ImageReader::with_format(Cursor::new(bytes), format);
     reader.limits(limits.clone());
     let mut decoder = reader.into_decoder().map_err(|_| {
-        "Не удалось прочитать изображение. Выберите JPEG или PNG не больше 8192 пикселей по стороне."
+        mf_i18n::t("Couldn't read the image. Choose a JPEG or PNG no larger than 8192 pixels per side.")
     })?;
     // Using from_decoder for EXIF orientation bypasses ImageReader::decode's
     // output-buffer reservation. Count those pixels before allocating them.
     limits
         .reserve(decoder.total_bytes())
         .and_then(|()| decoder.set_limits(limits))
-        .map_err(|_| {
-            "Изображению нужно слишком много памяти. Выберите JPEG или PNG поменьше.".to_string()
-        })?;
+        .map_err(|_| mf_i18n::t("The image needs too much memory. Choose a smaller JPEG or PNG."))?;
     let orientation = decoder
         .orientation()
         .unwrap_or(image::metadata::Orientation::NoTransforms);
     let mut image = image::DynamicImage::from_decoder(decoder)
-        .map_err(|_| "Не удалось прочитать изображение. Попробуйте другой JPEG или PNG.")?;
+        .map_err(|_| mf_i18n::t("Couldn't read the image. Try another JPEG or PNG."))?;
     image.apply_orientation(orientation);
     Ok(image)
 }
@@ -202,7 +200,7 @@ mod tests {
             "materialfy-missing-cover-{}.jpg",
             std::process::id()
         ));
-        assert!(read(&missing).unwrap_err().contains("Не удалось открыть"));
+        assert!(read(&missing).unwrap_err().contains("Couldn't open"));
     }
 
     #[test]

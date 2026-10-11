@@ -12,6 +12,7 @@ pub mod radio;
 pub mod releases;
 pub mod settings;
 pub mod theme;
+pub mod translations;
 
 use std::pin::Pin;
 use std::time::{Duration, Instant};

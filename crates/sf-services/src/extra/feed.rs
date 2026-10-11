@@ -69,14 +69,14 @@ pub fn card_entry(card: &FeedCard) -> Option<LibraryEntry> {
     let (kind, subtitle) = match card.kind() {
         "playlist" => {
             let owner = if card.owner.is_empty() { "Spotify" } else { card.owner.as_str() };
-            let subtitle = if card.subtitle.is_empty() { format!("Плейлист · {owner}") } else { short(&card.subtitle) };
+            let subtitle = if card.subtitle.is_empty() { mf_i18n::tf("Playlist · {0}", &[&owner]) } else { short(&card.subtitle) };
             ("playlist", subtitle)
         }
-        "album" if card.subtitle.is_empty() => ("album", "Альбом".to_owned()),
-        "album" => ("album", format!("Альбом · {}", card.subtitle)),
-        "artist" => ("artist", "Исполнитель".to_owned()),
-        "show" if card.subtitle.is_empty() => ("show", "Подкаст".to_owned()),
-        "show" => ("show", format!("Подкаст · {}", card.subtitle)),
+        "album" if card.subtitle.is_empty() => ("album", mf_i18n::t("Album")),
+        "album" => ("album", mf_i18n::tf("Album · {0}", &[&card.subtitle])),
+        "artist" => ("artist", mf_i18n::t("Artist")),
+        "show" if card.subtitle.is_empty() => ("show", mf_i18n::t("Podcast")),
+        "show" => ("show", mf_i18n::tf("Podcast · {0}", &[&card.subtitle])),
         _ => return None,
     };
     let owner_id = if kind == "playlist" && card.owner_id.is_empty() { "spotify".to_owned() } else { card.owner_id.clone() };
@@ -312,9 +312,9 @@ mod tests {
         ];
         let tiles = made_for_you_tiles(&home, &browse);
         let ids: Vec<_> = tiles.iter().map(|t| t.id.as_str()).collect();
-        assert_eq!(ids[..3], ["dw", "day", "n0"], "концерты, видео и неразрешённое — мимо, повтор — один раз");
+        assert_eq!(ids[..3], ["dw", "day", "n0"], "concerts, videos and unresolved are skipped, repeats appear once");
         assert_eq!(tiles.len(), 2 + MADE_FOR_YOU_PER_SECTION);
-        assert_eq!((tiles[0].kind.as_str(), tiles[0].subtitle.as_str(), tiles[0].owner_id.as_str()), ("playlist", "Плейлист · Spotify", "spotify"));
+        assert_eq!((tiles[0].kind.as_str(), tiles[0].subtitle.as_str(), tiles[0].owner_id.as_str()), ("playlist", "Playlist · Spotify", "spotify"));
         assert!(tiles[0].read_only);
     }
 
@@ -335,8 +335,8 @@ mod tests {
             ("feed:mixes", "tiles", "Миксы"),
             ("feed:0JQ5DAnM3wGh0gz1MXnu3n", "artists", "Лучшие треки"),
         ]);
-        assert_eq!(shelves[0].items[0]["subtitle"], "Плейлист · Spotify");
-        assert_eq!(shelves[1].items.len(), 1, "выпуск плиткой не бывает");
+        assert_eq!(shelves[0].items[0]["subtitle"], "Playlist · Spotify");
+        assert_eq!(shelves[1].items.len(), 1, "an episode is never a tile");
         assert_eq!(shelves[2].items[0]["artistId"], "a2");
         assert_eq!(favorite_artists(&home)[0].name, "IMANU");
     }

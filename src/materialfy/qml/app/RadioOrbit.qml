@@ -51,7 +51,7 @@ Item {
         any:         { role: "neutral", shape: "cookie6" }
     })
     readonly property var groupKeys: ["recent", "artists", "collections", "any"]
-    readonly property var defaultTitles: ({ recent: "Недавние треки", artists: "Артисты", collections: "Альбомы и плейлисты", any: "Любой трек" })
+    readonly property var defaultTitles: ({ recent: I18n.t("Recent tracks"), artists: I18n.t("Your artists"), collections: I18n.t("Albums & playlists"), any: I18n.t("Any track") })
     function roleColor(role) { return role === "neutral" ? Theme.fgSurfaceVariant : Theme[role] }
     function roleBox(role) { return role === "neutral" ? Theme.surfaceVariant : Theme[role + "Container"] }
 
@@ -104,7 +104,7 @@ Item {
 
         Label {
             visible: root.signedIn
-            text: "Радио"
+            text: I18n.t("Radio")
             type: "headlineSmall"
             weight: 600
         }
@@ -203,17 +203,17 @@ Item {
                         readonly property string kindText: {
                             const c = root.current
                             if (!c)
-                                return "Радио"
-                            return ({ track: "Радио по треку", artist: "Радио по исполнителю", album: "Радио по альбому", playlist: "Радио по плейлисту" })[c.item.kind] ?? "Радио"
+                                return I18n.t("Radio")
+                            return ({ track: I18n.t("Track radio"), artist: I18n.t("Artist radio"), album: I18n.t("Album radio"), playlist: I18n.t("Playlist radio") })[c.item.kind] ?? I18n.t("Radio")
                         }
 
                         Label {
                             Layout.fillWidth: true
                             horizontalAlignment: caption.align
-                            text: !root.signedIn || root.locked ? "Радио недоступно"
-                                : root.loading ? "Радио"
-                                : (root.playing ? "Сейчас играет · " : "") + caption.kindText
-                                  + (root.current && root.current.first && root.current.group.key === "recent" ? " · последний" : "")
+                            text: !root.signedIn || root.locked ? I18n.t("Radio unavailable")
+                                : root.loading ? I18n.t("Radio")
+                                : (root.playing ? I18n.t("Now playing") + " · " : "") + caption.kindText
+                                  + (root.current && root.current.first && root.current.group.key === "recent" ? " · " + I18n.t("latest") : "")
                             type: "labelLarge"
                             wrapMode: Text.WordWrap
                             maximumLineCount: 2
@@ -224,10 +224,10 @@ Item {
                         Label {
                             Layout.fillWidth: true
                             horizontalAlignment: caption.align
-                            text: !root.signedIn ? "Войдите в аккаунт Spotify"
-                                : root.locked ? (root.premium ? "Подключите воспроизведение на этом компьютере" : "Радио Spotify играет только с Premium")
-                                : root.loading ? "Собираем станцию…"
-                                : root.current ? root.current.item.label ?? "" : "Выберите трек, исполнителя или плейлист"
+                            text: !root.signedIn ? I18n.t("Sign in to Spotify")
+                                : root.locked ? (root.premium ? I18n.t("Connect playback on this computer") : I18n.t("Spotify radio requires Premium"))
+                                : root.loading ? I18n.t("Building your station…")
+                                : root.current ? root.current.item.label ?? "" : I18n.t("Pick a track, artist or playlist")
                             type: root.locked || !root.signedIn || root.loading || !root.current ? "titleLarge" : "headlineSmall"
                             weight: 500
                             wrapMode: Text.WordWrap
@@ -236,13 +236,13 @@ Item {
                         Label {
                             Layout.fillWidth: true
                             horizontalAlignment: caption.align
-                            text: !root.signedIn ? "Станции по вашим трекам, исполнителям и плейлистам появятся после входа."
+                            text: !root.signedIn ? I18n.t("Stations based on your tracks, artists and playlists will appear after you sign in.")
                                 : root.locked ? (root.premium
-                                    ? "Станции Spotify приходят только через сессию воспроизведения (Web API их не отдаёт). Отдельный вход в браузере, нужен Spotify Premium."
-                                    : "Станции приходят через сессию воспроизведения, а она доступна только с подпиской Premium.")
+                                    ? I18n.t("Spotify stations only come through a playback session (the Web API doesn't provide them). Separate browser sign-in, Spotify Premium required.")
+                                    : I18n.t("Stations come through a playback session, which is only available with Premium."))
                                 : root.errorText !== "" ? root.errorText
-                                : root.loading ? "50 треков одним пакетом"
-                                : "50 треков · каждый запуск — новый микс"
+                                : root.loading ? I18n.t("50 tracks in one batch")
+                                : I18n.t("50 tracks · a fresh mix every time")
                             type: "bodySmall"
                             color: root.errorText !== "" && !root.locked && root.signedIn ? Theme.error : Theme.fgSurfaceVariant
                             wrapMode: Text.WordWrap
@@ -267,26 +267,26 @@ Item {
                             // вход / подключение воспроизведения
                             Button {
                                 visible: !root.signedIn
-                                text: "Войти"
+                                text: I18n.t("Sign in")
                                 icon: "login"
                                 onClicked: root.loginRequested()
                             }
                             Button {
                                 visible: root.signedIn && root.locked
-                                text: root.premium ? "Подключить воспроизведение" : "Подробнее о Premium"
+                                text: root.premium ? I18n.t("Connect playback") : I18n.t("About Premium")
                                 icon: root.premium ? "login" : "workspace_premium"
                                 onClicked: root.connectRequested()
                             }
                             Button {
                                 visible: root.signedIn && root.locked && root.premium
-                                text: "Подробнее"
+                                text: I18n.t("Learn more")
                                 style: "text"
                                 onClicked: root.moreRequested()
                             }
                             // станция
                             Button {
                                 visible: root.signedIn && !root.locked && root.current !== null
-                                text: "Список треков"
+                                text: I18n.t("Track list")
                                 icon: "format_list_bulleted"
                                 style: "tonal"
                                 size: "xs"
@@ -334,7 +334,7 @@ Item {
                         function sync() {
                             const items = (info && info.items ? info.items : []).slice()
                             if (key === "any")
-                                items.push({ uri: "", label: "Найти трек", cover: "", kind: "add" })
+                                items.push({ uri: "", label: I18n.t("Find a track"), cover: "", kind: "add" })
                             root.syncModel(seeds, items)
                         }
                         onInfoChanged: sync()

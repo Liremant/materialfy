@@ -88,21 +88,21 @@ Window {
             spacing: 2
 
             Item { Layout.preferredHeight: 12 }
-            NavItem { Layout.fillWidth: true; icon: "home"; text: "Главная" }
-            NavItem { Layout.fillWidth: true; icon: "search"; text: "Поиск"; selected: true }
+            NavItem { Layout.fillWidth: true; icon: "home"; text: I18n.t("Home") }
+            NavItem { Layout.fillWidth: true; icon: "search"; text: I18n.t("Search"); selected: true }
 
-            SectionHeader { text: "Коллекция" }
-            NavItem { Layout.fillWidth: true; icon: "favorite"; text: "Мне нравится" }
-            NavItem { Layout.fillWidth: true; icon: "graphic_eq"; text: "Моя волна" }
+            SectionHeader { text: I18n.t("Collection") }
+            NavItem { Layout.fillWidth: true; icon: "favorite"; text: I18n.t("My likes") }
+            NavItem { Layout.fillWidth: true; icon: "graphic_eq"; text: I18n.t("My Wave") }
 
-            SectionHeader { text: "Плейлисты"; action: "add" }
+            SectionHeader { text: I18n.t("Playlists"); action: "add" }
             Repeater {
                 model: win.covers
                 NavItem {
                     required property string modelData
                     required property int index
                     Layout.fillWidth: true
-                    text: "Плейлист " + (index + 1)
+                    text: I18n.t("Playlist {0}", index + 1)
                     imageSource: win.coversDir + modelData
                     selected: win.coverIndex === index
                     trailingIcon: "download_done"
@@ -135,7 +135,7 @@ Window {
                         Layout.fillWidth: true
                         IconButton { icon: "arrow_back" }
                         Item { Layout.fillWidth: true }
-                        SearchField { Layout.preferredWidth: 380; placeholder: "Трек, альбом, исполнитель"; text: "death metal" }
+                        SearchField { Layout.preferredWidth: 380; placeholder: I18n.t("Track, album, artist"); text: "death metal" }
                         Item { Layout.fillWidth: true }
                         IconButton { icon: "more_vert" }
                     }
@@ -146,14 +146,14 @@ Window {
                     Flow {
                         Layout.fillWidth: true
                         spacing: 16
-                        TextField { width: 260; label: "Хост"; placeholderText: "proxy.example.com"; leadingIcon: "lan" }
-                        TextField { width: 200; label: "Пароль"; echoMode: TextInput.Password; text: "secret" }
+                        TextField { width: 260; label: I18n.t("Host"); placeholderText: "proxy.example.com"; leadingIcon: "lan" }
+                        TextField { width: 200; label: I18n.t("Password"); echoMode: TextInput.Password; text: "secret" }
                         MenuField {
                             id: galleryMenuField
                             width: 240
-                            label: "Устройство вывода"
+                            label: I18n.t("Output device")
                             leadingIcon: "speaker"
-                            model: [{ id: "", text: "Как в системе" }, { id: "spk", text: "Динамики" }, { id: "hp", text: "Наушники" }]
+                            model: [{ id: "", text: I18n.t("System default") }, { id: "spk", text: I18n.t("Speakers") }, { id: "hp", text: I18n.t("Headphones") }]
                             currentValue: ""
                             onActivated: v => currentValue = v
                         }
@@ -217,7 +217,7 @@ Window {
                     }
 
                     // --- Кнопки ---
-                    Section { title: "Кнопки" }
+                    Section { title: I18n.t("Buttons") }
                     Flow {
                         Layout.fillWidth: true
                         spacing: 12
@@ -235,10 +235,10 @@ Window {
                         Button { text: "XS"; size: "xs" }
                         Button { text: "Small"; size: "s" }
                         Button { text: "Medium"; size: "m"; icon: "graphic_eq" }
-                        Button { text: "Моя волна"; size: "l"; icon: "graphic_eq"; style: "tonal" }
+                        Button { text: I18n.t("My Wave"); size: "l"; icon: "graphic_eq"; style: "tonal" }
                     }
 
-                    Section { title: "Иконки-кнопки" }
+                    Section { title: I18n.t("Icon buttons") }
                     Flow {
                         Layout.fillWidth: true
                         spacing: 12
@@ -252,7 +252,7 @@ Window {
                         IconButton { icon: "graphic_eq"; style: "tonal"; size: "l"; widthMode: "narrow" }
                     }
 
-                    Section { title: "Группа кнопок" }
+                    Section { title: I18n.t("Button group") }
                     Flow {
                         Layout.fillWidth: true
                         spacing: 24
@@ -264,7 +264,7 @@ Window {
                         }
                     }
 
-                    Section { title: "Фигуры (клик — морф)" }
+                    Section { title: I18n.t("Shapes (click to morph)") }
                     Flow {
                         Layout.fillWidth: true
                         spacing: 16
@@ -292,7 +292,7 @@ Window {
                         }
                     }
 
-                    Section { title: "Поля и переключатели" }
+                    Section { title: I18n.t("Fields and switches") }
                     RowLayout {
                         spacing: 24
                         Switch { checked: true }
@@ -301,7 +301,7 @@ Window {
                         Slider { Layout.preferredWidth: 280; value: 0.6; from: 0; to: 2; valueText: v => Math.round(v * 100) + "%" }
                     }
 
-                    Section { title: "Цветовые роли" }
+                    Section { title: I18n.t("Color roles") }
                     Flow {
                         Layout.fillWidth: true
                         spacing: 8
@@ -343,15 +343,15 @@ Window {
                 anchors.margins: 24
                 spacing: 16
 
-                Label { text: "Тема"; type: "titleLarge" }
+                Label { text: I18n.t("Theme"); type: "titleLarge" }
 
                 RowLayout {
                     Layout.fillWidth: true
-                    Label { text: "Тёмная"; type: "bodyLarge"; Layout.fillWidth: true }
+                    Label { text: I18n.t("Dark"); type: "bodyLarge"; Layout.fillWidth: true }
                     Switch { checked: ThemeEngine.dark; onToggled: c => ThemeEngine.dark = c }
                 }
 
-                Label { text: "Цвет из обложки"; type: "labelLarge"; color: Theme.fgSurfaceVariant }
+                Label { text: I18n.t("Color from cover"); type: "labelLarge"; color: Theme.fgSurfaceVariant }
                 Row {
                     spacing: 12
                     Repeater {
@@ -368,7 +368,7 @@ Window {
                     }
                 }
 
-                Label { text: "Или seed-цвет"; type: "labelLarge"; color: Theme.fgSurfaceVariant }
+                Label { text: I18n.t("Or a seed color"); type: "labelLarge"; color: Theme.fgSurfaceVariant }
                 Flow {
                     Layout.fillWidth: true
                     spacing: 8
@@ -385,7 +385,7 @@ Window {
                     }
                 }
 
-                Label { text: "Схема"; type: "labelLarge"; color: Theme.fgSurfaceVariant }
+                Label { text: I18n.t("Scheme"); type: "labelLarge"; color: Theme.fgSurfaceVariant }
                 Flow {
                     Layout.fillWidth: true
                     spacing: 8
@@ -403,7 +403,7 @@ Window {
                 Item { Layout.fillHeight: true }
                 Label {
                     Layout.fillWidth: true
-                    text: "Перетащи любую картинку в окно — тема возьмёт цвет из неё."
+                    text: I18n.t("Drop any image onto the window — the theme will take its color.")
                     type: "bodySmall"
                     wrapMode: Text.WordWrap
                     elide: Text.ElideNone

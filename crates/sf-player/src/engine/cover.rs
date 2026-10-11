@@ -16,7 +16,7 @@ pub fn cover_path(cover_dir: &Path, url: &str) -> PathBuf {
 /// Скачать (через общий HTTP-клиент с прокси) и вернуть путь; ошибка — текст.
 pub async fn fetch_cover(http: &sf_api::Http, cover_dir: &Path, url: &str) -> Result<PathBuf, String> {
     if !(url.starts_with("https://") || url.starts_with("http://")) {
-        return Err(format!("обложка: неподдерживаемый адрес {url:?}"));
+        return Err(format!("cover: unsupported address {url:?}"));
     }
     let path = cover_path(cover_dir, url);
     if tokio::fs::metadata(&path).await.is_ok_and(|meta| meta.is_file() && meta.len() > 0) {
@@ -27,23 +27,23 @@ pub async fn fetch_cover(http: &sf_api::Http, cover_dir: &Path, url: &str) -> Re
         .get(url)
         .send()
         .await
-        .map_err(|error| format!("обложка: {}", error.without_url()))?;
+        .map_err(|error| format!("cover: {}", error.without_url()))?;
     if !response.status().is_success() {
-        return Err(format!("обложка: ответ {}", response.status()));
+        return Err(format!("cover: response {}", response.status()));
     }
     let bytes = response
         .bytes()
         .await
-        .map_err(|error| format!("обложка: {}", error.without_url()))?;
+        .map_err(|error| format!("cover: {}", error.without_url()))?;
     if bytes.is_empty() {
-        return Err("обложка: пустой ответ".into());
+        return Err("cover: empty response".into());
     }
     if bytes.len() > MAX_COVER_BYTES {
-        return Err("обложка: слишком большой файл".into());
+        return Err("cover: file too large".into());
     }
     tokio::fs::create_dir_all(cover_dir)
         .await
-        .map_err(|error| format!("обложка: {error}"))?;
+        .map_err(|error| format!("cover: {error}"))?;
     // Свой временный файл на каждую загрузку: два одновременных запроса одного URL не мешают друг другу.
     static SEQ: AtomicU64 = AtomicU64::new(0);
     let temporary = path.with_extension(format!(
@@ -53,7 +53,7 @@ pub async fn fetch_cover(http: &sf_api::Http, cover_dir: &Path, url: &str) -> Re
     ));
     if let Err(error) = tokio::fs::write(&temporary, &bytes).await {
         let _ = tokio::fs::remove_file(&temporary).await;
-        return Err(format!("обложка: {error}"));
+        return Err(format!("cover: {error}"));
     }
     if let Err(error) = tokio::fs::rename(&temporary, &path).await {
         let _ = tokio::fs::remove_file(&temporary).await;
@@ -61,7 +61,7 @@ pub async fn fetch_cover(http: &sf_api::Http, cover_dir: &Path, url: &str) -> Re
         if tokio::fs::metadata(&path).await.is_ok_and(|meta| meta.len() > 0) {
             return Ok(path);
         }
-        return Err(format!("обложка: {error}"));
+        return Err(format!("cover: {error}"));
     }
     Ok(path)
 }

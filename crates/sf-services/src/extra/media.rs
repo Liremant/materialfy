@@ -170,7 +170,7 @@ pub fn start(rt: &Handle, player: PlayerHandle, requests: broadcast::Sender<AppR
         let _ = done_tx.send(());
     });
     if let Err(e) = spawned {
-        tracing::warn!("медиаклавиши недоступны: {e}");
+        tracing::warn!("media keys unavailable: {e}");
         return None;
     }
     let mut snapshots = player.subscribe().snapshot;

@@ -43,7 +43,7 @@ pub fn cache_dir() -> PathBuf {
 pub fn cache_subdir(sub: &str) -> PathBuf {
     let dir = cache_dir().join(sub);
     if let Err(err) = std::fs::create_dir_all(&dir) {
-        tracing::warn!("не удалось создать {}: {err}", dir.display());
+        tracing::warn!("could not create {}: {err}", dir.display());
     }
     dir
 }
@@ -167,7 +167,7 @@ fn clear_cache_in(root: &Path) -> std::io::Result<()> {
         let path = entry.path();
         let result = if is_real_dir(&path) { clear_dir(&path) } else { std::fs::remove_file(&path) };
         if let Err(err) = result {
-            tracing::warn!("кэш {}: {err}", path.display());
+            tracing::warn!("cache {}: {err}", path.display());
             first_error.get_or_insert(err);
         }
     }

@@ -19,7 +19,6 @@ Page {
     showHeader: false
     readonly property bool heroTitle: true     // название — в шапке; в верхней панели — после прокрутки
 
-    readonly property var _months: ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"]
     function _date(iso) {
         const m = /^(\d{4})(?:-(\d{2}))?(?:-(\d{2}))?/.exec(iso ?? "")
         if (!m)
@@ -27,12 +26,11 @@ Page {
         if (!m[2])
             return m[1]
         if (!m[3])
-            return (_months[Number(m[2]) - 1] ?? "") + " " + m[1]
-        return Number(m[3]) + " " + (_months[Number(m[2]) - 1] ?? "") + " " + m[1]
+            return I18n.monthYear(new Date(Number(m[1]), Number(m[2]) - 1, 1))
+        return I18n.dayMonth(new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))) + " " + m[1]
     }
     function _minutes(ms) {
-        const min = Math.max(1, Math.round(ms / 60000))
-        return min >= 60 ? Math.floor(min / 60) + " ч " + (min % 60 ? (min % 60) + " мин" : "") : min + " мин"
+        return I18n.duration(Math.max(60000, ms))
     }
 
     underlay: HeroShapes {
@@ -71,7 +69,7 @@ Page {
                 Layout.fillWidth: true
                 spacing: 4
                 Label {
-                    text: page.info.number ? "ВЫПУСК " + page.info.number : "ВЫПУСК"
+                    text: page.info.number ? I18n.t("EPISODE {0}", page.info.number) : I18n.t("EPISODE")
                     type: "labelMedium"
                     color: Theme.primary
                     font.letterSpacing: 1.2
@@ -117,7 +115,7 @@ Page {
         Layout.topMargin: 48
         visible: page.ep !== null && !page.ep.loading && page.ep.errorText !== ""
         icon: "cloud_off"
-        title: "Выпуск не загрузился"
+        title: I18n.t("Couldn't load episode")
         text: page.ep ? page.ep.errorText : ""
     }
 
@@ -127,7 +125,7 @@ Page {
         visible: (page.info.uri ?? "") !== ""
         episode: page.info
         compact: page.compact
-        onShared: snackbar.show("Ссылка скопирована")
+        onShared: snackbar.show(I18n.t("Link copied"))
     }
 
     // ---- Описание и главы ----
@@ -136,7 +134,7 @@ Page {
         Layout.maximumWidth: 880
         visible: (page.info.description ?? "") !== ""
         spacing: 12
-        SectionHeader { text: "Описание" }
+        SectionHeader { text: I18n.t("Description") }
         Label {
             Layout.fillWidth: true
             visible: text !== ""
@@ -165,8 +163,8 @@ Page {
     // ---- Ещё выпуски ----
     SectionHeader {
         visible: page.ep !== null && page.ep.more.count > 0
-        text: "Ещё выпуски"
-        actionText: (page.info.showId ?? "") !== "" ? "Все выпуски" : ""
+        text: I18n.t("More episodes")
+        actionText: (page.info.showId ?? "") !== "" ? I18n.t("All episodes") : ""
         onAction: Catalog.openShow(page.info.showId)
     }
     ColumnLayout {

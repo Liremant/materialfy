@@ -51,7 +51,7 @@ fn fetched(current: &str, next: &[&str]) -> FetchedQueue {
 }
 
 fn queue_uris(core: &Core) -> (Option<String>, Vec<String>) {
-    let queue = core.queue.as_ref().expect("очередь остаётся загруженной");
+    let queue = core.queue.as_ref().expect("the queue stays loaded");
     (
         queue.current.as_ref().map(|item| item.uri().to_owned()),
         queue.next.iter().map(|item| item.uri().to_owned()).collect(),
@@ -148,13 +148,13 @@ fn next_shows_the_next_songs_title_before_the_engine_loads_it() {
     playing(&mut core, "spotify:track:a");
     core.queue = Some(QueueData {
         current: Some(QItem { uid: 1, track: song("spotify:track:a") }),
-        next: vec![QItem { uid: 2, track: named("spotify:track:b", "Вторая песня") }],
+        next: vec![QItem { uid: 2, track: named("spotify:track:b", "Second song") }],
     });
     assert!(core.cached("spotify:track:b").is_none());
     core.next();
-    let now = core.now_playing().expect("следующая песня на экране");
+    let now = core.now_playing().expect("the next song is on screen");
     assert_eq!(now.track.uri, "spotify:track:b");
-    assert_eq!(now.track.title, "Вторая песня");
+    assert_eq!(now.track.title, "Second song");
 }
 
 #[test]
@@ -167,7 +167,7 @@ fn a_pending_next_keeps_paused_playback_paused() {
     core.next();
     let now = core.now_playing().unwrap();
     assert_eq!(now.track.uri, "spotify:track:b");
-    assert!(!now.playing, "Next на паузе не показывает «играет»");
+    assert!(!now.playing, "Next while paused does not show “playing”");
 }
 
 /// Восстановленная очередь видна, но не служит догадкой, куда попадёт Next.
@@ -205,12 +205,12 @@ fn remote_track_intent_waits_for_a_fresh_confirming_poll() {
     core.remote_poll_seq = 7;
     core.expect_track("spotify:track:wanted".into(), 0);
     core.reconcile_remote_track_intent(7, Some("spotify:track:old"));
-    assert!(core.intent_track.is_some(), "опрос в полёте старше команды");
+    assert!(core.intent_track.is_some(), "a poll in flight is older than the command");
     core.reconcile_remote_track_intent(8, Some("spotify:track:old"));
-    assert!(core.intent_track.is_some(), "один устаревший ответ переспрашивается");
+    assert!(core.intent_track.is_some(), "one stale reply is asked again");
     assert!(core.remote_recheck_at.is_some());
     core.reconcile_remote_track_intent(9, Some("spotify:track:actual"));
-    assert!(core.intent_track.is_none(), "второй свежий ответ решает");
+    assert!(core.intent_track.is_none(), "the second fresh reply decides");
 }
 
 #[test]
@@ -245,13 +245,13 @@ fn a_stale_queue_answer_does_not_undo_a_skip() {
     let stale = fetched("spotify:track:a", &["spotify:track:b", "spotify:track:c"]);
     answer_latest(&mut core, Ok(stale.clone()));
     let (current, next) = queue_uris(&core);
-    assert_eq!(current.as_deref(), Some("spotify:track:b"), "пропуск стоит");
+    assert_eq!(current.as_deref(), Some("spotify:track:b"), "the skip holds");
     assert_eq!(next, vec!["spotify:track:c"]);
-    assert!(core.queue_recheck_at.is_some(), "устаревший ответ переспрашивается");
+    assert!(core.queue_recheck_at.is_some(), "a stale reply is asked again");
     for _ in 0..QUEUE_STALE_RETRIES {
         answer_latest(&mut core, Ok(stale.clone()));
     }
-    assert_eq!(queue_uris(&core).0.as_deref(), Some("spotify:track:a"), "после лимита принимается ответ Spotify");
+    assert_eq!(queue_uris(&core).0.as_deref(), Some("spotify:track:a"), "after the limit Spotify’s reply is accepted");
 }
 
 #[test]
@@ -279,7 +279,7 @@ fn a_chosen_queue_row_plays_at_once_and_takes_the_rows_above() {
     core.play_queue_item(1, "spotify:track:c".into());
     let (current, next) = queue_uris(&core);
     assert_eq!(current.as_deref(), Some("spotify:track:c"));
-    assert_eq!(next, vec!["spotify:track:d"], "строки после выбранной остаются");
+    assert_eq!(next, vec!["spotify:track:d"], "rows after the chosen one stay");
     assert_eq!(core.current_track_uri().as_deref(), Some("spotify:track:c"));
     assert!(core.manual_queue.is_empty());
     assert_eq!(engine_commands(&mut core), [PlayerCommand::Next, PlayerCommand::Next], "N×Next");
@@ -324,10 +324,10 @@ fn clear_queue_takes_the_hand_queued_rows_and_keeps_the_context() {
     );
     assert!(core.can_clear_queue());
     core.clear_queue();
-    assert_eq!(queue_uris(&core).1, vec!["spotify:track:c", "spotify:track:d"], "своя c контекста остаётся");
+    assert_eq!(queue_uris(&core).1, vec!["spotify:track:c", "spotify:track:d"], "our own c from the context stays");
     assert!(core.manual_queue.is_empty());
     assert!(core.queue_recheck_at.is_some());
-    assert!(notices(&core).contains(&"Очередь очищена".to_owned()));
+    assert!(notices(&core).contains(&"Queue cleared".to_owned()));
     assert_eq!(engine_commands(&mut core), [PlayerCommand::ClearQueue]);
 }
 
@@ -355,7 +355,7 @@ fn clearing_is_only_offered_for_this_computers_queue() {
     loaded_queue(&mut core, "spotify:track:a", &["spotify:track:b"]);
     assert!(!core.can_clear_queue());
     core.clear_queue();
-    assert_eq!(core.manual_queue.len(), 1, "удалённую очередь очистить нельзя");
+    assert_eq!(core.manual_queue.len(), 1, "a remote queue can’t be cleared");
 }
 
 #[test]
@@ -369,7 +369,7 @@ fn play_next_queues_after_the_songs_already_queued() {
         queue_uris(&core).1,
         vec!["spotify:track:b", "spotify:track:c", "spotify:track:ctx1", "spotify:track:ctx2"]
     );
-    assert_eq!(notices(&core).last().map(String::as_str), Some("«c» в очереди"));
+    assert_eq!(notices(&core).last().map(String::as_str), Some("“c” added to queue"));
     assert_eq!(
         engine_commands(&mut core),
         [PlayerCommand::AddToQueue("spotify:track:b".into()), PlayerCommand::AddToQueue("spotify:track:c".into())]
@@ -386,7 +386,7 @@ fn starting_a_queued_album_preserves_its_manual_copies_and_clear_button() {
         core.on_now_playing_changed();
         core.queue_album_tracks(
             ["intro", "second", "third"].iter().map(|id| named(&format!("spotify:track:{id}"), id)).collect(),
-            "Альбом".into(),
+            "Album".into(),
         );
         core.add_to_queue("spotify:track:extra".into(), "Extra".into());
         let manual = core.manual_queue.clone();
@@ -396,7 +396,7 @@ fn starting_a_queued_album_preserves_its_manual_copies_and_clear_button() {
         started.track = local_track("spotify:track:intro");
         started.track_sequence += 1;
         core.handle_local(started);
-        assert_eq!(core.manual_queue, manual, "старт альбома — не игра из очереди");
+        assert_eq!(core.manual_queue, manual, "starting an album is not playing from the queue");
 
         let next = [
             "spotify:track:intro",
@@ -465,7 +465,7 @@ fn replaying_a_song_only_consumes_a_queue_copy_when_the_queue_advances() {
         core.handle_local(again);
         if repeat == RepeatMode::Track {
             assert_eq!(core.manual_queue, ["spotify:track:b"]);
-            assert_eq!(core.queued_rows_len(), 1, "повтор трека не двигает очередь");
+            assert_eq!(core.queued_rows_len(), 1, "repeating a track does not move the queue");
             core.next();
             let mut skipped = core.local.clone();
             skipped.track_sequence += 1;
@@ -492,7 +492,7 @@ fn queue_album_uses_every_song_in_order_and_preserves_duplicates() {
         let expected: Vec<String> = tracks.iter().map(|track| track.uri.clone()).collect();
         tracks.push(TrackItem { available: false, ..song("spotify:track:unavailable") });
         tracks.push(TrackItem::default());
-        core.queue_album_tracks(tracks, "Альбом".into());
+        core.queue_album_tracks(tracks, "Album".into());
         let queued = queue_uris(&core).1;
         assert_eq!(queued[0], "spotify:track:manual");
         assert_eq!(queued[1..queued.len() - 1], expected);
@@ -513,9 +513,9 @@ fn queue_album_uses_every_song_in_order_and_preserves_duplicates() {
             assert!(matches!(&calls[0], ApiCall::AddMany { uris, .. } if *uris == expected));
         }
         assert!(core.pending_album_queues.is_empty());
-        core.queue_one("spotify:track:after".into(), "После".into(), false);
+        core.queue_one("spotify:track:after".into(), "After".into(), false);
         let queued = queue_uris(&core).1;
-        assert_eq!(queued[queued.len() - 2], "spotify:track:after", "поздняя песня — после альбома длиннее 100");
+        assert_eq!(queued[queued.len() - 2], "spotify:track:after", "a late song goes after an album longer than 100");
     }
 }
 
@@ -523,15 +523,15 @@ fn queue_album_uses_every_song_in_order_and_preserves_duplicates() {
 fn an_album_is_fetched_whole_before_it_is_queued() {
     let mut core = headless();
     loaded_queue(&mut core, "spotify:track:current", &["spotify:track:context"]);
-    core.add_to_queue("spotify:album:album".into(), "Альбом".into());
+    core.add_to_queue("spotify:album:album".into(), "Album".into());
     let calls = queue_calls(&mut core);
     let [ApiCall::AlbumTracks { request, id }] = calls.as_slice() else {
-        panic!("ожидался запрос треков альбома: {calls:?}");
+        panic!("expected an album tracks request: {calls:?}");
     };
     assert_eq!(id, "album");
-    assert_eq!(queue_uris(&core).1, ["spotify:track:context"], "ничего до ответа");
+    assert_eq!(queue_uris(&core).1, ["spotify:track:context"], "nothing before the reply");
     // повторный клик в пределах 1,5 с — тот же
-    core.add_to_queue("spotify:album:album".into(), "Альбом".into());
+    core.add_to_queue("spotify:album:album".into(), "Album".into());
     assert!(queue_calls(&mut core).is_empty());
     core.handle_api(ApiReply::AlbumTracks {
         request: *request,
@@ -557,7 +557,7 @@ async fn album_pages_are_read_in_order_or_not_at_all() {
     let pages = [page(&["one", "two"], 0, true), page(&["one"], 2, false)];
     let tracks = super::backend::album_tracks(|offset| {
         let found = pages.iter().find(|page| page.offset == offset).cloned();
-        async move { Ok(found.expect("страница по смещению")) }
+        async move { Ok(found.expect("a page at the offset")) }
     })
     .await
     .unwrap();
@@ -582,14 +582,14 @@ fn remote_album_queue_keeps_its_rows_while_rate_limited_writes_are_pending() {
     let old = fetched("spotify:track:current", &["spotify:track:context"]);
     core.queue_album_tracks(
         vec![song("spotify:track:a"), song("spotify:track:b"), song("spotify:track:a")],
-        "Альбом".into(),
+        "Album".into(),
     );
     let request = core.serial;
     for addition in &mut core.pending_queue_adds {
         addition.at = Instant::now() - Duration::from_secs(60);
     }
     core.expire_pending_queue_adds();
-    assert_eq!(core.pending_queue_adds.len(), 3, "пока идёт запись, ожидания не истекают");
+    assert_eq!(core.pending_queue_adds.len(), 3, "pending adds do not expire while a write is in flight");
     let expected = ["spotify:track:a", "spotify:track:b", "spotify:track:a", "spotify:track:context"];
     for _ in 0..u16::from(u8::MAX) + 2 {
         answer_latest(&mut core, Ok(old.clone()));
@@ -609,7 +609,7 @@ fn rejected_queue_copies_leave_accepted_later_and_context_copies_intact() {
     loaded_queue(&mut core, "spotify:track:current", &["spotify:track:a"]);
     core.queue_album_tracks(
         vec![song("spotify:track:a"), song("spotify:track:a"), song("spotify:track:b")],
-        "Альбом".into(),
+        "Album".into(),
     );
     let album = core.serial;
     // отдельная просьба — мимо защиты от двойного клика
@@ -636,7 +636,7 @@ fn pending_single_keeps_its_name_and_duration_during_and_after_a_cooldown() {
     core.local_ready = false;
     loaded_queue(&mut core, "spotify:track:current", &["spotify:track:context"]);
     let old = fetched("spotify:track:current", &["spotify:track:context"]);
-    let track = TrackItem { duration_ms: 215_000, ..named("spotify:track:single", "Сингл") };
+    let track = TrackItem { duration_ms: 215_000, ..named("spotify:track:single", "Single") };
     core.remember(&track);
     core.add_to_queue(track.uri.clone(), track.title.clone());
     let request = core.serial;
@@ -658,7 +658,7 @@ fn pending_album_queue_cannot_survive_clear_sign_out_or_device_change() {
     for cancel in ["clear", "sign-out", "device", "failure"] {
         let mut core = headless();
         loaded_queue(&mut core, "spotify:track:current", &["spotify:track:context"]);
-        core.add_to_queue("spotify:album:album".into(), "Альбом".into());
+        core.add_to_queue("spotify:album:album".into(), "Album".into());
         let request = core.serial;
         let _ = queue_calls(&mut core);
         match cancel {
@@ -704,13 +704,13 @@ fn a_song_picked_twice_is_queued_twice() {
     core.queue_many(picked.clone());
     let told = notices(&core).len();
     core.queue_many(picked.clone());
-    assert_eq!(notices(&core).len(), told, "второй клик ничего не добавил");
+    assert_eq!(notices(&core).len(), told, "the second click added nothing");
     assert_eq!(
         queue_uris(&core).1,
         vec!["spotify:track:b", "spotify:track:c", "spotify:track:b", "spotify:track:ctx1"]
     );
     assert_eq!(core.manual_queue, vec!["spotify:track:b", "spotify:track:c", "spotify:track:b"]);
-    assert_eq!(notices(&core).last().map(String::as_str), Some("В очередь добавлено: 3 трека"));
+    assert_eq!(notices(&core).last().map(String::as_str), Some("Added to queue: 3 tracks"));
     for addition in &mut core.pending_queue_adds {
         addition.at = Instant::now() - QUEUE_ADD_DEBOUNCE;
     }
@@ -739,10 +739,10 @@ fn a_queue_batch_reports_only_rows_it_added() {
         queue_uris(&core).1,
         ["spotify:track:b", "spotify:track:c", "spotify:track:c", "spotify:track:ctx1"]
     );
-    assert_eq!(notices(&core).last().unwrap(), "В очередь добавлено: 2 трека");
+    assert_eq!(notices(&core).last().unwrap(), "Added to queue: 2 tracks");
     let told = notices(&core).len();
     core.queue_many(Vec::new());
-    assert_eq!(notices(&core).len(), told, "пустой пакет ничего не добавляет");
+    assert_eq!(notices(&core).len(), told, "an empty batch adds nothing");
 }
 
 #[test]
@@ -778,7 +778,7 @@ fn the_queued_section_covers_only_the_users_own_rows() {
         "spotify:track:a",
         &["spotify:track:b", "spotify:track:c", "spotify:track:ctx1", "spotify:track:c"],
     );
-    assert_eq!(core.queued_rows_len(), 2, "копия c в контексте — не ручная");
+    assert_eq!(core.queued_rows_len(), 2, "the copy of c in the context is not manual");
     core.manual_queue.clear();
     assert_eq!(core.queued_rows_len(), 0);
 }
@@ -808,7 +808,7 @@ fn shuffling_local_playback_updates_queue_and_keeps_user_songs() {
     core.refresh_queue(true);
     let seq = core.queue_seq;
     answer_queue(&mut core, seq - 1, Ok(fetched("spotify:track:playing", &before)));
-    assert_eq!(queue_uris(&core).1, before, "ответ до переключения отброшен непрочитанным");
+    assert_eq!(queue_uris(&core).1, before, "a reply from before the switch is dropped unread");
     let shuffled = ["spotify:track:manual1", "spotify:track:ctx3", "spotify:track:ctx1", "spotify:track:ctx2"];
     answer_queue(&mut core, seq, Ok(fetched("spotify:track:playing", &shuffled)));
     assert_eq!(queue_uris(&core).0.as_deref(), Some("spotify:track:playing"));
@@ -872,7 +872,7 @@ fn stale_queue_response_after_local_reorder_does_not_undo_it() {
     let outstanding = core.queue_seq;
     core.move_manual(0, slot_to_index(0, 2));
     let reordered = vec!["spotify:track:manual2", "spotify:track:manual1", "spotify:track:ctx1"];
-    assert_eq!(queue_uris(&core).1, reordered, "перестановка видна сразу");
+    assert_eq!(queue_uris(&core).1, reordered, "the reorder shows at once");
     let commands = engine_commands(&mut core);
     assert_eq!(
         commands,
@@ -883,12 +883,12 @@ fn stale_queue_response_after_local_reorder_does_not_undo_it() {
         ]
     );
     answer_queue(&mut core, outstanding, Ok(fetched("spotify:track:playing", &pre_drag)));
-    assert_eq!(queue_uris(&core).1, reordered, "запоздавший ответ не отменяет перестановку");
+    assert_eq!(queue_uris(&core).1, reordered, "a late reply does not undo the reorder");
     core.queue_recheck_at = None;
     core.refresh_queue(true);
     let seq = core.queue_seq;
     answer_queue(&mut core, seq, Ok(fetched("spotify:track:playing", &pre_drag)));
-    assert_eq!(queue_uris(&core).1, reordered, "отстающий свежий ответ — тоже");
+    assert_eq!(queue_uris(&core).1, reordered, "nor does a lagging fresh reply");
     assert_eq!(core.queue_stale_retries, 1);
     assert!(core.queue_recheck_at.is_some());
     answer_queue(&mut core, seq, Ok(fetched("spotify:track:playing", &reordered)));
@@ -936,7 +936,7 @@ fn every_local_move_restarts_the_stale_queue_allowance() {
     let moved = vec!["spotify:track:c", "spotify:track:b", "spotify:track:a", "spotify:track:ctx"];
     for _ in 0..QUEUE_STALE_RETRIES - 1 {
         answer_stale(&mut core);
-        assert_eq!(queue_uris(&core).1, moved, "отстающий ответ не отменяет последнюю перестановку");
+        assert_eq!(queue_uris(&core).1, moved, "a lagging reply does not undo the last reorder");
     }
     assert_eq!(core.queued_rows_len(), 3);
 }
@@ -954,7 +954,7 @@ fn moving_a_row_shows_the_order_that_will_play() {
     assert_eq!(
         queue_uris(&core).1,
         ["spotify:track:a", "spotify:track:c", "spotify:track:b", "spotify:track:ctx"],
-        "строки — в том порядке, что отдан движку"
+        "rows are in the order given to the engine"
     );
 }
 
@@ -992,7 +992,7 @@ fn a_drop_on_a_remote_queue_just_adds_to_the_end() {
     core.insert_manual(vec![song("spotify:track:new")], 0);
     assert_eq!(core.manual_queue, ["spotify:track:m0", "spotify:track:new"]);
     core.move_manual(1, 0);
-    assert_eq!(core.manual_queue, ["spotify:track:m0", "spotify:track:new"], "удалённо не переставляется");
+    assert_eq!(core.manual_queue, ["spotify:track:m0", "spotify:track:new"], "not reordered remotely");
 }
 
 #[test]
@@ -1070,12 +1070,12 @@ fn the_queue_comes_back_after_a_restart() {
             Effect::Save(data) => Some(*data),
             _ => None,
         })
-        .expect("сессия сохраняется");
+        .expect("the session is saved");
     let mut restarted = Core::new(0.5, true);
     restarted.restore_session(saved);
     assert_eq!(queue_uris(&restarted).1, vec!["spotify:track:b", "spotify:track:ctx1"]);
-    assert_eq!(restarted.queued_rows_len(), 1, "своя ручная песня — в своей секции");
-    let now = restarted.now_playing().expect("трек прошлой сессии виден");
+    assert_eq!(restarted.queued_rows_len(), 1, "our own manual song is in its own section");
+    let now = restarted.now_playing().expect("the last session’s track is shown");
     assert!(now.resuming && !now.playing);
     assert_eq!(now.track.title, "A");
 }
@@ -1085,7 +1085,7 @@ fn the_remembered_song_is_shown_paused_at_its_position() {
     let mut core = headless();
     core.resume_track = Some("spotify:track:abc".into());
     core.resume_position_ms = 19_566;
-    assert!(core.now_playing().is_none(), "нечего показать, пока нет данных песни");
+    assert!(core.now_playing().is_none(), "nothing to show until the song data arrives");
     core.remember(&TrackItem {
         title: "Karma Police".into(),
         artists: "Radiohead".into(),
@@ -1093,13 +1093,13 @@ fn the_remembered_song_is_shown_paused_at_its_position() {
         duration_ms: 264_000,
         ..song("spotify:track:abc")
     });
-    let now = core.now_playing().expect("трек прошлой сессии виден");
+    let now = core.now_playing().expect("the last session’s track is shown");
     assert!(now.resuming);
     assert!(!now.playing);
     assert_eq!(now.track.title, "Karma Police");
     assert_eq!(now.track.artists, "Radiohead");
     assert_eq!(now.duration_ms, 264_000);
-    assert_eq!(now.position_ms, 19_566, "не с нуля");
+    assert_eq!(now.position_ms, 19_566, "not from zero");
 }
 
 #[test]
@@ -1131,7 +1131,7 @@ fn pressing_play_on_a_cold_start_does_not_restart_the_song() {
     core.resume_track = Some("spotify:track:abc".into());
     core.resume_position_ms = 19_566;
     core.toggle_play();
-    let request = core.queued_play.as_ref().expect("запуск ждёт движок");
+    let request = core.queued_play.as_ref().expect("the start waits for the engine");
     assert_eq!(request.context_uri.as_deref(), Some("spotify:playlist:pl1"));
     assert_eq!(request.offset_uri.as_deref(), Some("spotify:track:abc"));
     assert_eq!(request.position_ms, 19_566);
@@ -1152,7 +1152,7 @@ fn playing_an_in_progress_episode_continues_from_its_resume_point() {
     let play = |core: &mut Core, uri: &str, resume: i64| {
         core.queued_play = None;
         core.play_episode(uri.into(), resume);
-        core.queued_play.as_ref().expect("ждёт движок").position_ms
+        core.queued_play.as_ref().expect("waits for the engine").position_ms
     };
     assert_eq!(play(&mut core, in_progress, 600_000), 600_000);
     assert_eq!(play(&mut core, "spotify:episode:new", 0), 0);
@@ -1166,7 +1166,7 @@ fn playing_an_in_progress_episode_continues_from_its_resume_point() {
     core.local.position_ms = 1_000_000;
     core.intent_track = None;
     core.queued_play = None;
-    assert_eq!(play(&mut core, in_progress, 600_000), 0, "играющий выпуск не отправляется на старую точку");
+    assert_eq!(play(&mut core, in_progress, 600_000), 0, "a playing episode is not sent back to the old point");
 }
 
 #[test]
@@ -1176,7 +1176,7 @@ fn the_saved_queue_follows_the_resumed_song_only() {
     core.resume_queue = vec!["spotify:track:q1".into(), "spotify:track:q2".into()];
     playing(&mut core, "spotify:track:other");
     core.on_now_playing_changed();
-    assert!(core.resume_queue.is_empty(), "другой старт отпускает сохранённую очередь");
+    assert!(core.resume_queue.is_empty(), "another start lets go of the saved queue");
     assert!(core.manual_queue.is_empty());
     assert!(core.session_dirty);
 }
@@ -1209,7 +1209,7 @@ fn the_transport_steps_a_restored_song_without_playing_it() {
     core.next();
     assert_eq!(core.resume_track.as_deref(), Some("spotify:track:two"));
     assert_eq!(core.resume_position_ms, 0);
-    assert!(core.queued_play.is_none() && core.local_list.is_none(), "пропуск не запускает трек");
+    assert!(core.queued_play.is_none() && core.local_list.is_none(), "a skip does not start a track");
     assert!(engine_commands(&mut core).is_empty());
     let now = core.now_playing().unwrap();
     assert!(now.resuming && !now.playing);
@@ -1223,7 +1223,7 @@ fn the_transport_steps_a_restored_song_without_playing_it() {
     assert_eq!(core.resume_track.as_deref(), Some("spotify:track:one"));
     assert_eq!(queue_uris(&core).1[0], "spotify:track:two");
     core.toggle_play();
-    let request = core.queued_play.as_ref().expect("Play запускает выбранный");
+    let request = core.queued_play.as_ref().expect("Play starts the chosen one");
     assert_eq!(request.context_uri.as_deref(), Some("spotify:playlist:pl1"));
     assert_eq!(request.offset_uri.as_deref(), Some("spotify:track:one"));
 }
@@ -1433,7 +1433,7 @@ fn two_toggle_play_actions_return_to_playing() {
     assert!(core.now_playing().unwrap().playing);
     core.toggle_play();
     core.toggle_play();
-    assert!(core.now_playing().unwrap().playing, "второе нажатие видит первую паузу");
+    assert!(core.now_playing().unwrap().playing, "the second press sees the first pause");
     assert_eq!(engine_commands(&mut core), [PlayerCommand::Toggle, PlayerCommand::Toggle]);
 }
 
@@ -1443,11 +1443,11 @@ fn play_and_pause_do_not_toggle_the_wrong_way() {
     core.local.track = Some(LocalTrack { uri: "spotify:track:a".into(), ..Default::default() });
     core.local.playback = Playback::Paused;
     core.pause();
-    assert!(engine_commands(&mut core).is_empty(), "на паузе pause ничего не делает");
+    assert!(engine_commands(&mut core).is_empty(), "pause does nothing while paused");
     core.play();
     assert_eq!(engine_commands(&mut core), [PlayerCommand::Toggle]);
     core.play();
-    assert!(engine_commands(&mut core).is_empty(), "уже играет");
+    assert!(engine_commands(&mut core).is_empty(), "already playing");
 }
 
 #[test]
@@ -1482,7 +1482,7 @@ fn shuffle_selected_without_a_device_applies_when_play_starts() {
     core.set_shuffle(true);
     assert!(core.shuffle_wanted);
     assert!(api_calls(&mut core).iter().all(|call| !matches!(call, ApiCall::Remote { .. } | ApiCall::Play { .. })));
-    assert!(notices(&core).is_empty(), "выбор режима без устройства — не ошибка");
+    assert!(notices(&core).is_empty(), "choosing a mode without a device is not an error");
     core.remote = Some(remote_snapshot("remote1", "spotify:track:x", true));
     core.play_context(PlayContext::with_uri("playlist", "spotify:playlist:pl0"), None, None);
     let calls = api_calls(&mut core);
@@ -1513,8 +1513,8 @@ fn shuffle_targets_active_remote_playback_without_a_device_id() {
 fn playing_with_no_device_asks_for_one() {
     let mut core = Core::new(0.5, false);
     core.play_uris(vec!["spotify:track:a".into()], 0, PlayContext::new("tracks"));
-    assert!(api_calls(&mut core).is_empty(), "Spotify не просят играть «нигде»");
-    assert_eq!(notices(&core), ["Выберите устройство или включите воспроизведение на этом компьютере"]);
+    assert!(api_calls(&mut core).is_empty(), "Spotify is never asked to play “nowhere”");
+    assert_eq!(notices(&core), ["Choose a device or turn on playback on this computer"]);
     // движок подключается — запрос ждёт его
     let mut core = Core::new(0.5, false);
     core.handle_playback(LocalPlayback::Connecting);
@@ -1540,7 +1540,7 @@ fn a_start_before_the_promised_engine_waits_for_it() {
     core.play_uris(vec!["spotify:track:a".into()], 0, PlayContext::new("tracks"));
     core.expect_local(false);
     assert!(core.queued_play.is_none());
-    assert_eq!(notices(&core), ["Выберите устройство или включите воспроизведение на этом компьютере"]);
+    assert_eq!(notices(&core), ["Choose a device or turn on playback on this computer"]);
 }
 
 #[test]
@@ -1570,14 +1570,14 @@ fn a_shuffled_play_does_not_start_at_track_one() {
         core.shuffle_from(items.clone(), PlayContext::with_uri("playlist", "spotify:playlist:p"));
         for command in engine_commands(&mut core) {
             if let PlayerCommand::Load(load) = command {
-                let start = load.offset_uri.expect("старт назван");
-                assert_ne!(start, "spotify:track:5", "недоступная строка не выбирается");
+                let start = load.offset_uri.expect("the start is named");
+                assert_ne!(start, "spotify:track:5", "an unavailable row is not chosen");
                 starts.insert(start);
             }
         }
     }
     assert!(core.shuffle_wanted);
-    assert!(starts.len() > 1, "старт перемешивания меняется");
+    assert!(starts.len() > 1, "the shuffle start varies");
 }
 
 #[test]
@@ -1626,14 +1626,14 @@ fn transferring_back_takes_the_connect_session_without_replaying_a_snapshot() {
             ..Default::default()
         };
         core.handle_local(transferred.clone());
-        assert!(!core.transferring(), "перенос подтверждён движком");
+        assert!(!core.transferring(), "the transfer is confirmed by the engine");
         let now = core.now_playing().unwrap();
         assert_eq!(now.track.uri, "spotify:track:metallica");
         assert_eq!(now.position_ms, 65_000);
         assert_eq!(now.playing, playing_remote);
         assert_eq!(core.target(), Target::Local);
         assert_eq!(queue_uris(&core).1, upcoming);
-        assert_eq!(core.manual_queue.len(), 2, "перенос не съедает ручную копию");
+        assert_eq!(core.manual_queue.len(), 2, "the transfer does not eat the manual copy");
         // повторный выбор этого ПК ничего не шлёт и не мешает следующему переходу
         core.transfer_to("this-computer".into(), true);
         assert!(engine_commands(&mut core).is_empty());
@@ -1648,14 +1648,14 @@ fn a_transfer_without_an_answer_says_the_device_did_not_respond() {
     let mut core = headless();
     core.transfer_to("speaker".into(), true);
     assert!(matches!(api_calls(&mut core).as_slice(), [ApiCall::Transfer { device, play: true }] if device == "speaker"));
-    core.handle_api(ApiReply::Transferred { device: "speaker".into(), name: Some("Колонка".into()), result: Ok(()) });
+    core.handle_api(ApiReply::Transferred { device: "speaker".into(), name: Some("Speaker".into()), result: Ok(()) });
     assert!(core.transferring());
     if let Some(transfer) = core.transfer.as_mut() {
         transfer.at = Instant::now() - TRANSFER_TIMEOUT - Duration::from_millis(1);
     }
     core.tick();
     assert!(!core.transferring());
-    assert!(notices(&core).contains(&"Колонка не ответил".to_owned()));
+    assert!(notices(&core).contains(&"Speaker didn't respond".to_owned()));
 }
 
 #[test]
@@ -1682,12 +1682,12 @@ fn a_device_that_vanishes_twice_is_lost_and_playback_can_continue_here() {
     core.remote = Some(remote);
     core.poll_remote();
     core.handle_api(ApiReply::Playback { seq: core.remote_poll_seq, result: Ok(None) });
-    assert!(!core.device_lost, "один пустой опрос — ещё не пропажа");
+    assert!(!core.device_lost, "one empty poll is not a loss yet");
     assert!(core.now_playing().is_some());
     core.poll_remote();
     core.handle_api(ApiReply::Playback { seq: core.remote_poll_seq, result: Ok(None) });
     assert!(core.device_lost);
-    let shown = core.now_playing().expect("последний трек остаётся на экране");
+    let shown = core.now_playing().expect("the last track stays on screen");
     assert!(!shown.playing);
     assert!(shown.position_ms >= 92_000);
     let _ = engine_commands(&mut core);
@@ -1705,7 +1705,7 @@ fn a_device_that_vanishes_twice_is_lost_and_playback_can_continue_here() {
         ),
         "{commands:?}"
     );
-    assert!(!commands.contains(&PlayerCommand::Transfer), "забирать нечего — Load, а не Transfer");
+    assert!(!commands.contains(&PlayerCommand::Transfer), "nothing to take over — Load, not Transfer");
 }
 
 #[test]
@@ -1718,7 +1718,7 @@ fn a_command_answered_404_marks_the_device_lost() {
         result: Err(ApiError::Status { status: 404, message: "Device not found".into() }),
     });
     assert!(core.device_lost);
-    assert!(notices(&core).iter().any(|text| text.contains("Сначала выберите устройство")));
+    assert!(notices(&core).iter().any(|text| text.contains("Choose a device first")));
 }
 
 #[test]
@@ -1756,7 +1756,7 @@ fn a_poll_asked_for_soon_is_not_put_off_while_unseen() {
     core.app_active = false;
     core.poll_remote_soon();
     let due = core.poll_interval().saturating_sub(core.remote_polled_at.elapsed());
-    assert!(due <= Duration::from_millis(700), "через {due:?}");
+    assert!(due <= Duration::from_millis(700), "in {due:?}");
 }
 
 #[test]
@@ -1777,11 +1777,11 @@ fn another_devices_shuffle_is_adopted_unless_ours_is_fresh() {
 fn a_started_context_is_shown_with_its_callers_title_at_once() {
     let mut core = headless();
     core.local.connected = true;
-    let context = PlayContext::with_uri("playlist", "spotify:playlist:p").titled("Мой плейлист").with_cover("c.jpg");
+    let context = PlayContext::with_uri("playlist", "spotify:playlist:p").titled("My playlist").with_cover("c.jpg");
     core.play_context(context.clone(), None, None);
     assert_eq!(core.shown_context(), context);
     // радио: играют показанные песни, а контекстом показана станция
-    let station = PlayContext::with_uri("radio", "spotify:station:track:t").titled("Радио «T»");
+    let station = PlayContext::with_uri("radio", "spotify:station:track:t").titled("Radio “T”");
     core.play_items(vec![song("spotify:track:a"), song("spotify:track:b")], 0, station.clone());
     assert!(matches!(
         engine_commands(&mut core).last(),
@@ -1794,13 +1794,13 @@ fn a_started_context_is_shown_with_its_callers_title_at_once() {
 fn an_engine_restart_keeps_the_context_and_the_manual_queue() {
     let mut core = headless();
     core.local.connected = true;
-    let playlist = PlayContext::with_uri("playlist", "spotify:playlist:p").titled("Плейлист");
+    let playlist = PlayContext::with_uri("playlist", "spotify:playlist:p").titled("Playlist");
     core.play_context(playlist, Some("spotify:track:b".into()), None);
     playing(&mut core, "spotify:track:b");
     core.local.position_ms = 42_000;
     core.manual_queue = vec!["spotify:track:m1".into(), "spotify:track:m2".into()];
     engine_commands(&mut core);
-    let spec = core.prepare_restart().expect("точка перезапуска");
+    let spec = core.prepare_restart().expect("a restart point");
     assert_eq!(spec.context_uri.as_deref(), Some("spotify:playlist:p"));
     assert_eq!(spec.offset_uri.as_deref(), Some("spotify:track:b"));
     assert!(spec.play);
@@ -1835,7 +1835,7 @@ fn an_engine_restart_keeps_the_context_and_the_manual_queue() {
     core.local.connected = true;
     core.play_items(vec![song("spotify:track:a"), song("spotify:track:b")], 0, PlayContext::new("search"));
     playing(&mut core, "spotify:track:b");
-    let spec = core.prepare_restart().expect("точка перезапуска");
+    let spec = core.prepare_restart().expect("a restart point");
     assert_eq!(spec.context_uri, None);
     assert_eq!(spec.uris, vec!["spotify:track:a".to_owned(), "spotify:track:b".to_owned()]);
     assert_eq!(spec.offset_uri.as_deref(), Some("spotify:track:b"));
@@ -1845,14 +1845,14 @@ fn an_engine_restart_keeps_the_context_and_the_manual_queue() {
 fn a_paused_station_list_stays_shown_as_the_station() {
     let mut core = headless();
     core.local.connected = true;
-    let station = PlayContext::with_uri("radio", "spotify:station:track:t").titled("Радио «T»");
+    let station = PlayContext::with_uri("radio", "spotify:station:track:t").titled("Radio “T”");
     let songs = vec![song("spotify:track:a"), song("spotify:track:b"), song("spotify:track:c")];
     core.play_items(songs, 0, station.clone());
     core.local.playback = Playback::Paused;
     core.local.track = local_track("spotify:track:c");
     core.optimistic_playing = None;
     core.age_assumed_context(ASSUMED_CONTEXT_HOLD);
-    assert_eq!(core.shown_context(), station, "пауза не снимает станцию");
+    assert_eq!(core.shown_context(), station, "a pause does not drop the station");
     // трек вне списка (автоплей) — станция больше не показана
     core.local.track = local_track("spotify:track:other");
     assert_ne!(core.shown_context(), station);
@@ -1901,12 +1901,11 @@ fn each_track_change_reports_the_end_of_the_last_and_the_start_of_the_next() {
 }
 
 #[test]
-fn plural_forms_are_russian() {
-    assert_eq!(plural(1, "трек", "трека", "треков"), "трек");
-    assert_eq!(plural(3, "трек", "трека", "треков"), "трека");
-    assert_eq!(plural(11, "трек", "трека", "треков"), "треков");
-    assert_eq!(plural(21, "трек", "трека", "треков"), "трек");
-    assert_eq!(plural(25, "трек", "трека", "треков"), "треков");
+fn queue_notices_count_tracks_in_english() {
+    let mut core = headless();
+    loaded_queue(&mut core, "spotify:track:a", &["spotify:track:ctx1"]);
+    core.queue_many(vec![named("spotify:track:b", "b")]);
+    assert_eq!(notices(&core).last().map(String::as_str), Some("Added to queue: 1 track"));
 }
 
 // ---- Актор: снимок и события поверх фейкового движка и Web API ------------------------------------
@@ -1991,7 +1990,7 @@ mod actor {
                         ApiReply::QueueBatchAdded { request, added: uris.len(), result: Ok(()) }
                     }
                     ApiCall::Remote { action, .. } => ApiReply::Remote { action, result: Ok(()) },
-                    other => panic!("неожиданный вызов {other:?}"),
+                    other => panic!("unexpected call {other:?}"),
                 }
             })
         }
@@ -2097,7 +2096,7 @@ mod actor {
             self.send(Msg::Local(LocalMsg::Ready {
                 engine,
                 device_id: "pc".into(),
-                name: "Этот ПК".into(),
+                name: "This PC".into(),
                 bitrate: 320,
                 autoplay: true,
             }))
@@ -2125,7 +2124,7 @@ mod actor {
         assert_eq!(snapshot.track.as_ref().map(|track| track.uri.as_str()), Some("spotify:track:a"));
         assert!(snapshot.playing && snapshot.is_local);
         assert_eq!(snapshot.codec, "OGG 320");
-        assert_eq!(snapshot.device.as_ref().map(|device| device.name.as_str()), Some("Этот ПК"));
+        assert_eq!(snapshot.device.as_ref().map(|device| device.name.as_str()), Some("This PC"));
         assert!(events.iter().any(|event| matches!(event, PlayerEvent::TrackChanged)));
         assert!(events.iter().any(|event| matches!(event, PlayerEvent::StateChanged)));
         assert!(events.iter().any(|event| matches!(event, PlayerEvent::TrackStarted(_))));
@@ -2159,7 +2158,7 @@ mod actor {
             shuffle: None,
         }))
         .await;
-        assert!(events.iter().any(|event| matches!(event, PlayerEvent::Notice(text) if text.contains("Выберите устройство"))));
+        assert!(events.iter().any(|event| matches!(event, PlayerEvent::Notice(text) if text.contains("Choose a device"))));
         let _ = rig.tx.send(Msg::Restore(None));
     }
 }

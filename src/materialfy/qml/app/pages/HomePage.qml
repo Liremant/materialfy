@@ -9,7 +9,7 @@ import ".."
 Page {
     id: page
 
-    title: "Главная"
+    title: I18n.t("Home")
     showHeader: false
 
     readonly property bool signedIn: Auth.state === "signedIn"
@@ -94,15 +94,15 @@ Page {
     function showMenu(e, point) {
         _menuEntry = e
         const k = e.kind ?? ""
-        const items = [{ id: "play", text: "Слушать", icon: "play_arrow" }]
+        const items = [{ id: "play", text: I18n.t("Play"), icon: "play_arrow" }]
         if (k !== "radio" && k !== "artist")
-            items.push({ id: "shuffle", text: "Перемешать", icon: "shuffle", enabled: k === "liked" || !!Player.shuffleContext })
+            items.push({ id: "shuffle", text: I18n.t("Shuffle play"), icon: "shuffle", enabled: k === "liked" || !!Player.shuffleContext })
         if (k === "playlist" || k === "album" || k === "artist")
-            items.push({ id: "radio", text: ({ playlist: "Радио по плейлисту", album: "Радио по альбому", artist: "Радио по исполнителю" })[k], icon: "radio" })
+            items.push({ id: "radio", text: ({ playlist: I18n.t("Playlist radio"), album: I18n.t("Album radio"), artist: I18n.t("Artist radio") })[k], icon: "radio" })
         if (k !== "liked" && k !== "radio" && (e.uri ?? "") !== "") {
             const pinned = Library.pinsRevision >= 0 && Library.isPinned(e.uri)
-            items.push({ separator: true }, { id: "pin", text: pinned ? "Открепить" : "Закрепить в библиотеке", icon: "push_pin", hint: "локально" },
-                       { id: "link", text: "Скопировать ссылку", icon: "content_copy" })
+            items.push({ separator: true }, { id: "pin", text: pinned ? I18n.t("Unpin") : I18n.t("Pin in library"), icon: "push_pin", hint: I18n.t("local") },
+                       { id: "link", text: I18n.t("Copy link"), icon: "content_copy" })
         }
         tileMenu.open(items, tileMenu.mapFromItem(null, point.x, point.y))
     }
@@ -116,14 +116,14 @@ Page {
             e.kind === "liked" ? Player.shuffleFrom(Library.liked) : Player.shuffleContext(e.uri)
         else if (id === "radio") {
             Radio.playStation(e.uri, e.title ?? "")
-            notify("Радио «" + (e.title ?? "") + "»")
+            notify(I18n.t("“{0}” radio", e.title ?? ""))
         } else if (id === "pin") {
             const was = Library.isPinned(e.uri)
             Library.togglePin(e.uri)
-            notify(was ? "Откреплено" : "Закреплено — только в этом приложении")
+            notify(was ? I18n.t("Unpinned") : I18n.t("Pinned — in this app only"))
         } else if (id === "link") {
             Catalog.copyLink(Catalog.uriUrl(e.uri))
-            notify("Ссылка скопирована")
+            notify(I18n.t("Link copied"))
         }
     }
 
@@ -148,7 +148,7 @@ Page {
         onOpenList: page.router.push("radio", { seed: Radio.selected })
         onSaveRequested: {
             Radio.save()
-            page.notify("Сохраняем станцию как плейлист…")
+            page.notify(I18n.t("Saving station as a playlist…"))
         }
         onRefreshRequested: Radio.refresh()
         onConnectRequested: page.router.reset(Auth.premium ? "playback" : "account")
@@ -167,7 +167,7 @@ Page {
             visible: Home.loading && page.shelfIds.length === 0
             Layout.fillWidth: true
             spacing: 12
-            SectionHeader { text: "Быстрый доступ" }
+            SectionHeader { text: I18n.t("Quick access") }
             GridLayout {
                 Layout.fillWidth: true
                 columns: page.compact ? 2 : 3
@@ -178,7 +178,7 @@ Page {
                     Rectangle { Layout.fillWidth: true; Layout.preferredHeight: 64; radius: Theme.shape.large; color: Theme.surfaceContainerHigh }
                 }
             }
-            SectionHeader { text: "Недавно прослушанное" }
+            SectionHeader { text: I18n.t("Recently played") }
             // полка заглушек шире страницы: обрезается, а не растягивает колонку (и сцену над ней)
             Item {
                 Layout.fillWidth: true
@@ -197,9 +197,9 @@ Page {
             Layout.alignment: Qt.AlignHCenter
             Layout.topMargin: 24
             icon: "cloud_off"
-            title: "Полки не загрузились"
+            title: I18n.t("Couldn't load shelves")
             text: Home.errorText
-            actionText: "Повторить"
+            actionText: I18n.t("Retry")
             actionIcon: "refresh"
             onAction: Home.refresh(true)
         }
@@ -258,7 +258,7 @@ Page {
             spacing: 12
             SectionHeader {
                 text: tracksCol.shelfData.title ?? ""
-                actionText: tracksCol.tracks.length > 8 ? (tracksCol.expanded ? "Свернуть" : "Показать ещё") : ""
+                actionText: tracksCol.tracks.length > 8 ? (tracksCol.expanded ? I18n.t("Show less") : I18n.t("Show more")) : ""
                 onAction: tracksCol.expanded = !tracksCol.expanded
             }
             GridLayout {
@@ -336,7 +336,7 @@ Page {
                             x: 10
                             y: 8
                             width: parent.width - 20
-                            text: "Личные плейлисты и миксы со страницы Spotify «Для тебя» — читаются через сессию вашего аккаунта"
+                            text: I18n.t("Personal playlists and mixes from Spotify’s “Made For You” page — read through your account session")
                             type: "bodySmall"
                             color: Theme.fgInverseSurface
                             wrapMode: Text.WordWrap
@@ -345,7 +345,7 @@ Page {
                 }
                 Label {
                     visible: rowCol.shelfData.key === "topArtists"
-                    text: "за 4 недели"
+                    text: I18n.t("last 4 weeks")
                     type: "bodySmall"
                     color: Theme.fgSurfaceVariant
                 }
@@ -417,7 +417,7 @@ Page {
                             subtitle: e.subtitle ?? ""
                             round: e.kind === "artist"
                             shape: e.kind === "radio" ? "flower8" : e.kind === "artist" ? "circle" : "softSquare"
-                            badge: e.kind === "radio" ? "РАДИО" : ""
+                            badge: e.kind === "radio" ? I18n.t("RADIO") : ""
                             placeholderIcon: ({ playlist: "queue_music", album: "album", artist: "person", show: "podcasts", radio: "radio" })[e.kind] ?? "album"
                             showPlay: true
                             playing: page.isPlaying(e)
@@ -434,7 +434,7 @@ Page {
                             round: true
                             cover: a.cover ?? ""
                             title: a.name ?? ""
-                            subtitle: "Исполнитель"
+                            subtitle: I18n.t("Artist")
                             placeholderIcon: "person"
                             onClicked: Catalog.openArtist(a.artistId ?? "")
                             onMenuRequested: p => page.showMenu({ kind: "artist", uri: a.uri ?? "", title: a.name ?? "", id: a.artistId ?? "" }, p)

@@ -224,7 +224,7 @@ impl Actor {
                     self.cover_file = match result {
                         Ok(path) => path.to_string_lossy().into_owned(),
                         Err(error) => {
-                            tracing::debug!("обложка не скачана: {error:#}");
+                            tracing::debug!("cover not downloaded: {error:#}");
                             String::new()
                         }
                     };
@@ -293,7 +293,7 @@ impl Actor {
             Command::AddToQueue(items) => match items.len() {
                 0 => {}
                 1 => {
-                    let item = items.into_iter().next().expect("один элемент");
+                    let item = items.into_iter().next().expect("one item");
                     core.remember(&item);
                     let uri = item.play_uri();
                     core.add_to_queue(uri, item.title);
@@ -346,10 +346,10 @@ impl Actor {
                 Effect::Engine(command) => match &self.engine {
                     Some(engine) => {
                         if let Err(error) = engine.command(command) {
-                            tracing::warn!("команда движку не прошла: {error:#}");
+                            tracing::warn!("engine command failed: {error:#}");
                         }
                     }
-                    None => tracing::debug!("движок не готов, команда {command:?} пропущена"),
+                    None => tracing::debug!("engine not ready, command {command:?} skipped"),
                 },
                 Effect::Api(call) => self.api(call),
                 Effect::Notice(text) => self.pending.push(PlayerEvent::Notice(text)),
@@ -372,7 +372,7 @@ impl Actor {
                     if let Some(path) = self.session_file.clone() {
                         tokio::task::spawn_blocking(move || {
                             if let Err(error) = data.save(&path) {
-                                tracing::warn!("сессия плеера не сохранена: {error:#}");
+                                tracing::warn!("player session not saved: {error:#}");
                             }
                         });
                     }
@@ -536,7 +536,7 @@ impl Actor {
             if let (Effect::Save(data), Some(path)) = (effect, self.session_file.as_ref())
                 && let Err(error) = data.save(path)
             {
-                tracing::warn!("сессия плеера не сохранена: {error:#}");
+                tracing::warn!("player session not saved: {error:#}");
             }
         }
         self.engine = None;

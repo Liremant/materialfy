@@ -129,11 +129,11 @@ GridLayout {
 
     StepCard {
         number: 1
-        title: "Медиатека и пульт"
+        title: I18n.t("Library and remote")
         // в сжатом виде — одна строка вместо описания и метки
-        text: root.compact ? (root.done1 ? "Готово" : root.waitingText !== "" ? root.waitingText : "Плейлисты, поиск, пульт")
-                           : "Плейлисты, любимые треки, поиск, история и пульт для Spotify Connect — телефона, колонки, ТВ."
-        tag: root.compact ? "" : root.done1 ? "Готово" : root.waitingText !== "" ? root.waitingText : "Один вход · сейчас"
+        text: root.compact ? (root.done1 ? I18n.t("Done") : root.waitingText !== "" ? root.waitingText : I18n.t("Playlists, search, remote"))
+                           : I18n.t("Playlists, Liked Songs, search, history and a remote for Spotify Connect — phone, speaker, TV.")
+        tag: root.compact ? "" : root.done1 ? I18n.t("Done") : root.waitingText !== "" ? root.waitingText : I18n.t("One sign-in · now")
         tagIcon: root.done1 ? "check" : root.waitingText !== "" ? "schedule" : "login"
         isActive: root.active === 1 && !root.done1
         done: root.done1
@@ -141,10 +141,10 @@ GridLayout {
     }
     StepCard {
         number: 2
-        title: root.compact ? "Слушать здесь" : "Слушать на этом компьютере"
-        text: root.compact ? (root.done2 ? "Готово" : "Premium — тем же входом")
-                           : "Если у вас Spotify Premium, включается тем же входом: компьютер станет устройством Spotify Connect."
-        tag: root.compact ? "" : root.done2 ? "Готово" : "Premium · тем же входом"
+        title: root.compact ? I18n.t("Listen here") : I18n.t("Listen on this computer")
+        text: root.compact ? (root.done2 ? I18n.t("Done") : I18n.t("Premium — same sign-in"))
+                           : I18n.t("If you have Spotify Premium, it turns on with the same sign-in: this computer becomes a Spotify Connect device.")
+        tag: root.compact ? "" : root.done2 ? I18n.t("Done") : I18n.t("Premium · same sign-in")
         tagIcon: root.done2 ? "check" : "workspace_premium"
         isActive: root.active === 2 && !root.done2
         done: root.done2

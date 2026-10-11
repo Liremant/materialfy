@@ -104,7 +104,7 @@ impl ConnectBackend {
         match self.cluster(&link).await {
             Ok((cluster, _)) => Some(devices(&cluster)),
             Err(error) => {
-                tracing::debug!("устройства через сессию недоступны: {error}");
+                tracing::debug!("devices via the session unavailable: {error}");
                 None
             }
         }
@@ -141,7 +141,7 @@ impl ConnectBackend {
         match result {
             Ok(reply) => reply,
             Err(error) => {
-                tracing::debug!("через сессию не вышло ({error}); запасной путь — Web API");
+                tracing::debug!("the session route failed ({error}); falling back to the Web API");
                 self.web.call(call).await
             }
         }
@@ -189,7 +189,7 @@ impl ConnectBackend {
         let updates = match link.session.dealer().listen_for(CLUSTER_URI, Message::from_raw::<ClusterUpdate>) {
             Ok(updates) => updates,
             Err(error) => {
-                tracing::debug!("пуши кластера недоступны: {error}");
+                tracing::debug!("cluster pushes unavailable: {error}");
                 self.lock().listening = None;
                 return;
             }
@@ -203,7 +203,7 @@ impl ConnectBackend {
                 let mut update = match update {
                     Ok(update) => update,
                     Err(error) => {
-                        tracing::debug!("пуш кластера не прочитан: {error}");
+                        tracing::debug!("couldn't read a cluster push: {error}");
                         continue;
                     }
                 };
@@ -295,7 +295,7 @@ impl ConnectBackend {
                     }
                 }
             }
-            Err(error) => tracing::debug!("данные треков через сессию недоступны: {error:?}"),
+            Err(error) => tracing::debug!("track data via the session unavailable: {error:?}"),
         }
         found
     }
@@ -307,7 +307,7 @@ impl ConnectBackend {
         let active = cluster.active_device_id.as_str();
         let target = device.filter(|device| !device.is_empty()).unwrap_or(active);
         if target.is_empty() {
-            return Err("нет активного устройства".into());
+            return Err("no active device".into());
         }
         match action {
             RemoteAction::Volume(percent) => send_volume(link, target, *percent).await,
@@ -329,9 +329,9 @@ impl ConnectBackend {
             None => self.cluster(link).await?.0.active_device_id.clone(),
         };
         if target.is_empty() {
-            return Err("нет активного устройства".into());
+            return Err("no active device".into());
         }
-        let body = play_body(request, shuffle).ok_or("нечего запускать")?;
+        let body = play_body(request, shuffle).ok_or("nothing to start")?;
         send_command(link, &target, &body).await
     }
 
@@ -356,7 +356,7 @@ impl ConnectBackend {
         {
             for uri in uris {
                 if let Err(error) = send_command(link, target, &queue_body(uri)).await {
-                    tracing::debug!("в очередь через сессию не вышло ({error}); остаток — через Web API");
+                    tracing::debug!("queueing via the session failed ({error}); the rest goes through the Web API");
                     break;
                 }
                 added += 1;

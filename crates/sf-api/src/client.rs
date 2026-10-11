@@ -33,12 +33,12 @@ const RATE_LIMIT_BUDGET: Duration = Duration::from_secs(8);
 /// Добавление в очередь повторяется дольше обычного, но не бесконечно.
 const QUEUE_RATE_LIMIT_RETRIES: u32 = 10;
 
-/// Display — короткий русский текст для интерфейса (единственное место перевода ошибок Web API);
+/// Display — короткий текст для интерфейса через mf_i18n (единственное место перевода ошибок Web API);
 /// `{:#}` добавляет подробности Spotify/сети для логов.
 #[derive(Clone, Debug, Error)]
 pub enum ApiError {
     NotSignedIn,
-    /// message — текст Spotify (обычно английский) или свой русский
+    /// message — текст Spotify (обычно английский) или свой текст интерфейса (ключ словаря mf_i18n)
     Status { status: u16, message: String },
     RateLimited,
     QuotaExhausted,
@@ -58,22 +58,22 @@ impl ApiError {
     /// Короткий текст для пользователя.
     pub fn user_text(&self) -> String {
         match self {
-            Self::NotSignedIn => "Войдите в аккаунт".into(),
+            Self::NotSignedIn => mf_i18n::t("Sign in to your account"),
             Self::Status { status: 401, .. } | Self::SignInExpired { .. } => {
-                "Вход в Spotify истёк — войдите снова".into()
+                mf_i18n::t("Your Spotify sign-in has expired — sign in again")
             }
-            Self::Status { message, .. } if is_russian(message) => message.clone(),
+            Self::Status { message, .. } if is_own_text(message) => mf_i18n::t(message),
             Self::Status { status, .. } => status_text(StatusCode::from_u16(*status).unwrap_or(StatusCode::BAD_REQUEST)),
-            Self::RateLimited => "Spotify ограничивает частоту запросов — попробуйте чуть позже".into(),
-            Self::QuotaExhausted => "Квота Spotify для режима разработки исчерпана — попробуйте после её сброса".into(),
-            Self::Network(_) => "Нет связи со Spotify — проверьте сеть и прокси".into(),
-            Self::Decode(_) => "Spotify прислал непонятный ответ".into(),
+            Self::RateLimited => mf_i18n::t("Spotify is limiting requests — try again in a moment"),
+            Self::QuotaExhausted => mf_i18n::t("Spotify's development-mode quota is used up — try again after it resets"),
+            Self::Network(_) => mf_i18n::t("Can't reach Spotify — check your network and proxy"),
+            Self::Decode(_) => mf_i18n::t("Spotify sent a response we couldn't read"),
         }
     }
 
     fn detail(&self) -> Option<String> {
         match self {
-            Self::Status { status, message } if !is_russian(message) => Some(format!("HTTP {status}: {message}")),
+            Self::Status { status, message } if !is_own_text(message) => Some(format!("HTTP {status}: {message}")),
             Self::Network(detail) | Self::Decode(detail) if !detail.is_empty() => Some(detail.clone()),
             _ => None,
         }
@@ -90,8 +90,12 @@ impl std::fmt::Display for ApiError {
     }
 }
 
-fn is_russian(text: &str) -> bool {
-    text.chars().any(|c| matches!(c, 'А'..='я' | 'ё' | 'Ё'))
+/// Свой текст для интерфейса в `Status.message` (а не ответ Spotify): уже переведённый русский
+/// или английский ключ словаря. Такие тексты показываются как есть (через перевод), без «HTTP …» в `{:#}`.
+fn is_own_text(text: &str) -> bool {
+    !text.is_empty()
+        && (text.chars().any(|c| matches!(c, 'А'..='я' | 'ё' | 'Ё'))
+            || mf_i18n::dictionary(mf_i18n::Lang::Ru).is_some_and(|ru| ru.contains_key(text)))
 }
 
 impl From<reqwest::Error> for ApiError {
@@ -116,13 +120,13 @@ fn is_quota_exhausted(body: &str) -> bool {
 /// Текст ошибки, когда Spotify не прислал своего.
 fn status_text(status: StatusCode) -> String {
     match status.as_u16() {
-        400 => "Spotify отклонил запрос".into(),
-        401 => "Spotify не принял вход".into(),
-        403 => "Spotify не разрешает это действие".into(),
-        404 => "Spotify не нашёл это".into(),
-        413 => "Слишком большой запрос".into(),
-        code if code >= 500 => "Spotify временно недоступен".into(),
-        code => format!("Запрос не выполнен (HTTP {code})"),
+        400 => mf_i18n::t("Spotify rejected the request"),
+        401 => mf_i18n::t("Spotify didn't accept the sign-in"),
+        403 => mf_i18n::t("Spotify doesn't allow this action"),
+        404 => mf_i18n::t("Spotify couldn't find this"),
+        413 => mf_i18n::t("The request is too large"),
+        code if code >= 500 => mf_i18n::t("Spotify is temporarily unavailable"),
+        code => mf_i18n::tf("The request failed (HTTP {0})", &[&code]),
     }
 }
 
@@ -222,7 +226,7 @@ impl WebTokens {
                         }
                         *guard = updated;
                     }
-                    Err(error) => tracing::warn!("обновление токена вернуло непригодный ответ: {error:#}"),
+                    Err(error) => tracing::warn!("token refresh returned an unusable response: {error:#}"),
                 },
                 Err(TokenEndpointError::Rejected { .. }) => {
                     return Err(ApiError::SignInExpired { api_source: self.source });
@@ -231,7 +235,7 @@ impl WebTokens {
                     if force || guard.expired() {
                         return Err(ApiError::Network(detail));
                     }
-                    tracing::warn!("токен не обновился, остаёмся на текущем: {detail}");
+                    tracing::warn!("token refresh failed, keeping the current token: {detail}");
                 }
             }
         }
@@ -485,7 +489,7 @@ impl ApiClient {
                 self.limits.count_retry(self.source);
             }
             if !self.wait_for_cooldown(deadline).await {
-                tracing::debug!("Spotify source={}: охлаждение 429 дольше бюджета запроса {path}", self.source);
+                tracing::debug!("Spotify source={}: 429 cooldown is longer than the request budget {path}", self.source);
                 return Err(ApiError::RateLimited);
             }
             let permit = self.limiter.acquire().await.map_err(|_| ApiError::NotSignedIn)?;
@@ -529,7 +533,7 @@ impl ApiClient {
                 // Отклонённое добавление в очередь безопасно повторить: оно держит место в замке записи и повторяется
                 // дольше обычного. Общее охлаждение — не дольше MAX_RETRY_AFTER: долгий Retry-After не должен
                 // останавливать весь источник; такую очередь отдаём UI как RateLimited.
-                tracing::warn!("Spotify ограничивает запросы source={} wait={wait:?}", self.source);
+                tracing::warn!("Spotify is rate limiting source={} wait={wait:?}", self.source);
                 drop(permit);
                 self.extend_cooldown(wait.min(MAX_RETRY_AFTER)).await;
                 let retries = if queue_write { QUEUE_RATE_LIMIT_RETRIES } else { RATE_LIMIT_RETRIES };
@@ -598,7 +602,7 @@ impl ApiClient {
         match serde_json::from_str(&text) {
             Ok(value) => Ok(Some(value)),
             Err(error) => {
-                tracing::debug!("Spotify source={}: успешный ответ не JSON: {error:#}", self.source);
+                tracing::debug!("Spotify source={}: successful response is not JSON: {error:#}", self.source);
                 Ok(None)
             }
         }
@@ -782,7 +786,7 @@ impl ApiClient {
     /// `encoded` — JPEG в base64 (playlist_cover::prepare), не больше MAX_PAYLOAD.
     pub async fn upload_playlist_cover(&self, id: &str, encoded: &str) -> Result<()> {
         if encoded.is_empty() || encoded.len() > crate::playlist_cover::MAX_PAYLOAD {
-            return Err(ApiError::Status { status: 413, message: "Выберите изображение поменьше.".into() });
+            return Err(ApiError::Status { status: 413, message: mf_i18n::t("Choose a smaller image.") });
         }
         self.send_body(Method::PUT, &format!("/playlists/{id}/images"), &[], None, Some(encoded)).await?;
         Ok(())
@@ -1096,7 +1100,7 @@ mod tests {
                     }
                     assert!(
                         tokio::time::timeout(Duration::from_millis(10), listener.accept()).await.is_err(),
-                        "следующее добавление должно ждать этот ответ"
+                        "the next add must wait for this response"
                     );
                     let limited = rate_limit && (1..=4).contains(&index);
                     let status = if limited {
@@ -1221,17 +1225,27 @@ mod tests {
     async fn requests_without_a_provider_are_not_signed_in() {
         let client = ApiClient::new(reqwest::Client::new(), Arc::new(NetActivity::default()), 20, 50, ApiSource::Shared);
         assert!(matches!(client.me().await, Err(ApiError::NotSignedIn)));
-        assert_eq!(ApiError::NotSignedIn.to_string(), "Войдите в аккаунт");
+        assert_eq!(ApiError::NotSignedIn.to_string(), "Sign in to your account");
+    }
+
+    #[test]
+    fn own_status_texts_are_shown_without_http_details() {
+        let own = ApiError::Status { status: 413, message: mf_i18n::t("Choose a smaller image.") };
+        assert_eq!(format!("{own:#}"), "Choose a smaller image.");
+        let translated = ApiError::Status { status: 409, message: "Плейлист изменился".into() };
+        assert_eq!(format!("{translated:#}"), "Плейлист изменился");
+        let spotify = ApiError::Status { status: 413, message: "Payload too large".into() };
+        assert_eq!(format!("{spotify:#}"), "The request is too large (HTTP 413: Payload too large)");
     }
 
     #[tokio::test]
-    async fn spotify_error_message_and_russian_fallback() {
+    async fn spotify_error_message_and_fallback_text() {
         let (address, server) = serve_once(404, r#"{"error":{"status":404,"message":"Resource not found"}}"#);
         let client = test_client(format!("http://{address}"), reqwest::Client::new());
         let error = client.album("missing").await.unwrap_err();
         assert_eq!(error.status(), Some(404));
-        assert_eq!(error.to_string(), "Spotify не нашёл это");
-        assert_eq!(format!("{error:#}"), "Spotify не нашёл это (HTTP 404: Resource not found)");
+        assert_eq!(error.to_string(), "Spotify couldn't find this");
+        assert_eq!(format!("{error:#}"), "Spotify couldn't find this (HTTP 404: Resource not found)");
         let received = String::from_utf8(server.join().unwrap()).unwrap();
         assert!(received.starts_with("GET /albums/missing HTTP/1.1"));
         assert!(received.to_lowercase().contains("authorization: bearer test-only"));
@@ -1239,7 +1253,7 @@ mod tests {
         let (address, server) = serve_once(403, "");
         let client = test_client(format!("http://{address}"), reqwest::Client::new());
         let error = client.pause(None).await.unwrap_err();
-        assert_eq!(error.to_string(), "Spotify не разрешает это действие");
+        assert_eq!(error.to_string(), "Spotify doesn't allow this action");
         server.join().unwrap();
     }
 
@@ -1334,13 +1348,13 @@ mod tests {
         let client = test_client(format!("http://{address}"), http.clone());
         let started = Instant::now();
         assert!(matches!(client.artist("a").await, Err(ApiError::RateLimited)));
-        assert!(started.elapsed() < Duration::from_secs(2), "не ждёт час и не висит 3×30 с");
+        assert!(started.elapsed() < Duration::from_secs(2), "doesn't wait an hour or hang for 3×30 s");
         // охлаждение источника (≤30 с) дольше бюджета — следующие чтения тоже отвечают сразу
         let started = Instant::now();
         assert!(matches!(client.album("b").await, Err(ApiError::RateLimited)));
         assert!(started.elapsed() < Duration::from_secs(1));
         drop(client);
-        assert_eq!(server.await.unwrap(), 1, "в охлаждение запросы не уходят");
+        assert_eq!(server.await.unwrap(), 1, "no requests go out during the cooldown");
     }
 
     #[tokio::test]

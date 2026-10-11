@@ -107,7 +107,7 @@ mod tests {
     fn radio_stations_map_to_their_seeds_and_back() {
         for kind in ["track", "playlist", "album", "artist"] {
             let seed = format!("spotify:{kind}:4uLU6hMCjMI75M1A2tKUQC");
-            let station = station_uri(&seed).expect("станция");
+            let station = station_uri(&seed).expect("station");
             assert_eq!(station, format!("spotify:station:{kind}:4uLU6hMCjMI75M1A2tKUQC"));
             assert_eq!(station_seed(&station).as_deref(), Some(seed.as_str()));
         }
@@ -147,7 +147,7 @@ mod tests {
         replace_file(&path, b"second").unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), b"second");
         let leftovers = std::fs::read_dir(&dir).unwrap().count();
-        assert_eq!(leftovers, 1, "временный файл не должен оставаться");
+        assert_eq!(leftovers, 1, "the temporary file must not be left behind");
         let _ = std::fs::remove_dir_all(dir);
     }
 }

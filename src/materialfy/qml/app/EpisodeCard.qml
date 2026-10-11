@@ -63,8 +63,8 @@ Item {
             Label {
                 Layout.topMargin: 6
                 text: root.started
-                      ? "Осталось " + Math.max(1, Math.round(((root.episode.durationMs ?? 0) - (root.episode.resumeMs ?? 0)) / 60000)) + " мин"
-                      : root.episode.fullyPlayed === true ? "Прослушано" : "Новый выпуск"
+                      ? I18n.t("{0} min left", Math.max(1, Math.round(((root.episode.durationMs ?? 0) - (root.episode.resumeMs ?? 0)) / 60000)))
+                      : root.episode.fullyPlayed === true ? I18n.t("Played") : I18n.t("New episode")
                 type: "labelSmall"
                 color: root.started || root.episode.fullyPlayed === true ? Theme.fgSurfaceVariant : Theme.primary
             }

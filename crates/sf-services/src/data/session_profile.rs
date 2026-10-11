@@ -38,11 +38,11 @@ pub async fn fetch(session: &sf_player::Session) -> User {
     let profile = match tokio::time::timeout(TIMEOUT, request).await {
         Ok(Ok(body)) => parse_profile(&body),
         Ok(Err(error)) => {
-            tracing::warn!("профиль через сессию не получен: {error}");
+            tracing::warn!("profile via session not received: {error}");
             Profile::default()
         }
         Err(_) => {
-            tracing::warn!("профиль через сессию не получен: Spotify не ответил вовремя");
+            tracing::warn!("profile via session not received: Spotify did not answer in time");
             Profile::default()
         }
     };
@@ -55,12 +55,12 @@ pub async fn product_of_token(http: &reqwest::Client, token: &str) -> Option<Str
     let response = match http.get(PRODUCT_STATE_URL).bearer_auth(token).timeout(TIMEOUT).send().await {
         Ok(response) => response,
         Err(error) => {
-            tracing::warn!("тип аккаунта не проверен: {}", error.without_url());
+            tracing::warn!("account type not checked: {}", error.without_url());
             return None;
         }
     };
     if !response.status().is_success() {
-        tracing::warn!("тип аккаунта не проверен: {}", response.status());
+        tracing::warn!("account type not checked: {}", response.status());
         return None;
     }
     parse_product(&response.text().await.ok()?)

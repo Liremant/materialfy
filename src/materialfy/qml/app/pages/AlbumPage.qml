@@ -14,7 +14,7 @@ TrackListPage {
     readonly property bool saved: Library.savedRevision >= 0 && (info.uri ?? "") !== "" ? Library.isSaved(info.uri) : info.saved === true
 
     title: info.title ? info.title + (info.version ? " (" + info.version + ")" : "") : ""
-    overline: (info.kind || "Альбом").toUpperCase()
+    overline: (info.kind || I18n.t("Album")).toUpperCase()
     heroImage: info.coverLarge || info.cover || ""
     heroIcon: "album"
     heroArtistRefs: info.artistRefs ?? []
@@ -25,20 +25,20 @@ TrackListPage {
         if (info.year)
             parts.push(info.year)
         const n = album.tracks.count
-        parts.push(n + " " + plural(n))
+        parts.push(I18n.n(n, "{0} track", "{0} tracks"))
         if (info.label)
             parts.push(info.label)
         return parts.join("  ·  ")
     }
     model: album ? album.tracks : null
     emptyIcon: "album"
-    emptyTitle: album && album.errorText !== "" ? "Альбом не загрузился" : "В альбоме нет треков"
+    emptyTitle: album && album.errorText !== "" ? I18n.t("Album didn't load") : I18n.t("This album has no tracks")
     emptyText: album ? album.errorText : ""
 
     // сохранить альбом в библиотеку
     headerExtra: Component {
         Button {
-            text: page.saved ? "В библиотеке" : "Сохранить"
+            text: page.saved ? I18n.t("In library") : I18n.t("Save")
             icon: page.saved ? "library_add_check" : "library_add"
             style: "tonal"
             checkable: true
@@ -49,10 +49,4 @@ TrackListPage {
         }
     }
 
-    function plural(n) {
-        const m10 = n % 10, m100 = n % 100
-        if (m10 === 1 && m100 !== 11) return "трек"
-        if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return "трека"
-        return "треков"
-    }
 }

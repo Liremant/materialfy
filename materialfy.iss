@@ -1,18 +1,18 @@
-﻿; Inno Setup script для Materialfy (Rust + Qt 6)
-; Собирается из build_windows.ps1:
+﻿; Inno Setup script for Materialfy (Rust + Qt 6)
+; Built from build_windows.ps1:
 ;   ISCC /DAppVersion=0.1.0 /DDistDir=target\dist\materialfy /Otarget\dist materialfy.iss
-; Результат: target\dist\Materialfy-<версия>-Setup.exe
-; Установка пользовательская (без UAC) — в %LocalAppData%\Programs\Materialfy
+; Output: target\dist\Materialfy-<version>-Setup.exe
+; Per-user install (no UAC) into %LocalAppData%\Programs\Materialfy
 
 #define AppName "Materialfy"
 #ifndef AppVersion
   #define AppVersion "0.1.0"
 #endif
-; числовая версия для свойств файла (без -rc1 и т. п.)
+; numeric version for the file properties (without -rc1 etc.)
 #ifndef AppNumVersion
   #define AppNumVersion AppVersion
 #endif
-; папка, собранная build_windows.ps1: materialfy.exe, qml\, assets\, Qt, рантайм MSVC
+; folder assembled by build_windows.ps1: materialfy.exe, qml\, assets\, Qt, MSVC runtime
 #ifndef DistDir
   #define DistDir "target\dist\materialfy"
 #endif
@@ -20,7 +20,7 @@
 #define AppExeName "materialfy.exe"
 
 [Setup]
-; AppId не менять: по нему новая версия ставится поверх старой. С YaMusic (yamusic-md3) не пересекается.
+; Do not change AppId: a new version installs over the old one by it. Does not collide with YaMusic (yamusic-md3).
 AppId={{A5260B19-41AE-4D9D-9841-204E686F2ADD}
 AppName={#AppName}
 AppVersion={#AppVersion}
@@ -28,8 +28,8 @@ AppVerName={#AppName} {#AppVersion}
 AppPublisher={#AppPublisher}
 VersionInfoVersion={#AppNumVersion}
 VersionInfoProductName={#AppName}
-VersionInfoDescription={#AppName} — клиент Spotify в стиле Material 3 Expressive
-; Пользовательская установка — не нужен UAC
+VersionInfoDescription={#AppName} - Spotify client in Material 3 Expressive style
+; Per-user install, no UAC
 DefaultDirName={localappdata}\Programs\{#AppName}
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
@@ -42,47 +42,57 @@ UninstallDisplayName={#AppName}
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
-; Сборка только x64
+; x64 only
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-; Без прав администратора
+; No administrator rights
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
-; Закрываем уже запущенный Materialfy перед обновлением
+; Close a running Materialfy before updating
 CloseApplications=yes
 CloseApplicationsFilter=*{#AppExeName}
-; Минимальная версия Windows — 10 1809
+; Minimum Windows version: 10 1809
 MinVersion=10.0.17763
+; Setup language follows the Windows UI language; the dialog appears only when it matches neither
+ShowLanguageDialog=auto
 
 [Languages]
+; English is the default (first) language, Russian is the second one
+Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 
+[CustomMessages]
+english.StartupGroup=Autostart:
+english.StartupTask=Start %1 when Windows starts
+russian.StartupGroup=Автозапуск:
+russian.StartupTask=Запускать %1 при старте Windows
+
 [Tasks]
-Name: "desktopicon"; Description: "Создать значок на &рабочем столе";          GroupDescription: "Дополнительные значки:"; Flags: checkedonce
-Name: "startupicon"; Description: "Запускать {#AppName} при старте Windows"; GroupDescription: "Автозапуск:";           Flags: unchecked
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}";            GroupDescription: "{cm:AdditionalIcons}"; Flags: checkedonce
+Name: "startupicon"; Description: "{cm:StartupTask,{#AppName}}";       GroupDescription: "{cm:StartupGroup}";    Flags: unchecked
 
 [InstallDelete]
-; QML пересобирается целиком — убираем удалённые из новой версии файлы
+; QML is rebuilt as a whole: remove files dropped in the new version
 Type: filesandordirs; Name: "{app}\qml"
 
 [Files]
-; Всё содержимое папки дистрибутива → папка установки
+; Everything in the distribution folder goes to the install folder
 Source: "{#DistDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-; Меню «Пуск»
-Name: "{userprograms}\{#AppName}\{#AppName}";         Filename: "{app}\{#AppExeName}"; IconFilename: "{app}\{#AppExeName}"; AppUserModelID: "{#AppName}"
-Name: "{userprograms}\{#AppName}\Удалить {#AppName}"; Filename: "{uninstallexe}"
+; Start menu
+Name: "{userprograms}\{#AppName}\{#AppName}";                        Filename: "{app}\{#AppExeName}"; IconFilename: "{app}\{#AppExeName}"; AppUserModelID: "{#AppName}"
+Name: "{userprograms}\{#AppName}\{cm:UninstallProgram,{#AppName}}"; Filename: "{uninstallexe}"
 
-; Рабочий стол
+; Desktop
 Name: "{userdesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; IconFilename: "{app}\{#AppExeName}"; AppUserModelID: "{#AppName}"; Tasks: desktopicon
 
-; Автозапуск
+; Autostart
 Name: "{userstartup}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: startupicon
 
 [Run]
-; Предложить запустить Materialfy после установки
-Filename: "{app}\{#AppExeName}"; Description: "Запустить {#AppName}"; Flags: nowait postinstall skipifsilent
+; Offer to launch Materialfy after installation
+Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
-; Настройки, вход (хранилище учётных данных Windows) и кэш при удалении остаются — их чистит «Выйти» в программе
+; Settings, sign-in (Windows Credential Manager) and cache are kept on uninstall; "Sign out" in the app clears them

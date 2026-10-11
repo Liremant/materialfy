@@ -50,9 +50,9 @@ impl Journal {
         match serde_json::to_vec(&self.plays) {
             Ok(bytes) => match super::fsio::write_atomic(path, &bytes) {
                 Ok(()) => self.dirty = false,
-                Err(error) => tracing::warn!("не удалось записать историю: {error:#}"),
+                Err(error) => tracing::warn!("could not write history: {error:#}"),
             },
-            Err(error) => tracing::warn!("не удалось записать историю: {error:#}"),
+            Err(error) => tracing::warn!("could not write history: {error:#}"),
         }
     }
 

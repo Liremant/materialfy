@@ -188,9 +188,9 @@ Item {
         }
     }
 
-    readonly property string titleText: Player.hasTrack ? Player.title : "Ничего не играет"
+    readonly property string titleText: Player.hasTrack ? Player.title : I18n.t("Nothing playing")
     readonly property string subtitleText: Player.errorText !== "" ? Player.errorText
-        : Player.hasTrack ? Player.artist : Auth.state === "signedIn" ? "Запустите радио" : "Войдите, чтобы слушать"
+        : Player.hasTrack ? Player.artist : Auth.state === "signedIn" ? I18n.t("Start a radio") : I18n.t("Sign in to listen")
 
     // ---- Карточка ----
     Item {

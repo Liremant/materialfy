@@ -24,7 +24,7 @@ pub async fn raise_running_instance() -> bool {
     match tokio::time::timeout(TIMEOUT, imp::raise()).await {
         Ok(found) => found,
         Err(_) => {
-            tracing::debug!("работающий экземпляр не ответил вовремя");
+            tracing::debug!("the running instance did not answer in time");
             false
         }
     }
@@ -119,7 +119,7 @@ mod imp {
         match try_raise().await {
             Ok(found) => found,
             Err(err) => {
-                tracing::debug!("D-Bus недоступен: {err}");
+                tracing::debug!("D-Bus unavailable: {err}");
                 false
             }
         }
@@ -206,12 +206,12 @@ mod imp {
         Ok(tokio::spawn(async move {
             loop {
                 if let Err(err) = server.connect().await {
-                    tracing::debug!("канал единственного экземпляра: {err}");
+                    tracing::debug!("single-instance channel: {err}");
                 }
                 let next = match create(&name, false) {
                     Ok(next) => next,
                     Err(err) => {
-                        tracing::warn!("канал единственного экземпляра закрыт: {err}");
+                        tracing::warn!("single-instance channel closed: {err}");
                         return;
                     }
                 };
@@ -260,7 +260,7 @@ mod imp {
                         tokio::spawn(super::serve_client(stream, tx.clone()));
                     }
                     Err(err) => {
-                        tracing::warn!("сокет единственного экземпляра закрыт: {err}");
+                        tracing::warn!("single-instance socket closed: {err}");
                         return;
                     }
                 }
@@ -313,7 +313,7 @@ mod tests {
     /// Настоящий канал/сокет: занимает имя пользователя, поэтому не по умолчанию.
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     #[tokio::test]
-    #[ignore = "занимает имя единственного экземпляра"]
+    #[ignore = "takes the single-instance name"]
     async fn listener_receives_raise() {
         let mut listener = super::InstanceListener::start().await.unwrap();
         assert!(super::InstanceListener::start().await.is_err());

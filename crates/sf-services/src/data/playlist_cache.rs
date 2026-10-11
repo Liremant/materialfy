@@ -40,10 +40,10 @@ pub fn write(path: &Path, cache: &CachedPlaylist) {
     match serde_json::to_vec(cache) {
         Ok(bytes) => {
             if let Err(error) = super::fsio::write_atomic(path, &bytes) {
-                tracing::debug!("кэш плейлиста не записан: {error:#}");
+                tracing::debug!("playlist cache not written: {error:#}");
             }
         }
-        Err(error) => tracing::debug!("кэш плейлиста не записан: {error:#}"),
+        Err(error) => tracing::debug!("playlist cache not written: {error:#}"),
     }
 }
 

@@ -13,10 +13,10 @@ pub use single_instance::InstanceListener;
 
 #[derive(Debug, thiserror::Error)]
 pub enum PlatformError {
-    #[error("ввод-вывод: {0}")]
+    #[error("I/O: {0}")]
     Io(#[from] std::io::Error),
     #[error("D-Bus: {0}")]
     DBus(String),
-    #[error("не поддерживается на этой ОС")]
+    #[error("not supported on this OS")]
     Unsupported,
 }

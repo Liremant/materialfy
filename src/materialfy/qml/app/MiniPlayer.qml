@@ -172,7 +172,7 @@ Item {
                     spacing: 0
                     Label {
                         Layout.fillWidth: true
-                        text: Player.hasTrack ? Player.title : "Ничего не играет"
+                        text: Player.hasTrack ? Player.title : I18n.t("Nothing playing")
                         type: "titleSmall"
                     }
                     // Исполнитель · кодек или «Играет на …» (по правому краю — прямо над временем)
@@ -187,7 +187,7 @@ Item {
                             previewArtistId: (Player.track.artistRefs ?? []).length === 1 ? Player.track.artistRefs[0].id : ""
                             onClicked: Catalog.openArtists(Player.track.artistRefs ?? [])
                             text: Player.errorText !== "" ? Player.errorText
-                                : Player.hasTrack ? Player.artist : "Включите трек, альбом или плейлист"
+                                : Player.hasTrack ? Player.artist : I18n.t("Play a track, album or playlist")
                             type: "bodySmall"
                             color: Player.errorText !== "" ? Theme.error : Theme.fgSurfaceVariant
                         }

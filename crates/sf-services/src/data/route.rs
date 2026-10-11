@@ -1,5 +1,5 @@
 //! Маршрутизация чтений: плейлисты через сессию librespot (без квоты Web API), остальное — ApiGateway.
-//! Тексты ошибок Web API по-русски.
+//! Тексты ошибок Web API — для пользователя (mf_i18n).
 use std::time::Duration;
 
 use sf_api::models::{Page, Playlist, PlaylistItem};
@@ -20,7 +20,7 @@ pub fn api_error_text(error: &ApiError) -> String {
 /// Ошибка страницы плейлиста (403/404 — Spotify не отдаёт его сторонним приложениям).
 pub fn playlist_error_text(error: &ApiError) -> String {
     match error.status() {
-        Some(403 | 404) => "Spotify не отдаёт треки этого плейлиста сторонним приложениям".to_owned(),
+        Some(403 | 404) => mf_i18n::t("Spotify doesn't share this playlist's tracks with third-party apps"),
         _ => api_error_text(error),
     }
 }
@@ -91,11 +91,11 @@ fn settle<T>(result: Result<Result<T, Failure>, tokio::time::error::Elapsed>) ->
         Ok(Ok(value)) => Some(Ok(value)),
         Ok(Err(Failure::Definitive(error))) => Some(Err(error)),
         Ok(Err(Failure::Retry(error))) => {
-            tracing::debug!("чтение через сессию не удалось: {error:#}; спрашиваю Web API");
+            tracing::debug!("read via session failed: {error:#}; asking Web API");
             None
         }
         Err(_) => {
-            tracing::debug!("чтение через сессию не успело; спрашиваю Web API");
+            tracing::debug!("read via session timed out; asking Web API");
             None
         }
     }
@@ -161,11 +161,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn errors_read_in_russian() {
-        assert_eq!(api_error_text(&ApiError::NotSignedIn), "Войдите в аккаунт");
-        assert!(api_error_text(&ApiError::Network("x".into())).contains("прокси"));
+    fn errors_read_as_user_text() {
+        assert_eq!(api_error_text(&ApiError::NotSignedIn), "Sign in to your account");
+        assert!(api_error_text(&ApiError::Network("x".into())).contains("proxy"));
         let refused = ApiError::Status { status: 404, message: "Not found".into() };
-        assert!(playlist_error_text(&refused).contains("сторонним"));
+        assert!(playlist_error_text(&refused).contains("third-party"));
     }
 
     #[tokio::test]

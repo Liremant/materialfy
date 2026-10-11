@@ -1,41 +1,41 @@
 Materialfy
 ==========
 
-Materialfy основан на spotifast (crmne, MIT) и yamusic-md3 (yaskorinov, MIT).
-Тексты лицензий сохранены, авторство и что откуда взято — ниже.
+Materialfy is based on spotifast (crmne, MIT) and yamusic-md3 (yaskorinov, MIT).
+The license texts are preserved; authorship and what came from where are listed below.
 
-1. spotifast (crmne) — логика Spotify
+1. spotifast (crmne) - Spotify logic
    https://github.com/crmne/spotifast
-   Copyright (c) 2026 Carmine Paolino. Лицензия MIT.
-   Отсюда: вход OAuth PKCE, клиент Web API, воспроизведение через librespot, Spotify Connect,
-   очередь, библиотека, радио (crates/sf-auth, crates/sf-api, crates/sf-player, crates/sf-services).
+   Copyright (c) 2026 Carmine Paolino. MIT License.
+   Taken from it: OAuth PKCE sign-in, Web API client, playback through librespot, Spotify Connect,
+   queue, library, radio (crates/sf-auth, crates/sf-api, crates/sf-player, crates/sf-services).
 
-2. yamusic-md3 (yaskorinov) — интерфейс
+2. yamusic-md3 (yaskorinov) - interface
    https://github.com/yaskorinov/yamusic-md3
-   Copyright (c) 2025-2026 yaskorinov and contributors. Лицензия MIT.
-   Отсюда: QML-интерфейс и библиотека компонентов Material 3 Expressive (src/materialfy/qml),
-   оболочка на cxx-qt (crates/materialfy), тема из обложки (crates/mf-theme),
-   тексты песен (crates/mf-lyrics), платформенные службы (crates/mf-platform),
-   скрипты сборки и упаковки.
+   Copyright (c) 2025-2026 yaskorinov and contributors. MIT License.
+   Taken from it: the QML interface and the Material 3 Expressive component library (src/materialfy/qml),
+   the cxx-qt shell (crates/materialfy), cover-based theming (crates/mf-theme),
+   lyrics (crates/mf-lyrics), platform services (crates/mf-platform),
+   build and packaging scripts.
 
-Сторонние компоненты
---------------------
+Third-party components
+----------------------
 
-- librespot (форк https://github.com/crmne/librespot) — MIT, Copyright (c) 2015 Paul Lietar
-  и участники librespot-org. Воспроизведение и Spotify Connect.
-- fastframe-audio, fastframe-now-playing (https://github.com/dennisgr7/fastframe) — MIT,
-  Copyright (c) 2026 Carmine Paolino. Устройство вывода звука, медиаклавиши и SMTC/MPRIS.
-- hyper-proxy2 (форк https://github.com/crmne/hyper-proxy2) — MIT.
-- cxx-qt (https://github.com/KDAB/cxx-qt) — MIT или Apache-2.0.
-- Qt 6 (https://www.qt.io) — LGPL-3.0; библиотеки Qt подключаются динамически и поставляются
-  без изменений, их исходники доступны на https://download.qt.io.
-- Google Sans — SIL Open Font License 1.1 (src/materialfy/assets/fonts/LICENSE-GoogleSans.txt).
-- Material Symbols Rounded — Apache License 2.0 (src/materialfy/assets/fonts/LICENSE-MaterialSymbols.txt).
-- Остальные Rust-зависимости — по лицензиям, указанным в их пакетах (cargo metadata / Cargo.lock).
+- librespot (fork https://github.com/fatyzzz/librespot, based on crmne's patches) - MIT,
+  Copyright (c) 2015 Paul Lietar and librespot-org contributors. Playback and Spotify Connect.
+- fastframe-audio, fastframe-now-playing (https://github.com/dennisgr7/fastframe) - MIT,
+  Copyright (c) 2026 Carmine Paolino. Audio output device, media keys and SMTC/MPRIS.
+- hyper-proxy2 (fork https://github.com/crmne/hyper-proxy2) - MIT.
+- cxx-qt (https://github.com/KDAB/cxx-qt) - MIT or Apache-2.0.
+- Qt 6 (https://www.qt.io) - LGPL-3.0; the Qt libraries are linked dynamically and shipped
+  unmodified; their sources are available at https://download.qt.io.
+- Google Sans - SIL Open Font License 1.1 (src/materialfy/assets/fonts/LICENSE-GoogleSans.txt).
+- Material Symbols Rounded - Apache License 2.0 (src/materialfy/assets/fonts/LICENSE-MaterialSymbols.txt).
+- Other Rust dependencies - under the licenses stated in their packages (cargo metadata / Cargo.lock).
 
-Товарные знаки
---------------
+Trademarks
+----------
 
-Spotify — товарный знак Spotify AB. Materialfy — независимый проект, не связан со Spotify,
-Яндексом и авторами исходных проектов и не одобрен ими. Логотип Materialfy («Волна-M») —
-собственный и не использует логотип Spotify.
+Spotify is a trademark of Spotify AB. Materialfy is an independent project; it is not affiliated
+with or endorsed by Spotify, Yandex or the authors of the original projects. The Materialfy logo
+("Wave-M") is original and does not use the Spotify logo.

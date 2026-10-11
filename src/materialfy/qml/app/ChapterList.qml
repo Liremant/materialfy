@@ -53,7 +53,7 @@ ColumnLayout {
 
     Label {
         Layout.bottomMargin: 6
-        text: "Главы"
+        text: I18n.t("Chapters")
         type: "titleMedium"
         weight: 600
     }

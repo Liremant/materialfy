@@ -66,12 +66,12 @@ Item {
             width: parent.width - 32
             spacing: 8
 
-            Label { Layout.leftMargin: 4; text: "Радио по любому треку"; type: "titleSmall" }
+            Label { Layout.leftMargin: 4; text: I18n.t("Radio from any track"); type: "titleSmall" }
             SearchField {
                 id: field
                 Layout.fillWidth: true
                 implicitHeight: 40
-                placeholder: "Трек или исполнитель"
+                placeholder: I18n.t("Track or artist")
                 text: root.query
                 onTextChanged: root.query = text
                 Keys.onEscapePressed: root.close()
@@ -128,7 +128,7 @@ Item {
                 Label {
                     anchors.centerIn: parent
                     visible: results.count === 0 && root.query.trim() !== "" && Catalog.searchState !== "loading" && !searchDelay.running
-                    text: "Ничего не нашлось"
+                    text: I18n.t("Nothing found")
                     type: "bodyMedium"
                     color: Theme.fgSurfaceVariant
                 }
@@ -141,7 +141,7 @@ Item {
             Label {
                 Layout.leftMargin: 4
                 Layout.fillWidth: true
-                text: "Или «Радио по треку» в меню любой строки"
+                text: I18n.t("Or use “Track radio” in any row’s menu")
                 type: "bodySmall"
                 color: Theme.fgSurfaceVariant
                 wrapMode: Text.WordWrap

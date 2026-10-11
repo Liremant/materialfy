@@ -38,13 +38,13 @@ Rectangle {
             spacing: 2
             Label {
                 Layout.fillWidth: true
-                text: "Нужен Spotify Premium"
+                text: I18n.t("Spotify Premium required")
                 type: "titleSmall"
                 color: Theme.fgTertiaryContainer
             }
             Label {
                 Layout.fillWidth: true
-                text: "Переключать устройства и слушать здесь можно только с Premium"
+                text: I18n.t("Switching devices and listening here require Premium")
                 type: "bodySmall"
                 color: Theme.fgTertiaryContainer
                 wrapMode: Text.WordWrap
@@ -53,8 +53,8 @@ Rectangle {
             RowLayout {
                 Layout.leftMargin: -8
                 spacing: 0
-                TextAction { text: "Подробнее"; onClicked: root._premium() }
-                TextAction { text: "Проверить снова"; onClicked: Auth.refreshProfile() }
+                TextAction { text: I18n.t("Learn more"); onClicked: root._premium() }
+                TextAction { text: I18n.t("Check again"); onClicked: Auth.refreshProfile() }
             }
         }
     }
@@ -91,7 +91,7 @@ Rectangle {
                 spacing: 2
                 Label {
                     Layout.fillWidth: true
-                    text: "Нужен Spotify Premium"
+                    text: I18n.t("Spotify Premium required")
                     type: "titleMedium"
                     color: Theme.fgTertiaryContainer
                 }
@@ -99,8 +99,8 @@ Rectangle {
                     Layout.fillWidth: true
                     text: {
                         const name = Auth.account.displayName ?? ""
-                        return (name !== "" ? "Вы вошли как " + name + " (Spotify Free). " : "С аккаунтом Free доступны медиатека, поиск и плейлисты. ")
-                               + "Слушать на компьютере и переключать устройства Spotify разрешает только с Premium."
+                        return (name !== "" ? I18n.t("You're signed in as {0} (Spotify Free).", name) : I18n.t("A Free account gives you your library, search and playlists."))
+                               + " " + I18n.t("Spotify allows listening on a computer and switching devices only with Premium.")
                     }
                     type: "bodyMedium"
                     color: Theme.fgTertiaryContainer
@@ -120,8 +120,8 @@ Rectangle {
             spacing: 6
             Repeater {
                 model: [
-                    { ok: true, text: "Медиатека" }, { ok: true, text: "Поиск" }, { ok: true, text: "Плейлисты" },
-                    { ok: false, text: "Воспроизведение" }, { ok: false, text: "Пульт Connect" }
+                    { ok: true, text: I18n.t("Media library") }, { ok: true, text: I18n.t("Search") }, { ok: true, text: I18n.t("Playlists") },
+                    { ok: false, text: I18n.t("Playback") }, { ok: false, text: I18n.t("Connect remote") }
                 ]
                 Rectangle {
                     id: cap
@@ -155,8 +155,8 @@ Rectangle {
             Layout.fillWidth: true
             Layout.leftMargin: 64
             spacing: 8
-            TextAction { filled: true; icon: "open_in_new"; text: "Оформить Premium"; onClicked: root._premium() }
-            TextAction { icon: "refresh"; text: "Проверить снова"; onClicked: Auth.refreshProfile() }
+            TextAction { filled: true; icon: "open_in_new"; text: I18n.t("Get Premium"); onClicked: root._premium() }
+            TextAction { icon: "refresh"; text: I18n.t("Check again"); onClicked: Auth.refreshProfile() }
         }
     }
 

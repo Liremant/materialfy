@@ -210,7 +210,7 @@ impl Cli {
                 Opt::DebugFps => cli.debug_fps = true,
                 Opt::Size => match parse_size(&value) {
                     Some(size) => cli.size = Some(size),
-                    None => fail(&format!("argument --size: ожидается ШxВ, получено '{value}'")),
+                    None => fail(&format!("argument --size: expected WxH, got '{value}'")),
                 },
                 Opt::ConfigDir => cli.config_dir = Some(PathBuf::from(value)),
                 Opt::Set => {

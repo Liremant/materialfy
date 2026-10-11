@@ -40,6 +40,8 @@ pub enum SettingKey {
     CalmWhenInactive,
     /// "system" | "full" | "reduced" → Theme.reducedMotion
     Animations,
+    /// язык интерфейса: "en" | "ru" (mf_i18n::parse_lang); меняется на лету
+    Language,
     // Раскладка
     RightPanelOpen,
     RightPanelTab,
@@ -113,7 +115,7 @@ pub enum SettingType {
 }
 
 impl SettingKey {
-    pub const ALL: [SettingKey; 47] = [
+    pub const ALL: [SettingKey; 48] = [
         SettingKey::ThemeMode,
         SettingKey::SchemeVariant,
         SettingKey::AccentFromCover,
@@ -128,6 +130,7 @@ impl SettingKey {
         SettingKey::CoverPulse,
         SettingKey::CalmWhenInactive,
         SettingKey::Animations,
+        SettingKey::Language,
         SettingKey::RightPanelOpen,
         SettingKey::RightPanelTab,
         SettingKey::SidebarCollapsed,
@@ -181,6 +184,7 @@ impl SettingKey {
             CoverPulse => "coverPulse",
             CalmWhenInactive => "calmWhenInactive",
             Animations => "animations",
+            Language => "language",
             RightPanelOpen => "rightPanelOpen",
             RightPanelTab => "rightPanelTab",
             SidebarCollapsed => "sidebarCollapsed",
@@ -248,6 +252,7 @@ impl SettingKey {
             CoverPulse => Bool(true),
             CalmWhenInactive => Bool(true),
             Animations => Str("system".into()),
+            Language => Str("en".into()),
             RightPanelOpen => Bool(false),
             RightPanelTab => Str("queue".into()),
             SidebarCollapsed => Bool(false),
@@ -496,7 +501,7 @@ impl SettingsStore {
     /// и к допустимому диапазону (SettingKey::normalize).
     pub fn set(&self, key: SettingKey, value: SettingValue) -> bool {
         let Some(value) = value.coerce(key.value_type()).map(|v| key.normalize(v)) else {
-            tracing::warn!("настройка {}: значение {value:?} не приводится к типу", key.name());
+            tracing::warn!("setting {}: value {value:?} does not match its type", key.name());
             return false;
         };
         {
@@ -505,7 +510,7 @@ impl SettingsStore {
                 return false;
             }
             if let Err(err) = self.backend.write(key.name(), &value) {
-                tracing::warn!("настройка {} не сохранена: {err}", key.name());
+                tracing::warn!("setting {} not saved: {err}", key.name());
                 return false;
             }
         }
@@ -551,7 +556,7 @@ impl IniBackend {
             Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
             Err(err) => {
                 if err.kind() != std::io::ErrorKind::NotFound {
-                    tracing::warn!("настройки {} не прочитаны: {err}", path.display());
+                    tracing::warn!("settings {} not read: {err}", path.display());
                 }
                 String::new()
             }
@@ -784,7 +789,7 @@ mod ini {
         let mut in_quotes = false;
         let mut chars = raw.chars().peekable();
         while let Some(ch) = chars.next() {
-            let cur = parts.last_mut().expect("непустой");
+            let cur = parts.last_mut().expect("non-empty");
             match ch {
                 '"' => in_quotes = !in_quotes,
                 '\\' => {
@@ -908,7 +913,7 @@ mod tests {
 
     #[test]
     fn schema() {
-        assert_eq!(SettingKey::ALL.len(), 47);
+        assert_eq!(SettingKey::ALL.len(), 48);
         for key in SettingKey::ALL {
             assert_eq!(SettingKey::from_name(key.name()), Some(key));
             assert_eq!(key.default_value().value_type(), key.value_type());
@@ -1153,12 +1158,13 @@ mod tests {
             "windowHeight", "windowX", "windowY", "windowMaximized", "closeToTray", "wheelStep", "libraryView",
             "librarySort", "homeHidden", "bitrate", "normalisation", "gapless", "autoplay", "volume", "audioDevice",
             "audioCache", "audioCacheMb", "playbackAuthorized", "deviceName", "webClientId", "proxyMode", "proxyHost",
-            "proxyPort", "proxyUsername", "pins", "hiddenTracks", "radioSeeds",
+            "proxyPort", "proxyUsername", "pins", "hiddenTracks", "radioSeeds", "language",
         ] {
             assert!(names.contains(&name), "{name}");
         }
         assert_eq!(SettingKey::CustomSeed.default_value(), SettingValue::Str("#8C6DFF".into()));
         assert_eq!(SettingKey::Animations.default_value(), SettingValue::Str("system".into()));
+        assert_eq!(SettingKey::Language.default_value(), SettingValue::Str("en".into()));
         assert_eq!(SettingKey::ProxyPort.value_type(), SettingType::Str);
         assert_eq!(SettingKey::AudioCacheMb.value_type(), SettingType::Int);
         assert_eq!(SettingKey::Normalisation.value_type(), SettingType::Bool);

@@ -477,7 +477,7 @@ mod imp {
                 .map_err(dbus_err)?;
             // как dbus-fast: занятое имя (второй экземпляр с --new-instance) — не ошибка
             if let Err(err) = conn.request_name(BUS_NAME).await {
-                tracing::warn!("MPRIS: имя {BUS_NAME} не получено: {err}");
+                tracing::warn!("MPRIS: could not acquire name {BUS_NAME}: {err}");
             }
             let emitter = SignalEmitter::new(&conn, OBJECT_PATH).map_err(dbus_err)?.into_owned();
             let task = tokio::spawn(async move {

@@ -52,17 +52,17 @@ fn parse(body: &Value) -> Result<SearchResults, Failure> {
             return Err(Failure::Retired);
         }
         if body.pointer("/data/searchV2").is_none() {
-            return Err(Failure::Other(anyhow!("ошибки GraphQL: {errors:?}")));
+            return Err(Failure::Other(anyhow!("GraphQL errors: {errors:?}")));
         }
     }
-    let search = body.pointer("/data/searchV2").ok_or_else(|| Failure::Other(anyhow!("нет data.searchV2")))?;
+    let search = body.pointer("/data/searchV2").ok_or_else(|| Failure::Other(anyhow!("no data.searchV2")))?;
     results(search).map_err(Failure::Other)
 }
 
 /// data.searchV2 → SearchResults Web API.
 fn results(search: &Value) -> anyhow::Result<SearchResults> {
     if !search.is_object() {
-        bail!("searchV2 не объект");
+        bail!("searchV2 is not an object");
     }
     Ok(SearchResults {
         tracks: section(search, "tracksV2", |item| track(item.pointer("/item/data").unwrap_or(&item["data"]))),

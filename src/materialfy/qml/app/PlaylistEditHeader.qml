@@ -34,14 +34,14 @@ ColumnLayout {
         }
         if (t !== (root.info.title ?? "")) {
             Library.renamePlaylist(root.playlistId, t)
-            root.notify("Название сохранено в Spotify")
+            root.notify(I18n.t("Name saved to Spotify"))
         }
     }
     function _commitDescription() {
         const d = descInput.text.trim()
         if (d !== (root.info.description ?? "")) {
             Library.setDescription(root.playlistId, d)
-            root.notify("Описание сохранено")
+            root.notify(I18n.t("Description saved"))
         }
     }
 
@@ -74,7 +74,7 @@ ColumnLayout {
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: 10
-                text: "Сменить"
+                text: I18n.t("Change")
                 icon: "photo_camera"
                 style: "tonal"
                 size: "xs"
@@ -93,7 +93,7 @@ ColumnLayout {
             spacing: 6
 
             Label {
-                text: root.info.collaborative ? "СОВМЕСТНЫЙ ПЛЕЙЛИСТ" : "ПЛЕЙЛИСТ"
+                text: root.info.collaborative ? I18n.t("COLLABORATIVE PLAYLIST") : I18n.t("PLAYLIST")
                 type: "labelLarge"
                 color: Theme.primary
                 font.letterSpacing: 1.2
@@ -179,7 +179,7 @@ ColumnLayout {
                     Label {
                         anchors.fill: parent
                         visible: descInput.text === "" && !descInput.activeFocus
-                        text: "Добавьте описание"
+                        text: I18n.t("Add a description")
                         type: "bodyLarge"
                         color: Theme.fgSurfaceVariant
                         opacity: 0.7
@@ -193,13 +193,13 @@ ColumnLayout {
         Layout.fillWidth: true
         spacing: 12
         Button {
-            text: "Готово"
+            text: I18n.t("Done")
             icon: "check"
             size: "m"
             onClicked: { titleInput.focus = false; descInput.focus = false; root.done() }
         }
         Button {
-            text: "Добавить треки"
+            text: I18n.t("Add tracks")
             icon: "playlist_add"
             style: "tonal"
             size: "m"
@@ -212,13 +212,13 @@ ColumnLayout {
             visible: root.own
             height: 56
             spacing: 10
-            Label { text: "Публичный"; type: "labelLarge"; color: Theme.fgSurfaceVariant }
+            Label { text: I18n.t("Public"); type: "labelLarge"; color: Theme.fgSurfaceVariant }
             Switch {
                 id: publicSwitch
                 checked: root.info.public === true
                 onToggled: value => {
                     Library.setPublic(root.playlistId, value)
-                    root.notify(value ? "Плейлист стал публичным" : "Плейлист закрыт: виден только вам")
+                    root.notify(value ? I18n.t("Playlist is now public") : I18n.t("Playlist is now private: only you can see it"))
                 }
             }
         }
@@ -226,17 +226,17 @@ ColumnLayout {
             height: 56
             spacing: 6
             Icon { name: "cloud_done"; size: 18; color: Theme.fgSurfaceVariant }
-            Label { text: "Изменения сразу сохраняются в Spotify"; type: "bodySmall"; color: Theme.fgSurfaceVariant }
+            Label { text: I18n.t("Changes are saved to Spotify right away"); type: "bodySmall"; color: Theme.fgSurfaceVariant }
         }
     }
 
     FileDialog {
         id: coverDialog
-        title: "Обложка плейлиста"
-        nameFilters: ["Изображения (*.jpg *.jpeg *.png)"]
+        title: I18n.t("Playlist cover")
+        nameFilters: [I18n.t("Images ({0})", "*.jpg *.jpeg *.png")]
         onAccepted: {
             Library.uploadCover(root.playlistId, selectedFile.toString())
-            root.notify("Обложка: JPEG до 256 КБ — Spotify применит её через пару минут")
+            root.notify(I18n.t("Cover: JPEG up to 256 KB — Spotify will apply it in a couple of minutes"))
         }
     }
 }

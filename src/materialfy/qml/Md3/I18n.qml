@@ -1,0 +1,258 @@
+pragma Singleton
+import QtQml
+import Materialfy.Core
+
+// Localisation for QML. Source strings are English; the Russian dictionary comes from Rust (Translations.ru,
+// built from i18n/ru/*.json). Every function reads Translations.language, so a binding that calls I18n.t(...) re-evaluates
+// when the language changes (Settings.language → Translations.language).
+//   I18n.t("Play")                          → "Play" / "Играть"
+//   I18n.t("{0} of {1}", a, b)              → positional placeholders
+//   I18n.n(count, "{0} track", "{0} tracks") → "5 tracks" / "5 треков" (dictionary key "{0} track|{0} tracks")
+// Formatting helpers (compact numbers, dates, durations, sizes) keep their locale data in _loc below.
+QtObject {
+    id: root
+
+    // "en" | "ru"
+    readonly property string lang: Translations.language === "ru" ? "ru" : "en"
+    readonly property bool russian: lang === "ru"
+    // the Russian dictionary (constant: converted to a JS object once)
+    readonly property var _ru: Translations.ru
+    readonly property var dict: russian ? _ru : ({})
+
+    // Functions read Translations.language directly (not the `lang` binding), so they are current even inside a
+    // languageChanged handler that runs before I18n's own bindings update.
+    function _isRu() {
+        return Translations.language === "ru"
+    }
+    function _cur() {
+        return _loc[_isRu() ? "ru" : "en"]
+    }
+
+    // Substitutes {0}, {1}… with args[0], args[1]… (missing arguments leave the placeholder as is).
+    function format(pattern, args) {
+        if (!args || args.length === 0)
+            return pattern
+        return String(pattern).replace(/\{(\d+)\}/g, (m, i) => i < args.length ? String(args[i]) : m)
+    }
+
+    // Translation of an English source string; extra arguments substitute {0}, {1}…
+    function t(en) {
+        const s = _isRu() ? _ru[en] : undefined
+        const pattern = typeof s === "string" ? s : en
+        return arguments.length > 1 ? format(pattern, Array.prototype.slice.call(arguments, 1)) : pattern
+    }
+
+    // Russian plural category: 0 one (1, 21), 1 few (2–4, 22–24), 2 many (0, 5–20, 11–14, 25…)
+    function _ruIndex(count) {
+        const n = Math.abs(Math.trunc(Number(count) || 0))
+        const m10 = n % 10, m100 = n % 100
+        return m10 === 1 && m100 !== 11 ? 0 : m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? 1 : 2
+    }
+
+    // Plural form for count; {0} → count (shown = what replaces {0}, e.g. a compact number).
+    function _plural(count, one, many, shown) {
+        const forms = _isRu() ? _ru[one + "|" + many] : undefined
+        let form
+        if (typeof forms === "string") {
+            const list = String(forms).split("|")
+            form = list[Math.min(_ruIndex(count), list.length - 1)]
+        } else {
+            form = Number(count) === 1 ? one : many
+        }
+        return format(form, [shown])
+    }
+
+    function n(count, one, many) {
+        return _plural(count, one, many, count)
+    }
+
+    // n() with a compact {0}: "1.2M listeners" / "1,2 млн слушателей" (after «млн»/«тыс.» Russian uses the many form)
+    function nCompact(count, one, many) {
+        const c = Number(count) || 0
+        return _plural(c >= 1e4 ? 5 : c, one, many, compact(c))
+    }
+
+    // ---- locale data for the helpers -------------------------------------------------------------
+    readonly property var _loc: ({
+        en: {
+            decimal: ".",
+            group: ",",
+            million: "M",
+            thousand: "K",
+            monthsShort: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"],
+            monthsLong: ["January", "February", "March", "April", "May", "June", "July", "August", "September",
+                         "October", "November", "December"],
+            dayMonth: "{1} {0}",                   // {0} day, {1} month
+            date: "{1} {0}, {2}",                  // + {2} year
+            monthYear: "{0} {1}",
+            now: "Just now",
+            minAgo: "{0} min ago",
+            hrAgo: "{0} hr ago",
+            yesterday: "Yesterday",
+            daysAgo: ["{0} day ago", "{0} days ago"],
+            lastWeek: "Last week",
+            weeksAgo: ["{0} week ago", "{0} weeks ago"],
+            hr: "{0} hr",
+            min: "{0} min",
+            sec: "{0} sec",
+            bytes: ["B", "KB", "MB", "GB"]
+        },
+        ru: {
+            decimal: ",",
+            group: " ",
+            million: " млн",
+            thousand: " тыс.",
+            monthsShort: ["янв.", "февр.", "мар.", "апр.", "мая", "июн.", "июл.", "авг.", "сент.", "окт.", "нояб.", "дек."],
+            // genitive: «9 октября»
+            monthsLong: ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября",
+                         "октября", "ноября", "декабря"],
+            // nominative: «октябрь 2024»
+            monthsNominative: ["январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь",
+                               "октябрь", "ноябрь", "декабрь"],
+            dayMonth: "{0} {1}",
+            date: "{0} {1} {2}",
+            monthYear: "{0} {1}",
+            now: "Сейчас",
+            minAgo: "{0} мин назад",
+            hrAgo: "{0} ч назад",
+            yesterday: "Вчера",
+            daysAgo: ["{0} день назад", "{0} дня назад", "{0} дней назад"],
+            lastWeek: "На прошлой неделе",
+            weeksAgo: ["{0} неделю назад", "{0} недели назад", "{0} недель назад"],
+            hr: "{0} ч",
+            min: "{0} мин",
+            sec: "{0} с",
+            bytes: ["Б", "КБ", "МБ", "ГБ"]
+        }
+    })
+    readonly property var loc: _loc[lang]   // for bindings; functions use _cur()
+
+    function _pick(forms, count) {
+        if (_isRu())
+            return forms[Math.min(_ruIndex(count), forms.length - 1)]
+        return Number(count) === 1 ? forms[0] : forms[forms.length - 1]
+    }
+
+    // Decimal number with the language's separator: decimal(1.25, 1) → "1.3" / "1,3"
+    function decimal(x, digits) {
+        return Number(x || 0).toFixed(digits === undefined ? 1 : digits).replace(".", _cur().decimal)
+    }
+
+    // Digit grouping without abbreviation: 8765 → "8,765" / "8 765"
+    function grouped(x) {
+        return String(Math.round(Number(x) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, _cur().group)
+    }
+
+    // 12.3M / 450K / 8,765 — Russian: 12,3 млн / 450 тыс. / 8 765
+    function compact(x) {
+        const v = Number(x) || 0
+        if (v >= 1e6)
+            return decimal(v / 1e6, v >= 1e7 ? 0 : 1) + _cur().million
+        if (v >= 1e4)
+            return Math.round(v / 1e3) + _cur().thousand
+        return grouped(v)
+    }
+
+    // Date from an ISO string, a millisecond timestamp or a Date; null if unparsable.
+    function _date(dateLike) {
+        if (dateLike === undefined || dateLike === null || dateLike === "")
+            return null
+        if (typeof dateLike === "string" && /^\d{4}$/.test(dateLike))
+            return new Date(Number(dateLike), 0, 1)
+        const d = dateLike instanceof Date ? dateLike : new Date(dateLike)
+        return isNaN(d.getTime()) ? null : d
+    }
+
+    // "Oct 9" / "9 октября"
+    function dayMonth(dateLike) {
+        const d = _date(dateLike)
+        if (!d)
+            return ""
+        const months = _isRu() ? _cur().monthsLong : _cur().monthsShort
+        return format(_cur().dayMonth, [d.getDate(), months[d.getMonth()]])
+    }
+
+    // "Oct 9, 2024" / "9 окт. 2024"; shortDate omits the current year
+    function date(dateLike) {
+        const d = _date(dateLike)
+        if (!d)
+            return ""
+        return format(_cur().date, [d.getDate(), _cur().monthsShort[d.getMonth()], d.getFullYear()])
+    }
+    function shortDate(dateLike) {
+        const d = _date(dateLike)
+        if (!d)
+            return ""
+        if (d.getFullYear() !== new Date().getFullYear())
+            return date(d)
+        return format(_cur().dayMonth, [d.getDate(), _cur().monthsShort[d.getMonth()]])
+    }
+
+    // "October 2024" / "октябрь 2024"
+    function monthYear(dateLike) {
+        const d = _date(dateLike)
+        if (!d)
+            return ""
+        const months = _isRu() ? _cur().monthsNominative : _cur().monthsLong
+        return format(_cur().monthYear, [months[d.getMonth()], d.getFullYear()])
+    }
+
+    // "Just now", "5 min ago", "3 hr ago", "Yesterday", "3 days ago", "Last week", "2 weeks ago", then date()
+    function relative(dateLike) {
+        const d = _date(dateLike)
+        if (!d)
+            return ""
+        const min = (Date.now() - d.getTime()) / 60000
+        if (min < 10)
+            return _cur().now
+        if (min < 60)
+            return format(_cur().minAgo, [Math.round(min)])
+        const h = min / 60
+        if (h < 24)
+            return format(_cur().hrAgo, [Math.round(h)])
+        const days = Math.floor(h / 24)
+        if (days === 1)
+            return _cur().yesterday
+        if (days < 7)
+            return format(_pick(_cur().daysAgo, days), [days])
+        if (days < 14)
+            return _cur().lastWeek
+        if (days < 31) {
+            const weeks = Math.floor(days / 7)
+            return format(_pick(_cur().weeksAgo, weeks), [weeks])
+        }
+        return date(d)
+    }
+
+    // Length from milliseconds: "1 hr 5 min" / "1 ч 5 мин", "45 min", under a minute "30 sec"
+    function duration(ms) {
+        const totalMin = Math.round((Number(ms) || 0) / 60000)
+        if (totalMin < 1 && Number(ms) > 0)
+            return format(_cur().sec, [Math.max(1, Math.round(Number(ms) / 1000))])
+        if (totalMin < 60)
+            return format(_cur().min, [totalMin])
+        const h = Math.floor(totalMin / 60), m = totalMin % 60
+        return format(_cur().hr, [h]) + (m ? " " + format(_cur().min, [m]) : "")
+    }
+
+    // Clock time m:ss or h:mm:ss (same in every language)
+    function clock(ms) {
+        const s = Math.max(0, Math.floor((Number(ms) || 0) / 1000))
+        const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, sec = s % 60
+        const pad = v => (v < 10 ? "0" : "") + v
+        return h > 0 ? h + ":" + pad(m) + ":" + pad(sec) : m + ":" + pad(sec)
+    }
+
+    // Size in bytes: "1.5 GB" / "1,5 ГБ", "300 MB"
+    function bytes(b) {
+        b = Number(b) || 0
+        const u = _cur().bytes
+        if (b >= 1024 * 1024 * 1024)
+            return decimal(b / 1024 / 1024 / 1024, 1) + " " + u[3]
+        if (b >= 1024 * 1024)
+            return Math.round(b / 1024 / 1024) + " " + u[2]
+        if (b >= 1024)
+            return Math.round(b / 1024) + " " + u[1]
+        return b + " " + u[0]
+    }
+}

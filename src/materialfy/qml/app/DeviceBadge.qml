@@ -25,10 +25,10 @@ Item {
             castvideo: "cast", castaudio: "cast", smartwatch: "watch"
         })[key] ?? "speaker"
         readonly property string label: ({
-            computer: "Компьютер", smartphone: "Телефон", tablet: "Планшет", tv: "Телевизор", speaker: "Колонка",
-            avr: "Ресивер", stb: "Приставка", audiodongle: "Аудиоадаптер", automobile: "Автомобиль",
-            gameconsole: "Игровая консоль", castvideo: "Google Cast", castaudio: "Google Cast", smartwatch: "Часы"
-        })[key] ?? "Устройство"
+            computer: I18n.t("Computer"), smartphone: I18n.t("Phone"), tablet: I18n.t("Tablet"), tv: I18n.t("TV"), speaker: I18n.t("Speaker"),
+            avr: I18n.t("Receiver"), stb: I18n.t("Set-top box"), audiodongle: I18n.t("Audio dongle"), automobile: I18n.t("Car"),
+            gameconsole: I18n.t("Game console"), castvideo: "Google Cast", castaudio: "Google Cast", smartwatch: I18n.t("Watch")
+        })[key] ?? I18n.t("Device")
     }
 
     Info { id: info; type: (Player.device ?? {}).type ?? "" }

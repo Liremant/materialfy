@@ -169,7 +169,7 @@ mod tests {
         assert_eq!(check(&[1, 2, 3], &[1, 2, 3]), 0);
         assert_eq!(check(&[1, 2, 3], &[2, 3]), 1);
         assert_eq!(check(&[1, 2, 3], &[1, 2, 3, 4, 5]), 1);
-        assert_eq!(check(&[1, 2, 3, 4], &[2, 3, 4, 1]), 1, "один перенос вниз — один шаг");
+        assert_eq!(check(&[1, 2, 3, 4], &[2, 3, 4, 1]), 1, "one move down is one step");
         assert_eq!(check(&[1, 2, 3, 4], &[4, 1, 2, 3]), 1);
         check(&[1, 2, 3, 4, 5], &[9, 5, 3, 8, 1]);
         check(&[1, 2, 3], &[7, 8]);

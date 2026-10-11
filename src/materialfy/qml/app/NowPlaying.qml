@@ -444,7 +444,7 @@ Item {
                     visible: volumeRow.locked
                     Layout.alignment: Qt.AlignHCenter
                     Layout.topMargin: -4
-                    text: "Громкость меняется только на устройстве"
+                    text: I18n.t("Volume can only be changed on the device")
                     type: "bodySmall"
                     color: Theme.fgSurfaceVariant
                 }

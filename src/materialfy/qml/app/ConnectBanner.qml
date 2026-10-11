@@ -36,11 +36,11 @@ Item {
     }
 
     readonly property string title: {
-        const n = _name !== "" ? _name : "Другое устройство"
-        return lost ? n + " больше не отвечает" : "Играет на " + n
+        const n = _name !== "" ? _name : I18n.t("Another device")
+        return lost ? I18n.t("{0} stopped responding", n) : I18n.t("Playing on {0}", n)
     }
-    readonly property string subtitle: lost ? "Продолжить с " + _time(Player.positionMs) + " на этом компьютере?"
-                                     : Player.playing ? "Этот компьютер работает как пульт" : "На паузе · пульт"
+    readonly property string subtitle: lost ? I18n.t("Continue from {0} on this computer?", _time(Player.positionMs))
+                                     : Player.playing ? I18n.t("This computer is acting as a remote") : I18n.t("Paused · remote")
 
     implicitWidth: 420
     implicitHeight: shown ? pill.implicitHeight : 0
@@ -163,7 +163,7 @@ Item {
                     }
                     Label {
                         anchors.verticalCenter: parent.verticalCenter
-                        text: action.moving ? "Переносим…" : root.needsSetup ? "Настроить" : "Слушать здесь"
+                        text: action.moving ? I18n.t("Transferring…") : root.needsSetup ? I18n.t("Set up") : I18n.t("Play here")
                         type: "labelLarge"
                         color: root.lost ? Theme.errorContainer : Theme.fgSecondaryContainer
                     }

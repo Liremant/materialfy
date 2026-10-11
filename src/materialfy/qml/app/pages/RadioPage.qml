@@ -23,18 +23,18 @@ TrackListPage {
         return t ? (t.coverLarge || t.cover || "") : ""
     }
 
-    title: Radio.stationTitle !== "" ? Radio.stationTitle : "Радио"
-    overline: "РАДИО"
+    title: Radio.stationTitle !== "" ? Radio.stationTitle : I18n.t("Radio")
+    overline: I18n.t("RADIO")
     heroImage: seedCover
     heroIcon: "radio"
     heroShape: "flower8"
-    subtitle: model && model.count > 0 ? model.count + " треков · каждый запуск — новый микс"
-            : Radio.loading ? "Собираем станцию…" : ""
+    subtitle: model && model.count > 0 ? I18n.t("{0} tracks · a fresh mix every time", model.count)
+            : Radio.loading ? I18n.t("Building your station…") : ""
     model: Radio.tracks
     emptyIcon: "radio"
-    emptyTitle: Radio.loading ? "Собираем станцию…" : Radio.errorText !== "" ? "Станция не собралась" : "В станции нет треков"
+    emptyTitle: Radio.loading ? I18n.t("Building your station…") : Radio.errorText !== "" ? I18n.t("Couldn't build the station") : I18n.t("This station has no tracks")
     emptyText: Radio.errorText !== "" ? Radio.errorText
-             : Radio.locked ? "Станции приходят через сессию воспроизведения: подключите воспроизведение на этом компьютере" : ""
+             : Radio.locked ? I18n.t("Stations come through a playback session: connect playback on this computer") : ""
 
     function notify(text) {
         const w = page.Window.window
@@ -56,7 +56,7 @@ TrackListPage {
             enabled: page.model !== null && page.model.count > 0
             onClicked: {
                 Radio.save()
-                page.notify("Сохраняем станцию как плейлист…")
+                page.notify(I18n.t("Saving station as a playlist…"))
             }
         }
     }

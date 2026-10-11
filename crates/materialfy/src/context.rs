@@ -31,13 +31,13 @@ static CONTEXT: OnceLock<AppContext> = OnceLock::new();
 /// Вызывает оболочка ровно один раз, до qt::ffi::register_qml_types().
 pub fn init(context: AppContext) {
     if CONTEXT.set(context).is_err() {
-        panic!("AppContext уже создан");
+        panic!("AppContext already created");
     }
 }
 
 /// Контекст приложения. Паника, если оболочка ещё не вызвала init (ошибка порядка запуска).
 pub fn ctx() -> &'static AppContext {
-    CONTEXT.get().expect("AppContext не создан: context::init() до регистрации типов QML")
+    CONTEXT.get().expect("AppContext not created: call context::init() before registering QML types")
 }
 
 pub fn try_ctx() -> Option<&'static AppContext> {

@@ -251,12 +251,12 @@ pub async fn change(session: &Session, id: &str, change: &Change) -> Result<Opti
             Ok(_) if stale => return Ok(head(session, &playlist).await.ok().map(|head| session_reads::snapshot(&head))),
             Ok(bytes) => return Ok(Some(session_reads::snapshot(&resulting_revision(&bytes)?))),
             Err(error) if attempt == 0 && conflict(&error) => {
-                tracing::debug!("правка плейлиста {id} не легла ({error}); перечитываю и повторяю");
+                tracing::debug!("playlist {id} edit didn't apply ({error}); rereading and retrying");
             }
             Err(error) => return Err(written(error, change.repeatable())),
         }
     }
-    Err(Failure::Definitive(ApiError::Status { status: 409, message: "Плейлист изменился — обновите его".into() }))
+    Err(Failure::Definitive(ApiError::Status { status: 409, message: "The playlist changed — refresh it".into() }))
 }
 
 /// URI плейлиста, которые уже есть в нём (порядок запроса).
@@ -364,7 +364,7 @@ async fn rootlist_change(session: &Session, ops: impl Fn(&[String]) -> Option<Ve
         match post(session, &path, &list_changes(revision, ops)).await {
             Ok(_) => return Ok(()),
             Err(error) if attempt == 0 && conflict(&error) => {
-                tracing::debug!("правка rootlist не легла ({error}); перечитываю и повторяю");
+                tracing::debug!("rootlist edit didn't apply ({error}); rereading and retrying");
             }
             Err(error) => return Err(written(error, true)),
         }
@@ -403,7 +403,7 @@ async fn rootlist_rows(session: &Session) -> Result<(Vec<u8>, Vec<String>), Fail
 
 fn playlist_id(id: &str) -> Result<SpotifyId, Failure> {
     SpotifyId::from_base62(id).map_err(|_| {
-        Failure::Definitive(ApiError::Status { status: 400, message: "Неверная ссылка на плейлист".into() })
+        Failure::Definitive(ApiError::Status { status: 400, message: "Invalid playlist link".into() })
     })
 }
 
@@ -483,7 +483,7 @@ fn written(error: librespot_core::Error, repeatable: bool) -> Failure {
     match status_of(error.kind) {
         Some(403) => Failure::Definitive(ApiError::Status {
             status: 403,
-            message: "Spotify не разрешает менять этот плейлист".into(),
+            message: "Spotify doesn't allow changing this playlist".into(),
         }),
         Some(status) => Failure::Definitive(ApiError::Status { status, message: String::new() }),
         None if !repeatable && matches!(error.kind, ErrorKind::Unavailable | ErrorKind::DeadlineExceeded) => {

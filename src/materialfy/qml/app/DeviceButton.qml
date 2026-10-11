@@ -31,7 +31,7 @@ Item {
         const i = m && movingTo !== "" ? m.find("id", movingTo) : -1
         return i >= 0 ? (m.get(i).name ?? "") : ""
     }
-    readonly property string label: movingHere ? "Сюда…" : moving ? (_targetName() || "Переносим…") : _name
+    readonly property string label: movingHere ? I18n.t("Here…") : moving ? (_targetName() || I18n.t("Moving…")) : _name
 
     function toggle() {
         if (menuOpen) {

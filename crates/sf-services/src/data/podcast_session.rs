@@ -71,7 +71,7 @@ pub async fn episode_page(
             Ok((episode, show, more))
         }
         Err(error) => {
-            tracing::debug!("шоу выпуска {episode_id} через сессию: {}", failure_text(&error));
+            tracing::debug!("show of episode {episode_id} via session: {}", failure_text(&error));
             Ok((episode, own_show, Vec::new()))
         }
     }
@@ -123,11 +123,11 @@ async fn decoration(read: impl Future<Output = anyhow::Result<HashMap<String, Re
     match tokio::time::timeout(PLAYED_GRACE, read).await {
         Ok(Ok(played)) => played,
         Ok(Err(error)) => {
-            tracing::debug!("места остановки выпусков: {error:#}");
+            tracing::debug!("episode resume points: {error:#}");
             HashMap::new()
         }
         Err(_) => {
-            tracing::debug!("места остановки выпусков не успели");
+            tracing::debug!("episode resume points timed out");
             HashMap::new()
         }
     }

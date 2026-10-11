@@ -28,17 +28,17 @@ Row {
 
     readonly property string text: {
         if (movingHere)
-            return brief ? "Сюда…" : "Переносим на этот компьютер…"
+            return brief ? I18n.t("Here…") : I18n.t("Moving to this computer…")
         if (moving) {
             const t = _targetName()
-            return t === "" ? "Переносим…" : brief ? t : "Переносим на «" + t + "»…"
+            return t === "" ? I18n.t("Moving…") : brief ? t : I18n.t("Moving to “{0}”…", t)
         }
-        const n = _name !== "" ? _name : "другом устройстве"
+        const n = _name !== "" ? _name : I18n.t("another device")
         if (lost)
-            return n + " не отвечает"
+            return I18n.t("{0} isn’t responding", n)
         if (brief)
             return n
-        return Player.playing ? "Играет на " + n : n + " · пауза"
+        return Player.playing ? I18n.t("Playing on {0}", n) : I18n.t("Paused on {0}", n)
     }
     readonly property color tint: lost ? Theme.error : moving ? Theme.fgSurfaceVariant : Theme.primary
 

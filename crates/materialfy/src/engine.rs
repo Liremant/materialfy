@@ -87,7 +87,7 @@ fn absolute(path: &Path) -> PathBuf {
 fn load_fonts() {
     let dir = assets_dir().join("fonts");
     let Ok(entries) = std::fs::read_dir(&dir) else {
-        eprintln!("нет каталога шрифтов {}", dir.display());
+        eprintln!("no font directory {}", dir.display());
         return;
     };
     let mut fonts: Vec<PathBuf> = entries
@@ -99,7 +99,7 @@ fn load_fonts() {
     for font in fonts {
         if ffi::app_add_font(&qpath(&font)) < 0 {
             let name = font.file_name().unwrap_or_default().to_string_lossy();
-            eprintln!("не удалось загрузить шрифт {name}");
+            eprintln!("could not load font {name}");
         }
     }
 }
@@ -175,7 +175,7 @@ fn spawn_instance_listener(rt: &tokio::runtime::Handle) {
         let mut listener = match mf_platform::single_instance::InstanceListener::start().await {
             Ok(listener) => listener,
             Err(e) => {
-                tracing::debug!("слушатель единственного экземпляра не запущен: {e}");
+                tracing::debug!("single-instance listener not started: {e}");
                 return;
             }
         };
@@ -211,7 +211,7 @@ pub fn run(cli: Cli) -> i32 {
     let rt = match build_runtime() {
         Ok(rt) => rt,
         Err(e) => {
-            eprintln!("materialfy: не удалось запустить tokio: {e}");
+            eprintln!("materialfy: could not start tokio: {e}");
             return 1;
         }
     };
@@ -235,6 +235,8 @@ pub fn run(cli: Cli) -> i32 {
     init_tracing();
 
     let settings = SettingsStore::open(config_dir);
+    // UI language before any service or QML produces text (English default; Russian from i18n/ru)
+    crate::bridges::translations::apply_language(crate::bridges::translations::stored_language(&settings));
     let options = ServicesOptions {
         // Снимки — без сессии, кроме явного файла для тестов
         persist_session: cli.screenshot.is_none() || env_set("MATERIALFY_SESSION_FILE"),
@@ -273,7 +275,7 @@ pub fn run(cli: Cli) -> i32 {
 fn run_engine(cli: &Cli, rt: &tokio::runtime::Runtime, services: &Services) -> i32 {
     let mut engine = QQmlApplicationEngine::new();
     let Some(mut e) = engine.as_mut() else {
-        eprintln!("materialfy: не удалось создать QQmlApplicationEngine");
+        eprintln!("materialfy: could not create QQmlApplicationEngine");
         return 1;
     };
     crate::images::install_caching_nam(e.as_mut(), rt.handle(), services);

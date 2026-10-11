@@ -31,12 +31,12 @@ ColumnLayout {
                 spacing: 2
                 Label {
                     Layout.fillWidth: true
-                    text: "Браузер не открылся?"
+                    text: I18n.t("Browser didn’t open?")
                     type: "titleSmall"
                 }
                 Label {
                     Layout.fillWidth: true
-                    text: "Откройте страницу ещё раз или скопируйте ссылку в нужный браузер"
+                    text: I18n.t("Open the page again or copy the link into the browser you want")
                     type: "bodySmall"
                     color: Theme.fgSurfaceVariant
                     wrapMode: Text.WordWrap
@@ -46,13 +46,13 @@ ColumnLayout {
             RowLayout {
                 spacing: 8
                 Button {
-                    text: "Открыть снова"
+                    text: I18n.t("Open again")
                     icon: "open_in_new"
                     style: "tonal"
                     onClicked: Auth.reopenBrowser()
                 }
                 Button {
-                    text: copiedHint.running ? "Скопировано" : "Ссылка"
+                    text: copiedHint.running ? I18n.t("Copied") : I18n.t("Link")
                     icon: copiedHint.running ? "check" : "content_copy"
                     style: "outlined"
                     onClicked: {

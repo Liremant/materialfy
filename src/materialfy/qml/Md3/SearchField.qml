@@ -5,7 +5,7 @@ Item {
     id: root
 
     property alias text: input.text
-    property string placeholder: "Поиск"
+    property string placeholder: I18n.t("Search")
     property string leadingIcon: "search"
     property alias echoMode: input.echoMode
     readonly property alias inputItem: input

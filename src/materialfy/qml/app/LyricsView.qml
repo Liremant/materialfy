@@ -221,14 +221,14 @@ Item {
         visible: !root.stale && root.lines.length === 0 && Lyrics.status !== "loading"
         icon: "title"
         shape: "flower6"
-        title: !Player.hasTrack ? "Ничего не играет"
-             : Player.isEpisode ? "У выпусков нет текста"
-             : Lyrics.status === "error" ? "Текст не загрузился"
-             : "Текста нет"
-        text: !Player.hasTrack ? "Здесь появится текст играющего трека"
-            : Player.isEpisode ? "Тексты бывают только у песен"
-            : Lyrics.status === "error" ? "Источники не ответили — попробую ещё раз на следующем треке"
-            : "Ни один источник не знает текста этого трека"
+        title: !Player.hasTrack ? I18n.t("Nothing's playing")
+             : Player.isEpisode ? I18n.t("Episodes don't have lyrics")
+             : Lyrics.status === "error" ? I18n.t("Lyrics didn't load")
+             : I18n.t("No lyrics")
+        text: !Player.hasTrack ? I18n.t("Lyrics for the playing track will appear here")
+            : Player.isEpisode ? I18n.t("Only songs have lyrics")
+            : Lyrics.status === "error" ? I18n.t("Sources didn't respond — I'll try again on the next track")
+            : I18n.t("No source has lyrics for this track")
     }
     LoadingIndicator {
         anchors.centerIn: parent
@@ -302,7 +302,7 @@ Item {
         size: "xs"
         style: "tonal"
         icon: "lyrics"
-        text: "К текущей строке"
+        text: I18n.t("Back to current line")
         visible: opacity > 0
         opacity: !root.following && root.lines.length > 0 && !root.stale ? 1 : 0
         Behavior on opacity { NumberAnimation { duration: Theme.motion.effectsFast } }
@@ -314,7 +314,7 @@ Item {
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         anchors.margins: 4
-        text: Lyrics.source + (Lyrics.kind === "word" ? " · по словам" : " · по строкам")
+        text: Lyrics.kind === "word" ? I18n.t("{0} · word by word", Lyrics.source) : I18n.t("{0} · line by line", Lyrics.source)
         type: "labelSmall"
         color: Theme.fgSurfaceVariant
         opacity: 0.6

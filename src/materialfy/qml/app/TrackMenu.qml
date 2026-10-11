@@ -32,7 +32,7 @@ Item {
     function close() { menu.close() }
 
     function _playlistItems() {
-        const out = [{ id: "playlist:new", text: "Новый плейлист…", icon: "add" }]
+        const out = [{ id: "playlist:new", text: I18n.t("New playlist…"), icon: "add" }]
         const model = Library.playlists
         const me = Auth.account ? (Auth.account.id ?? "") : ""
         const own = []
@@ -48,23 +48,23 @@ Item {
     }
 
     function _shareItems() {
-        const out = [{ id: "share:track", text: _episode ? "Скопировать ссылку на выпуск" : "Скопировать ссылку на трек", icon: "content_copy" }]
+        const out = [{ id: "share:track", text: _episode ? I18n.t("Copy episode link") : I18n.t("Copy track link"), icon: "content_copy" }]
         if (_refs.length === 1)
-            out.push({ id: "share:artist:" + _refs[0].id, text: "Скопировать ссылку на исполнителя", icon: "person" })
+            out.push({ id: "share:artist:" + _refs[0].id, text: I18n.t("Copy artist link"), icon: "person" })
         else
             for (const r of _refs)
-                out.push({ id: "share:artist:" + r.id, text: "Ссылка на " + r.name, icon: "person" })
+                out.push({ id: "share:artist:" + r.id, text: I18n.t("Link to {0}", r.name), icon: "person" })
         return out
     }
 
     function _radioItems() {
         if (_episode)
             return []
-        const out = [{ id: "radio:track", text: "Радио по треку", icon: "radio" }]
+        const out = [{ id: "radio:track", text: I18n.t("Track radio"), icon: "radio" }]
         if (_refs.length === 1)
-            out.push({ id: "radio:artist:" + _refs[0].id, text: "Радио по исполнителю", icon: "person" })
+            out.push({ id: "radio:artist:" + _refs[0].id, text: I18n.t("Artist radio"), icon: "person" })
         else if (_refs.length > 1)
-            out.push({ id: "radio:artists", text: "Радио по исполнителю", icon: "person",
+            out.push({ id: "radio:artists", text: I18n.t("Artist radio"), icon: "person",
                        submenu: _refs.map(r => ({ id: "radio:artist:" + r.id, text: r.name, icon: "person" })) })
         return out
     }
@@ -72,15 +72,15 @@ Item {
     function _miniItems() {
         const onTop = _win && "pinnedOnTop" in _win && _win.canPin !== false
         const items = [
-            { id: "mini:shuffle", text: "Перемешивать", icon: "shuffle", checked: Player.shuffle,
+            { id: "mini:shuffle", text: I18n.t("Shuffle playback"), icon: "shuffle", checked: Player.shuffle,
               enabled: Player.hasTrack && Player.source !== "radio" },
-            { id: "mini:repeat", text: "Повтор", icon: Player.repeat === "one" ? "repeat_one" : "repeat",
+            { id: "mini:repeat", text: I18n.t("Repeat"), icon: Player.repeat === "one" ? "repeat_one" : "repeat",
               checked: Player.repeat !== "off", enabled: Player.hasTrack }
         ]
         if (onTop)
-            items.push({ id: "mini:ontop", text: "Поверх всех окон", icon: "push_pin", checked: !!_win.pinnedOnTop })
+            items.push({ id: "mini:ontop", text: I18n.t("Always on top"), icon: "push_pin", checked: !!_win.pinnedOnTop })
         if (_win && typeof _win.expandFromMini === "function")
-            items.push({ id: "mini:expand", text: "Развернуть", icon: "open_in_full" })
+            items.push({ id: "mini:expand", text: I18n.t("Expand"), icon: "open_in_full" })
         return items
     }
 
@@ -106,37 +106,37 @@ Item {
         let items = mini.concat(_radioItems())
         if (items.length > mini.length)
             items.push({ separator: true })
-        items.push({ id: "addqueue", text: "Добавить в очередь", icon: "queue_music", enabled: (track.uri ?? "") !== "" })
+        items.push({ id: "addqueue", text: I18n.t("Add to queue"), icon: "queue_music", enabled: (track.uri ?? "") !== "" })
         // в мини-режиме повтор уже в верхней группе
         if (_isCurrent && !_mini)
-            items.push({ id: "repeat", text: "Повторять", icon: Player.repeat === "one" ? "repeat_one" : "repeat",
+            items.push({ id: "repeat", text: I18n.t("Repeat this"), icon: Player.repeat === "one" ? "repeat_one" : "repeat",
                          checked: Player.repeat !== "off" })
         if (_isCurrent && Player.source === "radio")
-            items.push({ id: "dislike", text: "Не рекомендовать", icon: "thumb_down" })
+            items.push({ id: "dislike", text: I18n.t("Don't recommend"), icon: "thumb_down" })
         items.push(
-            { id: "queue", text: "Открыть очередь", icon: "queue_music" },
+            { id: "queue", text: I18n.t("Open queue"), icon: "queue_music" },
             { separator: true }
         )
         if (!_episode) {
-            items.push({ id: "like", text: liked ? "Убрать из любимых" : "Сохранить в любимые", icon: "favorite" },
-                       { id: "playlist", text: "Добавить в плейлист", icon: "playlist_add", submenu: _playlistItems() })
+            items.push({ id: "like", text: liked ? I18n.t("Remove from Liked Songs") : I18n.t("Save to Liked Songs"), icon: "favorite" },
+                       { id: "playlist", text: I18n.t("Add to playlist"), icon: "playlist_add", submenu: _playlistItems() })
             if (root.playlistId !== "" && typeof track.pos === "number")
-                items.push({ id: "removefromplaylist", text: "Убрать из этого плейлиста", icon: "remove_circle" })
+                items.push({ id: "removefromplaylist", text: I18n.t("Remove from this playlist"), icon: "remove_circle" })
             if (hasAlbum) {
                 const saved = Library.savedRevision >= 0 && Library.isSaved("spotify:album:" + track.albumId)
-                items.push({ id: "save", text: saved ? "Убрать альбом из библиотеки" : "Сохранить альбом", icon: saved ? "library_add_check" : "library_add" })
+                items.push({ id: "save", text: saved ? I18n.t("Remove album from library") : I18n.t("Save album"), icon: saved ? "library_add_check" : "library_add" })
             }
         } else {
             const saved = Library.savedRevision >= 0 && Library.isSaved(track.uri ?? "")
-            items.push({ id: "save", text: saved ? "Убрать выпуск из библиотеки" : "Сохранить выпуск", icon: saved ? "library_add_check" : "library_add" })
+            items.push({ id: "save", text: saved ? I18n.t("Remove episode from library") : I18n.t("Save episode"), icon: saved ? "library_add_check" : "library_add" })
         }
-        items.push({ id: "share", text: "Поделиться", icon: "share", submenu: _shareItems() }, { separator: true })
+        items.push({ id: "share", text: I18n.t("Share"), icon: "share", submenu: _shareItems() }, { separator: true })
         if (_episode)
-            items.push({ id: "goto:show", text: "Перейти к подкасту", icon: "podcasts", enabled: (track.showId ?? "") !== "" })
+            items.push({ id: "goto:show", text: I18n.t("Go to podcast"), icon: "podcasts", enabled: (track.showId ?? "") !== "" })
         else
             items.push(
-                { id: "goto:album", text: "Перейти к альбому", icon: "album", enabled: hasAlbum },
-                { id: "goto:artist", text: "Перейти к исполнителю", icon: "person", enabled: _refs.length > 0 }
+                { id: "goto:album", text: I18n.t("Go to album"), icon: "album", enabled: hasAlbum },
+                { id: "goto:artist", text: I18n.t("Go to artist"), icon: "person", enabled: _refs.length > 0 }
             )
         return items
     }

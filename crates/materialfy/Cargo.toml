@@ -12,6 +12,7 @@ name = "materialfy"
 path = "src/main.rs"
 
 [dependencies]
+mf-i18n.workspace = true
 md3-model.workspace = true
 sf-api.workspace = true
 sf-player.workspace = true

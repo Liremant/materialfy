@@ -20,7 +20,7 @@ use mf_platform::{SettingKey, SettingsStore};
 use crate::auth::{AuthEvent, AuthService};
 use crate::data::liked::{self, LikedSongs};
 use crate::data::paged::PagedList;
-use crate::data::text::{list_change, plural, tracks as tracks_label};
+use crate::data::text::list_change;
 use crate::data::collection_session::{self, LikedFeed};
 use crate::data::{known, playlist_cache, playlist_session, podcast_session, route};
 use sf_player::engine::session_playlists::Change;
@@ -199,7 +199,7 @@ async fn fetch_bytes(http: &sf_api::Http, url: &str) -> Result<Vec<u8>, String> 
         .and_then(reqwest::Response::error_for_status)
         .map_err(|error| error.without_url().to_string())?;
     if response.content_length().is_some_and(|length| length > 20 * 1024 * 1024) {
-        return Err("картинка слишком большая".to_owned());
+        return Err("image is too large".to_owned());
     }
     response.bytes().await.map(|bytes| bytes.to_vec()).map_err(|error| error.without_url().to_string())
 }
@@ -470,10 +470,10 @@ impl State {
 
     fn playlist_entry(&self, item: &PlaylistItem, folder: &str, times: &HashMap<String, String>) -> LibraryEntry {
         let own = self.account.as_deref().is_some_and(|me| me == item.owner_id);
-        let owner = if own { "Вы".to_owned() } else { item.owner.clone() };
-        let mut subtitle = format!("Плейлист · {owner}");
+        let owner = if own { mf_i18n::t("You") } else { item.owner.clone() };
+        let mut subtitle = mf_i18n::tf("Playlist · {0}", &[&owner]);
         if item.track_count > 0 {
-            subtitle.push_str(&format!(" · {}", tracks_label(item.track_count)));
+            subtitle.push_str(&format!(" · {}", mf_i18n::n(item.track_count, "{0} track", "{0} tracks")));
         }
         LibraryEntry {
             kind: "playlist".to_owned(),
@@ -515,8 +515,8 @@ impl State {
             kind: "folder".to_owned(),
             id: folder.id.clone(),
             uri: format!("spotify:folder:{}", folder.id),
-            title: if folder.name.is_empty() { "Папка".to_owned() } else { folder.name.clone() },
-            subtitle: format!("Папка · {}", plural(count as i64, "плейлист", "плейлиста", "плейлистов")),
+            title: if folder.name.is_empty() { mf_i18n::t("Folder") } else { folder.name.clone() },
+            subtitle: mf_i18n::tf("Folder · {0}", &[&mf_i18n::n(count as i64, "{0} playlist", "{0} playlists")]),
             cover: covers.first().cloned().unwrap_or_default(),
             covers,
             read_only: true,
@@ -532,9 +532,9 @@ impl State {
         LibraryEntry {
             kind: "liked".to_owned(),
             id: "liked".to_owned(),
-            title: "Любимые треки".to_owned(),
-            subtitle: format!("Плейлист · {}", tracks_label(count)),
-            owner: "Вы".to_owned(),
+            title: mf_i18n::t("Liked Songs"),
+            subtitle: mf_i18n::tf("Playlist · {0}", &[&mf_i18n::n(count, "{0} track", "{0} tracks")]),
+            owner: mf_i18n::t("You"),
             owner_id: self.account.clone().unwrap_or_default(),
             can_edit: false,
             read_only: true,
@@ -868,7 +868,7 @@ impl LibraryService {
                             let mut state = lock(&service.state);
                             state.liked.fail(text.clone());
                             let mut events = state.sync_liked();
-                            events.extend(state.set_error(format!("«Любимые треки» не загрузились: {text}")));
+                            events.extend(state.set_error(mf_i18n::tf("Couldn’t load Liked Songs: {0}", &[&text])));
                             state.liked_running = false;
                             events.extend(state.sync_liked());
                             drop(state);
@@ -883,7 +883,7 @@ impl LibraryService {
                 if let Some(cache) = cache
                     && let Err(error) = liked::write(&path, &cache).await
                 {
-                    tracing::debug!("кэш «Любимых треков» не записан: {error:#}");
+                    tracing::debug!("Liked Songs cache not written: {error:#}");
                 }
             }
             let (events, cache) = {
@@ -899,7 +899,7 @@ impl LibraryService {
             if let Some(cache) = cache
                 && let Err(error) = liked::write(&path, &cache).await
             {
-                tracing::debug!("кэш «Любимых треков» не записан: {error:#}");
+                tracing::debug!("Liked Songs cache not written: {error:#}");
             }
             service.reload_with_session();
         });
@@ -916,7 +916,7 @@ impl LibraryService {
             self.rt.spawn(async move {
                 let path = mf_platform::dirs::liked_cache_file(&account);
                 if let Err(error) = liked::write(&path, &cache).await {
-                    tracing::debug!("кэш «Любимых треков» не записан: {error:#}");
+                    tracing::debug!("Liked Songs cache not written: {error:#}");
                 }
             });
         }
@@ -948,7 +948,7 @@ impl LibraryService {
             let mut state = lock(&self.state);
             if state.account.is_none() {
                 drop(state);
-                self.notice("Войдите в аккаунт");
+                self.notice(mf_i18n::t("Sign in to your account"));
                 return;
             }
             let target = !state.is_liked(&uri);
@@ -998,7 +998,7 @@ impl LibraryService {
                 Ok(()) => service.checkpoint_liked(),
                 Err(error) => {
                     let text = service.error_text_of(&error);
-                    service.notice(format!("«Любимые треки» не изменились: {text}"));
+                    service.notice(mf_i18n::tf("Liked Songs didn’t change: {0}", &[&text]));
                 }
             }
         });
@@ -1115,7 +1115,7 @@ impl LibraryService {
             service.send(events);
             if let Some(error) = failure {
                 let text = service.error_text_of(&error);
-                let event = lock(&service.state).set_error(format!("Плейлисты не загрузились: {text}"));
+                let event = lock(&service.state).set_error(mf_i18n::tf("Couldn’t load playlists: {0}", &[&text]));
                 service.send(event);
             }
         });
@@ -1339,7 +1339,7 @@ impl LibraryService {
                 if let Some(page) = lock(&service.state).pages.get_mut(&id) {
                     page.expected_snapshot = None;
                 }
-                finish(&service, Some("Spotify ещё не подтвердил изменения плейлиста — обновите чуть позже".to_owned()));
+                finish(&service, Some(mf_i18n::t("Spotify hasn’t confirmed the playlist changes yet — refresh a bit later")));
                 return;
             };
             tokio::time::sleep(*delay).await;
@@ -1542,7 +1542,7 @@ impl LibraryService {
             }
             Err(error) => {
                 let text = self.error_text_of(&error);
-                self.notice(format!("Плейлист не изменился: {text}"));
+                self.notice(mf_i18n::tf("Playlist didn’t change: {0}", &[&text]));
             }
         }
         if reload {
@@ -1594,9 +1594,9 @@ impl LibraryService {
                 };
                 if duplicate {
                     service.notice(if title.is_empty() {
-                        "Трек уже есть в плейлисте".to_owned()
+                        mf_i18n::t("This track is already in the playlist")
                     } else {
-                        format!("Трек уже есть в «{title}»")
+                        mf_i18n::tf("This track is already in “{0}”", &[&title])
                     });
                     return;
                 }
@@ -1636,10 +1636,10 @@ impl LibraryService {
                 return;
             }
             let success = match (count, title.is_empty()) {
-                (1, false) => format!("Добавлено в «{title}»"),
-                (1, true) => "Добавлено в плейлист".to_owned(),
-                (n, false) => format!("{} добавлено в «{title}»", tracks_label(n as i64)),
-                (n, true) => format!("{} добавлено в плейлист", tracks_label(n as i64)),
+                (1, false) => mf_i18n::tf("Added to “{0}”", &[&title]),
+                (1, true) => mf_i18n::t("Added to playlist"),
+                (n, false) => mf_i18n::tf("{0} added to “{1}”", &[&mf_i18n::n(n as i64, "{0} track", "{0} tracks"), &title]),
+                (n, true) => mf_i18n::tf("{0} added to playlist", &[&mf_i18n::n(n as i64, "{0} track", "{0} tracks")]),
             };
             service.end_write(&id, result, Some(success));
         });
@@ -1779,7 +1779,7 @@ impl LibraryService {
     }
 
     pub fn create_playlist(&self, title: String, track: Option<TrackItem>) {
-        let title = if title.trim().is_empty() { "Новый плейлист".to_owned() } else { title.trim().to_owned() };
+        let title = if title.trim().is_empty() { mf_i18n::t("New playlist") } else { title.trim().to_owned() };
         let generation = self.generation();
         self.spawn(move |service| async move {
             match service.create(&title).await {
@@ -1795,7 +1795,7 @@ impl LibraryService {
                         page.complete = true;
                         page.snapshot = playlist.snapshot_id.clone().unwrap_or_default();
                     }
-                    service.notice(format!("Плейлист «{title}» создан"));
+                    service.notice(mf_i18n::tf("Playlist “{0}” created", &[&title]));
                     if let Some(track) = track {
                         let uri = track.play_uri();
                         service.add_rows(id, vec![uri], None, Some(track), false);
@@ -1803,7 +1803,7 @@ impl LibraryService {
                 }
                 Err(error) => {
                     let text = service.error_text_of(&error);
-                    service.notice(format!("Плейлист не создан: {text}"));
+                    service.notice(mf_i18n::tf("Couldn’t create playlist: {0}", &[&text]));
                 }
             }
         });
@@ -1811,7 +1811,7 @@ impl LibraryService {
 
     /// Создать из списка URI (очередь, радио).
     pub fn create_playlist_from(&self, title: String, uris: Vec<String>) {
-        let title = if title.trim().is_empty() { "Новый плейлист".to_owned() } else { title.trim().to_owned() };
+        let title = if title.trim().is_empty() { mf_i18n::t("New playlist") } else { title.trim().to_owned() };
         let generation = self.generation();
         self.spawn(move |service| async move {
             let result = async {
@@ -1836,12 +1836,12 @@ impl LibraryService {
             match result {
                 Ok(playlist) => {
                     if service.adopt_created(&playlist, generation) {
-                        service.notice(format!("Плейлист «{title}» создан · {}", tracks_label(uris.len() as i64)));
+                        service.notice(mf_i18n::tf("Playlist “{0}” created · {1}", &[&title, &mf_i18n::n(uris.len() as i64, "{0} track", "{0} tracks")]));
                     }
                 }
                 Err(error) => {
                     let text = service.error_text_of(&error);
-                    service.notice(format!("Плейлист не создан: {text}"));
+                    service.notice(mf_i18n::tf("Couldn’t create playlist: {0}", &[&text]));
                 }
             }
         });
@@ -1929,7 +1929,7 @@ impl LibraryService {
                 };
                 service.send(events);
                 let text = service.error_text_of(&error);
-                service.notice(format!("Плейлист не изменился: {text}"));
+                service.notice(mf_i18n::tf("Playlist didn’t change: {0}", &[&text]));
             }
         });
     }
@@ -1937,7 +1937,7 @@ impl LibraryService {
     pub fn rename_playlist(&self, id: PlaylistId, title: String) {
         let title = title.trim().to_owned();
         if title.is_empty() {
-            self.notice("Название не может быть пустым");
+            self.notice(mf_i18n::t("The name can’t be empty"));
             return;
         }
         self.edit_details(id, Some(title), None, None);
@@ -1945,7 +1945,7 @@ impl LibraryService {
     pub fn set_description(&self, id: PlaylistId, text: String) {
         let text = text.trim().to_owned();
         if text.is_empty() {
-            self.notice("Spotify не даёт стереть описание целиком");
+            self.notice(mf_i18n::t("Spotify doesn’t allow clearing the description completely"));
             return;
         }
         self.edit_details(id, None, Some(text), None);
@@ -1969,7 +1969,7 @@ impl LibraryService {
             let cover = match cover {
                 Ok(Ok(cover)) => cover,
                 Ok(Err(text)) => return service.notice(text),
-                Err(_) => return service.notice("Не удалось прочитать картинку — выберите JPEG или PNG"),
+                Err(_) => return service.notice(mf_i18n::t("Couldn’t read the image — choose a JPEG or PNG")),
             };
             let previous_urls: Vec<String> = lock(&service.state)
                 .header(id.as_str())
@@ -1995,7 +1995,7 @@ impl LibraryService {
             if let Err(error) = result {
                 service.auth.note_api_error(&error);
                 let text = service.error_text_of(&error);
-                service.notice(format!("Обложка не загрузилась: {text}"));
+                service.notice(mf_i18n::tf("Couldn’t upload the cover: {0}", &[&text]));
                 return;
             }
             let local_url = {
@@ -2020,7 +2020,7 @@ impl LibraryService {
                 request
             };
             service.send_playlist_cover(&id, None);
-            service.notice("Обложка плейлиста обновлена");
+            service.notice(mf_i18n::t("Playlist cover updated"));
             service.confirm_cover(id, generation, request, cover).await;
         });
     }
@@ -2053,7 +2053,7 @@ impl LibraryService {
                     let cover = cover.clone();
                     tokio::task::spawn_blocking(move || cover.matches_remote(&bytes))
                         .await
-                        .unwrap_or_else(|_| Err("сравнение не выполнено".to_owned()))
+                        .unwrap_or_else(|_| Err("comparison failed".to_owned()))
                 }
                 Err(error) => Err(error),
             };
@@ -2073,7 +2073,7 @@ impl LibraryService {
                 }
                 // проверить не удалось — остаётся загруженная обложка
                 Err(error) => {
-                    tracing::debug!("обложка плейлиста не сверена: {error}");
+                    tracing::debug!("playlist cover not verified: {error}");
                     return;
                 }
             }
@@ -2138,10 +2138,10 @@ impl LibraryService {
             };
             service.send(events);
             match result {
-                Ok(()) => service.notice("Плейлист добавлен в библиотеку"),
+                Ok(()) => service.notice(mf_i18n::t("Playlist added to your library")),
                 Err(error) => {
                     let text = service.error_text_of(&error);
-                    service.notice(format!("Не удалось подписаться: {text}"));
+                    service.notice(mf_i18n::tf("Couldn’t follow: {0}", &[&text]));
                 }
             }
         });
@@ -2207,10 +2207,10 @@ impl LibraryService {
             };
             service.send(events);
             match result {
-                Ok(()) => service.notice(if own { "Плейлист удалён" } else { "Плейлист убран из библиотеки" }),
+                Ok(()) => service.notice(if own { mf_i18n::t("Playlist deleted") } else { mf_i18n::t("Playlist removed from your library") }),
                 Err(error) => {
                     let text = service.error_text_of(&error);
-                    service.notice(format!("Плейлист остался в библиотеке: {text}"));
+                    service.notice(mf_i18n::tf("Playlist is still in your library: {0}", &[&text]));
                 }
             }
         });
@@ -2240,7 +2240,7 @@ impl LibraryService {
                     drop(state);
                     let text = service.error_text_of(error);
                     let mut state = lock(&service.state);
-                    events.extend(state.set_error(format!("Библиотека загрузилась не полностью: {text}")));
+                    events.extend(state.set_error(mf_i18n::tf("Your library didn’t fully load: {0}", &[&text])));
                 }
                 events
             };
@@ -2419,7 +2419,7 @@ impl LibraryService {
         match section {
             Section::Albums => {
                 let Some(saved) =
-                    collection_session::read(&api, player, "альбомы", |s| async move { collection_session::saved_albums(&s).await })
+                    collection_session::read(&api, player, "albums", |s| async move { collection_session::saved_albums(&s).await })
                         .await
                 else {
                     return false;
@@ -2441,7 +2441,7 @@ impl LibraryService {
                 true
             }
             Section::Artists => {
-                let Some(followed) = collection_session::read(&api, player, "подписки", |s| async move {
+                let Some(followed) = collection_session::read(&api, player, "followed artists", |s| async move {
                     collection_session::followed_artists(&s).await
                 })
                 .await
@@ -2467,7 +2467,7 @@ impl LibraryService {
         match section {
             Section::Shows => {
                 let Some(saved) =
-                    collection_session::read(&api, player, "подкасты", |s| async move { podcast_session::saved_shows(&s).await })
+                    collection_session::read(&api, player, "podcasts", |s| async move { podcast_session::saved_shows(&s).await })
                         .await
                 else {
                     return false;
@@ -2489,7 +2489,7 @@ impl LibraryService {
                 true
             }
             Section::Episodes => {
-                let Some(saved) = collection_session::read(&api, player, "ваши выпуски", |s| async move {
+                let Some(saved) = collection_session::read(&api, player, "your episodes", |s| async move {
                     podcast_session::saved_episodes(&s).await
                 })
                 .await
@@ -2561,7 +2561,7 @@ impl LibraryService {
             let mut state = lock(&self.state);
             if state.account.is_none() {
                 drop(state);
-                self.notice("Войдите в аккаунт");
+                self.notice(mf_i18n::t("Sign in to your account"));
                 return;
             }
             let target = !state.is_saved(&uri);
@@ -2602,10 +2602,10 @@ impl LibraryService {
                         service.load_section(section);
                     }
                     let text = match (kind.as_str(), target) {
-                        ("artist", true) => "Вы подписались на исполнителя",
-                        ("artist", false) => "Вы отписались от исполнителя",
-                        (_, true) => "Добавлено в библиотеку",
-                        (_, false) => "Убрано из библиотеки",
+                        ("artist", true) => mf_i18n::t("You followed the artist"),
+                        ("artist", false) => mf_i18n::t("You unfollowed the artist"),
+                        (_, true) => mf_i18n::t("Added to your library"),
+                        (_, false) => mf_i18n::t("Removed from your library"),
                     };
                     service.notice(text);
                 }
@@ -2614,7 +2614,7 @@ impl LibraryService {
                         service.load_section(section);
                     }
                     let text = service.error_text_of(&error);
-                    service.notice(format!("Библиотека не изменилась: {text}"));
+                    service.notice(mf_i18n::tf("Your library didn’t change: {0}", &[&text]));
                 }
             }
         });
@@ -2705,7 +2705,7 @@ impl LibraryService {
                     id: artist.artist_id.clone(),
                     uri: artist.uri.clone(),
                     title: artist.name.clone(),
-                    subtitle: "Исполнитель".to_owned(),
+                    subtitle: mf_i18n::t("Artist"),
                     cover: artist.cover.clone(),
                     covers: vec![artist.cover.clone()],
                     owner: artist.name.clone(),
@@ -2724,9 +2724,9 @@ impl LibraryService {
                     uri: show.uri.clone(),
                     title: show.name.clone(),
                     subtitle: if show.publisher.is_empty() {
-                        "Подкаст".to_owned()
+                        mf_i18n::t("Podcast")
                     } else {
-                        format!("Подкаст · {}", show.publisher)
+                        mf_i18n::tf("Podcast · {0}", &[&show.publisher])
                     },
                     cover: show.cover.clone(),
                     covers: vec![show.cover.clone()],
@@ -2886,11 +2886,11 @@ mod tests {
             entry("playlist", "Б", "spotify:playlist:b"),
             entry("playlist", "А", "spotify:playlist:a"),
             entry("playlist", "В", "spotify:playlist:c"),
-            entry("liked", "Любимые треки", "spotify:user:me:collection"),
+            entry("liked", "Liked Songs", "spotify:user:me:collection"),
         ];
         sort_entries(&mut entries, "alpha", &["spotify:playlist:c".to_owned()]);
         let titles: Vec<&str> = entries.iter().map(|e| e.title.as_str()).collect();
-        assert_eq!(titles, ["Любимые треки", "В", "А", "Б"]);
+        assert_eq!(titles, ["Liked Songs", "В", "А", "Б"]);
     }
 
     #[test]

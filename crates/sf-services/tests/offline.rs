@@ -94,7 +94,7 @@ async fn pins_and_dislikes_are_local_settings() {
             notice = Some(text);
         }
     }
-    assert_eq!(notice.as_deref(), Some("Войдите в аккаунт"));
+    assert_eq!(notice.as_deref(), Some("Sign in to your account"));
     assert!(library.entries(LibraryKind::Playlists, "all", "spotify").is_empty());
     assert_eq!(library.loading_pages(), (0, 0));
     let _ = std::fs::remove_dir_all(&f.dir);
@@ -108,8 +108,8 @@ async fn catalog_asks_to_sign_in_and_an_empty_search_is_empty() {
     let catalog = CatalogService::new(f.auth.clone(), f.player.clone());
     assert!(catalog.search("   ", SearchKind::All).await.unwrap().is_empty());
     match catalog.album("a1").await {
-        Err(error @ ServiceError::NotSignedIn) => assert_eq!(error.to_string(), "Войдите в аккаунт"),
-        other => panic!("ожидался NotSignedIn, а не {other:?}"),
+        Err(error @ ServiceError::NotSignedIn) => assert_eq!(error.to_string(), "Sign in to your account"),
+        other => panic!("expected NotSignedIn, got {other:?}"),
     }
     let _ = std::fs::remove_dir_all(&f.dir);
 }
@@ -130,7 +130,7 @@ async fn sign_in_without_saved_grants_ends_signed_out() {
         }
     })
     .await;
-    assert!(settled.is_ok(), "вход застрял в {:?}", f.auth.snapshot().state);
+    assert!(settled.is_ok(), "sign-in got stuck in {:?}", f.auth.snapshot().state);
     let _ = std::fs::remove_dir_all(&f.dir);
 }
 
@@ -148,7 +148,7 @@ async fn applied_proxy_is_published_for_the_shell() {
         password: "secret".into(),
     });
     tokio::time::timeout(std::time::Duration::from_secs(10), proxy.changed()).await.unwrap().unwrap();
-    let ProxyConfig::Socks(manual) = f.auth.proxy() else { panic!("ожидался SOCKS, а не {:?}", f.auth.proxy()) };
+    let ProxyConfig::Socks(manual) = f.auth.proxy() else { panic!("expected SOCKS, got {:?}", f.auth.proxy()) };
     assert_eq!((manual.host(), manual.port(), manual.username(), manual.password()), ("127.0.0.1", 1080, "user", "secret"));
     assert_eq!(f.settings.get_str(SettingKey::ProxyMode), "socks");
     let _ = std::fs::remove_dir_all(&f.dir);

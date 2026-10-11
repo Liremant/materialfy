@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# Установка Materialfy (клиент Spotify в стиле Material 3 Expressive) на Linux — сборка из исходников:
+# Installs Materialfy (a Material 3 Expressive Spotify client) on Linux by building it from source:
 #
-#   ./install.sh                                         # из уже скачанного репозитория
-#   MATERIALFY_REPO=<git-url> bash install.sh             # скачать исходники в ~/.local/share/materialfy
+#   ./install.sh                                         # from an already cloned repository
+#   MATERIALFY_REPO=<git-url> bash install.sh             # clone the sources into ~/.local/share/materialfy
 #
-# Что делает: ставит системные пакеты (компилятор C++, заголовки ALSA/PulseAudio/OpenGL/xkb — спросит
-# разрешение и пароль sudo), ставит Rust (rustup, в ~/.cargo, без sudo) и Qt 6.12 (если в системе Qt
-# старее — скачивает рядом с исходниками), собирает cargo build --release и кладёт команду
-# ~/.local/bin/materialfy и значок в меню. Повторный запуск обновляет программу.
-# Удаление: install.sh --uninstall (настройки и вход остаются).
+# What it does: installs system packages (C++ compiler, ALSA/PulseAudio/OpenGL/xkb headers; asks for
+# confirmation and the sudo password), installs Rust (rustup, into ~/.cargo, no sudo) and Qt 6.12 (if the
+# system Qt is older, downloads it next to the sources), runs cargo build --release and installs the
+# ~/.local/bin/materialfy command and a menu entry. Running it again updates the app.
+# Uninstall: install.sh --uninstall (settings and sign-in are kept).
 #
-# Переменные: MATERIALFY_REPO — git-адрес исходников, MATERIALFY_DIR — куда их класть (если скрипт запущен
-# не из репозитория), MATERIALFY_QMAKE — свой qmake6, MATERIALFY_YES=1 — без вопросов,
-# MATERIALFY_KEEP_BUILD=1 — не удалять каталог сборки target/ (быстрее обновления, но +3–5 ГБ).
+# Variables: MATERIALFY_REPO - git URL of the sources, MATERIALFY_DIR - where to put them (when the script
+# is not run from the repository), MATERIALFY_QMAKE - your own qmake6, MATERIALFY_YES=1 - no questions,
+# MATERIALFY_KEEP_BUILD=1 - keep the target/ build directory (faster updates, but +3-5 GB).
 set -euo pipefail
 PATH_ORIG="$PATH"
 
@@ -25,7 +25,7 @@ QT_VERSION="6.12.0"
 RUST_MIN="1.98"
 
 say()  { printf '\033[1;35m==>\033[0m %s\n' "$*"; }
-fail() { printf '\033[1;31mОшибка:\033[0m %s\n' "$*" >&2; exit 1; }
+fail() { printf '\033[1;31mError:\033[0m %s\n' "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
 # версия a >= b (через sort -V)
 ver_ge() { [ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n1)" = "$2" ]; }
@@ -43,25 +43,25 @@ fi
 if [ "${1:-}" = "--uninstall" ]; then
     [ "$IN_PLACE" = "1" ] || rm -rf "$DIR"
     rm -f "$BIN/$APP" "$APPS/$APP.desktop" "$ICONS/$APP.svg" "$ICONS_PNG/$APP.png"
-    say "Materialfy удалён. Настройки (~/.config/materialfy), данные (~/.local/share/materialfy),"
-    echo "    кэш (~/.cache/materialfy), вход в связке ключей и Rust (~/.cargo) оставлены."
+    say "Materialfy removed. Settings (~/.config/materialfy), data (~/.local/share/materialfy),"
+    echo "    cache (~/.cache/materialfy), the sign-in in the keyring and Rust (~/.cargo) were kept."
     exit 0
 fi
 
-[ "$(uname -s)" = "Linux" ] || fail "Этот скрипт — для Linux. Windows: build_windows.ps1 или инсталлер со страницы выпусков."
+[ "$(uname -s)" = "Linux" ] || fail "This script is for Linux. On Windows use build_windows.ps1 or the installer from the Releases page."
 case "$(uname -m)" in
     x86_64) QT_HOST=linux; QT_ARCH=gcc_64 ;;
     aarch64) QT_HOST=linux_arm64; QT_ARCH=gcc_arm64 ;;
-    *) fail "Архитектура $(uname -m) не поддерживается: для неё нет готовой сборки Qt." ;;
+    *) fail "Architecture $(uname -m) is not supported: there is no prebuilt Qt for it." ;;
 esac
-[ "$(id -u)" != "0" ] || fail "Запускайте от обычного пользователя, без sudo: пароль спросится сам, когда понадобится."
+[ "$(id -u)" != "0" ] || fail "Run this as a regular user, without sudo: the password will be asked for when needed."
 
 confirm() {
     [ "${MATERIALFY_YES:-}" = "1" ] && return 0
-    printf '    Продолжить? [Y/n] '
+    printf '    Continue? [Y/n] '
     local answer
     read -r answer </dev/tty || answer=n
-    case "$answer" in "" | y | Y | д | Д) ;; *) fail "Отменено." ;; esac
+    case "$answer" in "" | y | Y | д | Д) ;; *) fail "Cancelled." ;; esac
 }
 
 # --- Системные пакеты -------------------------------------------------------
@@ -116,10 +116,10 @@ mesa-libGL-devel mesa-libEGL-devel libxkbcommon-devel libxkbcommon-x11 fontconfi
         cmd="sudo zypper install -y gcc-c++ make pkg-config lld git curl python3 7zip alsa-devel libpulse-devel \
 Mesa-libGL-devel Mesa-libEGL-devel libxkbcommon-devel libxkbcommon-x11-0 fontconfig-devel libxcb-cursor0"
     else
-        fail "Не хватает: ${need[*]}. Установите их пакетным менеджером своего дистрибутива и запустите скрипт снова."
+        fail "Missing: ${need[*]}. Install them with your distribution's package manager and run the script again."
     fi
-    say "Не хватает системных пакетов: ${need[*]}"
-    echo "    Будет выполнено: $cmd"
+    say "Missing system packages: ${need[*]}"
+    echo "    Will run: $cmd"
     confirm
     $cmd
 fi
@@ -129,13 +129,13 @@ fi
 export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 
 if [ "$IN_PLACE" = "1" ]; then
-    say "Собираю из $DIR"
+    say "Building from $DIR"
 elif [ -d "$DIR/.git" ]; then
-    say "Обновляю Materialfy в $DIR"
-    git -C "$DIR" pull --ff-only --quiet || fail "Не удалось обновить $DIR (там есть свои правки?). Удалите папку и запустите скрипт снова."
+    say "Updating Materialfy in $DIR"
+    git -C "$DIR" pull --ff-only --quiet || fail "Could not update $DIR (does it have local changes?). Delete the folder and run the script again."
 else
-    [ -n "${MATERIALFY_REPO:-}" ] || fail "Укажите адрес исходников: MATERIALFY_REPO=<git-url> bash install.sh (или запустите скрипт из репозитория)."
-    say "Скачиваю Materialfy в $DIR"
+    [ -n "${MATERIALFY_REPO:-}" ] || fail "Set the source URL: MATERIALFY_REPO=<git-url> bash install.sh (or run the script from the repository)."
+    say "Downloading Materialfy into $DIR"
     mkdir -p "$(dirname "$DIR")"
     git clone --depth 1 --quiet "$MATERIALFY_REPO" "$DIR"
 fi
@@ -145,11 +145,11 @@ fi
 QT_PRIVATE=""
 if [ -z "$QMAKE" ]; then
     QT_PRIVATE="$DIR/qt/$QT_VERSION/$QT_ARCH"
-    say "Qt $QT_VERSION в системе нет — скачиваю в $QT_PRIVATE (около 250 МБ)"
+    say "Qt $QT_VERSION is not installed on the system, downloading it into $QT_PRIVATE (about 250 MB)"
     QMAKE="$(python3 "$DIR/.github/scripts/install_qt.py" --host "$QT_HOST" --version "$QT_VERSION" \
         --addons qtshadertools qtimageformats --out "$QT_PRIVATE" | tail -n1)"
 fi
-qt_ok "$QMAKE" || fail "Qt ${QT_VERSION%.*}+ не найден ($QMAKE). Укажите свой: MATERIALFY_QMAKE=/путь/к/qmake6"
+qt_ok "$QMAKE" || fail "Qt ${QT_VERSION%.*}+ not found ($QMAKE). Point to your own: MATERIALFY_QMAKE=/path/to/qmake6"
 say "Qt $("$QMAKE" -query QT_VERSION): $QMAKE"
 
 # --- Rust -------------------------------------------------------------------
@@ -157,24 +157,24 @@ say "Qt $("$QMAKE" -query QT_VERSION): $QMAKE"
 rust_ok() { have cargo && ver_ge "$(rustc --version | awk '{print $2}')" "$RUST_MIN"; }
 if ! rust_ok; then
     if have rustup; then
-        say "Обновляю Rust (rustup update stable)"
+        say "Updating Rust (rustup update stable)"
         rustup update stable --no-self-update
         rustup default stable >/dev/null
     else
-        say "Ставлю Rust через rustup (в ~/.cargo, без sudo)"
+        say "Installing Rust with rustup (into ~/.cargo, no sudo)"
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --no-modify-path
     fi
     # shellcheck disable=SC1091
     [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
-    rust_ok || fail "Нужен Rust $RUST_MIN или новее (сейчас: $(rustc --version 2>/dev/null || echo нет))."
+    rust_ok || fail "Rust $RUST_MIN or later is required (found: $(rustc --version 2>/dev/null || echo none))."
 fi
 say "$(rustc --version)"
 
 # --- Сборка -----------------------------------------------------------------
 
-say "Собираю Materialfy (первый раз — 5–15 минут)"
+say "Building Materialfy (5-15 minutes the first time)"
 # --locked: Cargo.lock держит vergen 9.0.6 (9.1 ломает build-скрипт librespot-core)
-(cd "$DIR" && QMAKE="$QMAKE" cargo build --locked --release -p "$APP" --quiet) || fail "Сборка не удалась (вывод выше)."
+(cd "$DIR" && QMAKE="$QMAKE" cargo build --locked --release -p "$APP" --quiet) || fail "Build failed (see the output above)."
 mkdir -p "$DIR/bin"
 install -m755 "$DIR/target/release/$APP" "$DIR/bin/$APP"
 [ "${MATERIALFY_KEEP_BUILD:-}" = "1" ] || [ "$IN_PLACE" = "1" ] || rm -rf "$DIR/target"
@@ -195,8 +195,10 @@ cat > "$APPS/$APP.desktop" <<DESKTOP
 [Desktop Entry]
 Type=Application
 Name=Materialfy
-GenericName=Музыкальный плеер
-Comment=Клиент Spotify в стиле Material 3 Expressive
+GenericName=Music Player
+GenericName[ru]=Музыкальный плеер
+Comment=Spotify client in Material 3 Expressive style
+Comment[ru]=Клиент Spotify в стиле Material 3 Expressive
 Exec=$BIN/$APP %U
 Icon=$APP
 Terminal=false
@@ -205,9 +207,9 @@ StartupWMClass=$APP
 DESKTOP
 have update-desktop-database && update-desktop-database "$APPS" >/dev/null 2>&1 || true
 
-say "Готово. Запуск: значок Materialfy в меню приложений или команда: $APP"
+say "Done. Launch it from the Materialfy entry in the application menu or with the command: $APP"
 case ":$PATH_ORIG:" in
     *":$BIN:"*) ;;
-    *) echo "    Если команда $APP не находится — $BIN нет в PATH: запускайте $BIN/$APP или из меню." ;;
+    *) echo "    If the $APP command is not found, $BIN is not in PATH: run $BIN/$APP or use the menu." ;;
 esac
-echo "    При первом запуске войдите в Spotify: программа откроет браузер. Воспроизведение требует Premium."
+echo "    On first launch, sign in to Spotify: the app opens a browser. Playback requires Premium."

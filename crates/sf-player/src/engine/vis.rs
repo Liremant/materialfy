@@ -344,7 +344,7 @@ mod tests {
         assert_eq!(tap.level(), 0.0);
         tap.push(&vec![0.5f64; 2 * KEPT], 1.0);
         let loud = tap.level();
-        assert!(loud > 0.9, "−6 дБ — почти максимум: {loud}");
+        assert!(loud > 0.9, "−6 dB is nearly full scale: {loud}");
         tap.clear();
         tap.push(&vec![0.01f64; 2 * KEPT], 1.0);
         let quiet = tap.level();

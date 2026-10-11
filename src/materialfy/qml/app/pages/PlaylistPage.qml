@@ -38,24 +38,18 @@ TrackListPage {
     readonly property bool compactPanel: width < 760
 
     title: (info.title ?? "") !== "" ? info.title : playlistTitle
-    overline: collaborative ? "СОВМЕСТНЫЙ ПЛЕЙЛИСТ" : "ПЛЕЙЛИСТ"
+    overline: collaborative ? I18n.t("COLLABORATIVE PLAYLIST") : I18n.t("PLAYLIST")
     description: info.description ?? ""
     heroImage: (info.cover ?? "") !== "" ? info.cover : cover
     model: playlistId !== "" ? Library.playlistTracks(playlistId) : null
     emptyIcon: "queue_music"
-    emptyTitle: "В плейлисте нет треков"
-    emptyText: canEdit ? "Нажмите «Редактировать», чтобы добавить треки" : ""
+    emptyTitle: I18n.t("This playlist has no tracks")
+    emptyText: canEdit ? I18n.t("Tap “Edit playlist” to add tracks") : ""
     addedColumn: collaborative ? "by" : (model && model.count > 0 && (model.get(0).addedAt ?? "") !== "" ? "at" : "")
     contentRightInset: editing && panelOpen && !compactPanel ? addPanel.panelWidth + 8 : 0
     onEditingChanged: if (!editing) panelOpen = false
     onCanEditChanged: if (!canEdit) editing = false
 
-    function plural(n, one, few, many) {
-        const m10 = n % 10, m100 = n % 100
-        if (m10 === 1 && m100 !== 11) return one
-        if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few
-        return many
-    }
     function notify(text, actionText, onAction) {
         const w = page.Window.window
         if (w && typeof w.notify === "function")
@@ -79,7 +73,7 @@ TrackListPage {
         _removed = _removed.concat([group])
         undoWindow.restart()
         const n = _removed.reduce((a, g) => a + g.length, 0)
-        notify(n > 1 ? "Убрано треков: " + n : "«" + (t.title ?? "") + "» убран из плейлиста", "Вернуть", () => page._restore())
+        notify(n > 1 ? I18n.n(n, "Removed {0} track", "Removed {0} tracks") : I18n.t("Removed “{0}” from playlist", t.title ?? ""), I18n.t("Undo"), () => page._restore())
     }
     function _restore() {
         const list = _removed
@@ -120,7 +114,7 @@ TrackListPage {
     onMoveRequested: (from, to) => {
         const t = model.get(from)
         Library.moveTracks(playlistId, from, to)
-        notify("«" + (t ? t.title ?? "" : "") + "» → позиция " + (to + 1), "Отменить", () => Library.moveTracks(page.playlistId, to, from))
+        notify(I18n.t("“{0}” → position {1}", t ? t.title ?? "" : "", to + 1), I18n.t("Revert"), () => Library.moveTracks(page.playlistId, to, from))
     }
 
     // ---- Шапка: владелец, «N треков, длительность», видимость ----
@@ -132,7 +126,7 @@ TrackListPage {
             height: 28
             Avatar { size: 24; name: page.info.owner ?? "" }
             Label {
-                text: (page.info.owner ?? "") + (page.own ? " (вы)" : "")
+                text: (page.info.owner ?? "") + (page.own ? I18n.t(" (you)") : "")
                 type: "titleSmall"
             }
         }
@@ -140,7 +134,7 @@ TrackListPage {
             height: 28
             verticalAlignment: Text.AlignVCenter
             visible: page.model !== null && page.model.count > 0
-            text: !visible ? "" : "·  " + page.model.count + " " + page.plural(page.model.count, "трек", "трека", "треков")
+            text: !visible ? "" : "·  " + I18n.n(page.model.count, "{0} track", "{0} tracks")
                   + (page.model.totalDurationMs > 0 ? ", " + page._duration(page.model.totalDurationMs) : "")
             type: "bodyMedium"
             color: Theme.fgSurfaceVariant
@@ -156,7 +150,7 @@ TrackListPage {
                 anchors.centerIn: parent
                 spacing: 4
                 Icon { name: page.info.public === true ? "public" : "lock"; size: 16; anchors.verticalCenter: parent.verticalCenter }
-                Label { text: page.info.public === true ? "Публичный" : "Закрытый"; type: "labelMedium"; color: Theme.fgSurfaceVariant; anchors.verticalCenter: parent.verticalCenter }
+                Label { text: page.info.public === true ? I18n.t("Public") : I18n.t("Private"); type: "labelMedium"; color: Theme.fgSurfaceVariant; anchors.verticalCenter: parent.verticalCenter }
             }
         }
         Rectangle {
@@ -170,7 +164,7 @@ TrackListPage {
                 anchors.centerIn: parent
                 spacing: 4
                 Icon { name: "edit"; size: 16; color: Theme.primary; anchors.verticalCenter: parent.verticalCenter }
-                Label { text: "Вы можете редактировать"; type: "labelMedium"; color: Theme.primary; anchors.verticalCenter: parent.verticalCenter }
+                Label { text: I18n.t("You can edit"); type: "labelMedium"; color: Theme.primary; anchors.verticalCenter: parent.verticalCenter }
             }
         }
     }
@@ -183,7 +177,7 @@ TrackListPage {
             enabled: page.uri !== ""
             onClicked: {
                 Radio.playStation(page.uri, page.title)
-                page.notify("Радио по плейлисту «" + page.title + "»")
+                page.notify(I18n.t("Playlist radio: “{0}”", page.title))
             }
         }
         IconButton {
@@ -196,7 +190,7 @@ TrackListPage {
             visible: !page.canEdit && !page.own && page.playlistId !== ""
             anchors.verticalCenter: parent.verticalCenter
             readonly property bool followed: page.info.followed === true
-            text: followed ? "Вы подписаны" : "Подписаться"
+            text: followed ? I18n.t("Following") : I18n.t("Follow")
             icon: followed ? "check" : "add"
             style: "tonal"
             checkable: true
@@ -205,7 +199,7 @@ TrackListPage {
             onClicked: {
                 if (followed) {
                     Library.unfollowPlaylist(page.playlistId)
-                    page.notify("Вы отписались от «" + page.title + "»", "Вернуть", () => Library.followPlaylist(page.playlistId))
+                    page.notify(I18n.t("Unfollowed “{0}”", page.title), I18n.t("Undo"), () => Library.followPlaylist(page.playlistId))
                 } else {
                     Library.followPlaylist(page.playlistId)
                 }
@@ -217,7 +211,7 @@ TrackListPage {
             enabled: page.uri !== ""
             onClicked: {
                 Catalog.copyLink(Catalog.uriUrl(page.uri))
-                page.notify("Ссылка скопирована")
+                page.notify(I18n.t("Link copied"))
             }
         }
         IconButton {
@@ -247,7 +241,7 @@ TrackListPage {
                 Icon { Layout.alignment: Qt.AlignTop; name: "group"; size: 20; color: Theme.primary }
                 Label {
                     Layout.fillWidth: true
-                    text: "Участников совместного плейлиста меняют только в приложении Spotify. Здесь видно, кто что добавил."
+                    text: I18n.t("Collaborators can only be changed in the Spotify app. Here you can see who added what.")
                     type: "bodySmall"
                     color: Theme.fgSurfaceVariant
                     wrapMode: Text.WordWrap
@@ -285,7 +279,7 @@ TrackListPage {
                     anchors.centerIn: parent
                     spacing: 8
                     Icon { name: "add"; size: 20; color: Theme.primary; anchors.verticalCenter: parent.verticalCenter }
-                    Label { text: "Добавить треки"; type: "labelLarge"; color: Theme.primary; anchors.verticalCenter: parent.verticalCenter }
+                    Label { text: I18n.t("Add tracks"); type: "labelLarge"; color: Theme.primary; anchors.verticalCenter: parent.verticalCenter }
                 }
                 StateLayer {
                     anchors.fill: parent
@@ -300,16 +294,16 @@ TrackListPage {
     // ---- Меню «⋯» ----
     function _menuItems() {
         const items = [
-            { id: "queue", text: "Добавить в очередь", icon: "queue_music", enabled: page.uri !== "" },
-            { id: "pin", text: (Library.pinsRevision >= 0 && Library.isPinned(page.uri)) ? "Открепить" : "Закрепить в библиотеке",
+            { id: "queue", text: I18n.t("Add to queue"), icon: "queue_music", enabled: page.uri !== "" },
+            { id: "pin", text: (Library.pinsRevision >= 0 && Library.isPinned(page.uri)) ? I18n.t("Unpin") : I18n.t("Pin in library"),
               icon: "push_pin" }
         ]
         if (page.canEdit)
-            items.push({ id: "edit", text: "Редактировать", icon: "edit" })
+            items.push({ id: "edit", text: I18n.t("Edit playlist"), icon: "edit" })
         if (page.own)
-            items.push({ separator: true }, { id: "delete", text: "Удалить плейлист", icon: "delete" })
+            items.push({ separator: true }, { id: "delete", text: I18n.t("Delete playlist"), icon: "delete" })
         else if (page.info.followed === true)
-            items.push({ separator: true }, { id: "unfollow", text: "Отписаться", icon: "remove_circle" })
+            items.push({ separator: true }, { id: "unfollow", text: I18n.t("Unfollow"), icon: "remove_circle" })
         return items
     }
     Menu {
@@ -319,17 +313,17 @@ TrackListPage {
         onTriggered: (id, item) => {
             if (id === "queue") {
                 Player.addUriToQueue(page.uri)
-                page.notify("Плейлист добавлен в очередь")
+                page.notify(I18n.t("Playlist added to queue"))
             } else if (id === "pin") {
                 const was = Library.isPinned(page.uri)
                 Library.togglePin(page.uri)
-                page.notify(was ? "Откреплено" : "Закреплено — только в этом приложении")
+                page.notify(was ? I18n.t("Unpinned") : I18n.t("Pinned — in this app only"))
             } else if (id === "edit") {
                 page.editing = true
             } else if (id === "delete" || id === "unfollow") {
                 Library.unfollowPlaylist(page.playlistId)
-                page.notify(id === "delete" ? "Плейлист удалён" : "Вы отписались от «" + page.title + "»",
-                            "Вернуть", () => Library.followPlaylist(page.playlistId))
+                page.notify(id === "delete" ? I18n.t("Playlist deleted") : I18n.t("Unfollowed “{0}”", page.title),
+                            I18n.t("Undo"), () => Library.followPlaylist(page.playlistId))
                 if (id === "delete" && page.router)
                     page.router.back()
             }
@@ -349,7 +343,7 @@ TrackListPage {
         onAdded: track => {
             const pos = page.model ? page.model.count : 0
             page._flashAfterChange(pos)
-            page.notify("«" + (track.title ?? "") + "» добавлен в конец", "Отменить",
+            page.notify(I18n.t("Added “{0}” to the end", track.title ?? ""), I18n.t("Revert"),
                         () => Library.removeTracks(page.playlistId, [{ uri: track.uri, pos: pos }]))
         }
     }

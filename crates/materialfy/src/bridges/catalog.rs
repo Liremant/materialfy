@@ -151,7 +151,7 @@ pub mod qobject {
     impl cxx_qt::Initialize for Catalog {}
 }
 
-const NOT_SIGNED_IN: &str = "Войдите в аккаунт";
+const NOT_SIGNED_IN: &str = "Sign in to your account";
 
 /// Объект страницы и номер его текущей загрузки (ответ старой загрузки отбрасывается).
 struct Entry<T: cxx::memory::UniquePtrTarget> {
@@ -472,8 +472,8 @@ impl qobject::Catalog {
                 let track_id = if track.track_id.is_empty() { track_id } else { track.track_id };
                 self.open_album_at(&QString::from(track.album_id.as_str()), &QString::from(track_id.as_str()));
             }
-            Ok(_) => tracing::warn!("трек {track_id}: альбом неизвестен"),
-            Err(error) => tracing::warn!("трек {track_id}: {error}"),
+            Ok(_) => tracing::warn!("track {track_id}: album unknown"),
+            Err(error) => tracing::warn!("track {track_id}: {error}"),
         }
     }
 
@@ -514,7 +514,7 @@ impl qobject::Catalog {
         entry.load = load;
         entry.stale = false;
         if !signed_in() {
-            data.fail(NOT_SIGNED_IN);
+            data.fail(&mf_i18n::t(NOT_SIGNED_IN));
             return ptr;
         }
         if again {
@@ -539,7 +539,7 @@ impl qobject::Catalog {
         match result {
             Ok(page) => data.fill(page),
             Err(error) => {
-                tracing::warn!("страница {id}: {error}");
+                tracing::warn!("page {id}: {error}");
                 data.fail(&error_text(&error));
             }
         }
@@ -621,7 +621,7 @@ impl qobject::Catalog {
         let results = match result {
             Ok(results) => results,
             Err(error) => {
-                tracing::warn!("поиск: {error}");
+                tracing::warn!("search: {error}");
                 self.as_mut().set_state("error");
                 return self.search_changed();
             }

@@ -8,14 +8,14 @@ import ".."
 // категории, остальные фильтры — полный список одной категории.
 Page {
     id: page
-    title: "Поиск"
+    title: I18n.t("Search")
     showHeader: false
 
     property int filter: 0
     readonly property var filters: [
-        { text: "Все", type: "all" }, { text: "Треки", type: "tracks" }, { text: "Альбомы", type: "albums" },
-        { text: "Исполнители", type: "artists" }, { text: "Плейлисты", type: "playlists" },
-        { text: "Подкасты", type: "shows" }, { text: "Выпуски", type: "episodes" }
+        { text: I18n.t("All"), type: "all" }, { text: I18n.t("Tracks"), type: "tracks" }, { text: I18n.t("Albums"), type: "albums" },
+        { text: I18n.t("Artists"), type: "artists" }, { text: I18n.t("Playlists"), type: "playlists" },
+        { text: I18n.t("Podcasts"), type: "shows" }, { text: I18n.t("Episodes"), type: "episodes" }
     ]
     function showFilter(type) { filter = Math.max(0, filters.findIndex(f => f.type === type)) }
     readonly property string type: filters[filter].type
@@ -29,12 +29,7 @@ Page {
     function followersText(n) {
         if (!(n > 0))
             return ""
-        const num = n >= 1e6 ? (n / 1e6).toFixed(n >= 1e7 ? 0 : 1).replace(".", ",") + " млн"
-                  : n >= 1e4 ? Math.round(n / 1e3) + " тыс." : String(n)
-        const m10 = n % 10, m100 = n % 100
-        const word = n >= 1e4 || (m10 >= 5 || m10 === 0 || (m100 >= 11 && m100 <= 14)) ? "подписчиков"
-                   : m10 === 1 ? "подписчик" : "подписчика"
-        return num + " " + word
+        return I18n.nCompact(n, "{0} follower", "{0} followers")
     }
     function focusSearch() { field.inputItem.forceActiveFocus() }
     // запрос уже запущен снаружи (Catalog.openUri("spotify:search:…")): только показать его
@@ -64,7 +59,7 @@ Page {
         Layout.alignment: Qt.AlignHCenter
         Layout.topMargin: 8
         implicitHeight: 56
-        placeholder: "Трек, альбом, исполнитель, плейлист или подкаст"
+        placeholder: I18n.t("Track, album, artist, playlist or podcast")
         onTextChanged: debounce.restart()
     }
 
@@ -92,15 +87,15 @@ Page {
         visible: !page.signedIn || Catalog.searchState === "idle" || Catalog.searchState === "empty" || Catalog.searchState === "error"
         icon: !page.signedIn ? "login" : Catalog.searchState === "empty" ? "search_off"
             : Catalog.searchState === "error" ? "cloud_off" : "travel_explore"
-        title: !page.signedIn ? "Войдите, чтобы искать"
-             : Catalog.searchState === "empty" ? "Ничего не нашлось"
-             : Catalog.searchState === "error" ? "Поиск не ответил"
-             : "Что послушаем?"
-        text: !page.signedIn ? "Поиск работает через ваш аккаунт Spotify"
-            : Catalog.searchState === "empty" ? "Попробуйте написать иначе или выбрать другой фильтр"
-            : Catalog.searchState === "error" ? "Проверьте соединение и попробуйте ещё раз"
-            : "Ищите треки, альбомы, исполнителей, плейлисты и подкасты. Ссылку open.spotify.com можно просто вставить"
-        actionText: !page.signedIn ? "Войти" : ""
+        title: !page.signedIn ? I18n.t("Sign in to search")
+             : Catalog.searchState === "empty" ? I18n.t("Nothing found")
+             : Catalog.searchState === "error" ? I18n.t("Search didn't respond")
+             : I18n.t("What do you want to hear?")
+        text: !page.signedIn ? I18n.t("Search works through your Spotify account")
+            : Catalog.searchState === "empty" ? I18n.t("Try different wording or another filter")
+            : Catalog.searchState === "error" ? I18n.t("Check your connection and try again")
+            : I18n.t("Search for tracks, albums, artists, playlists and podcasts. You can also just paste an open.spotify.com link")
+        actionText: !page.signedIn ? I18n.t("Sign in") : ""
         actionIcon: "login"
         onAction: page.router.reset("account")
     }
@@ -152,7 +147,7 @@ Page {
                     Layout.fillWidth: true
                     spacing: 4
                     Label {
-                        text: ({ track: "ТРЕК", album: (bestCard.item.kind || "Альбом").toUpperCase(), artist: "ИСПОЛНИТЕЛЬ", playlist: "ПЛЕЙЛИСТ", show: "ПОДКАСТ" })[bestCard.best.type] ?? ""
+                        text: (({ track: I18n.t("Track"), album: bestCard.item.kind || I18n.t("Album"), artist: I18n.t("Artist"), playlist: I18n.t("Playlist"), show: I18n.t("Podcast") })[bestCard.best.type] ?? "").toUpperCase()
                         type: "labelLarge"
                         color: Theme.primary
                         font.letterSpacing: 1.2
@@ -185,8 +180,8 @@ Page {
         // Треки
         SectionHeader {
             visible: Catalog.searchTracks.count > 0 && (page.all || page.type === "tracks")
-            text: "Треки"
-            actionText: page.all && Catalog.totals.tracks > 5 ? "Все" : ""
+            text: I18n.t("Tracks")
+            actionText: page.all && Catalog.totals.tracks > 5 ? I18n.t("All") : ""
             onAction: page.showFilter("tracks")
         }
         ColumnLayout {
@@ -224,8 +219,8 @@ Page {
         // Исполнители
         SectionHeader {
             visible: Catalog.searchArtists.count > 0 && (page.all || page.type === "artists")
-            text: "Исполнители"
-            actionText: page.all && Catalog.totals.artists > page.perRow ? "Все" : ""
+            text: I18n.t("Artists")
+            actionText: page.all && Catalog.totals.artists > page.perRow ? I18n.t("All") : ""
             onAction: page.showFilter("artists")
         }
         Flow {
@@ -251,8 +246,8 @@ Page {
         // Альбомы
         SectionHeader {
             visible: Catalog.searchAlbums.count > 0 && (page.all || page.type === "albums")
-            text: "Альбомы"
-            actionText: page.all && Catalog.totals.albums > page.perRow ? "Все" : ""
+            text: I18n.t("Albums")
+            actionText: page.all && Catalog.totals.albums > page.perRow ? I18n.t("All") : ""
             onAction: page.showFilter("albums")
         }
         Flow {
@@ -277,8 +272,8 @@ Page {
         // Плейлисты
         SectionHeader {
             visible: Catalog.searchPlaylists.count > 0 && (page.all || page.type === "playlists")
-            text: "Плейлисты"
-            actionText: page.all && Catalog.totals.playlists > page.perRow ? "Все" : ""
+            text: I18n.t("Playlists")
+            actionText: page.all && Catalog.totals.playlists > page.perRow ? I18n.t("All") : ""
             onAction: page.showFilter("playlists")
         }
         Flow {
@@ -306,8 +301,8 @@ Page {
         // Подкасты
         SectionHeader {
             visible: page.showsModel !== null && page.showsModel.count > 0 && (page.all || page.type === "shows")
-            text: "Подкасты"
-            actionText: page.all && (Catalog.totals.shows ?? 0) > page.perRow ? "Все" : ""
+            text: I18n.t("Podcasts")
+            actionText: page.all && (Catalog.totals.shows ?? 0) > page.perRow ? I18n.t("All") : ""
             onAction: page.showFilter("shows")
         }
         Flow {
@@ -333,8 +328,8 @@ Page {
         // Выпуски
         SectionHeader {
             visible: page.episodesModel !== null && page.episodesModel.count > 0 && (page.all || page.type === "episodes")
-            text: "Выпуски"
-            actionText: page.all && (Catalog.totals.episodes ?? 0) > 3 ? "Все" : ""
+            text: I18n.t("Episodes")
+            actionText: page.all && (Catalog.totals.episodes ?? 0) > 3 ? I18n.t("All") : ""
             onAction: page.showFilter("episodes")
         }
         ColumnLayout {

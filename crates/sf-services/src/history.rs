@@ -267,7 +267,7 @@ impl HistoryService {
                 match tokio::time::timeout(READ_TIMEOUT, read).await {
                     Ok(Ok(records)) => Some(records),
                     Ok(Err(error)) => {
-                        tracing::debug!("недавнее через сессию: {error:#}; спрашиваю Web API");
+                        tracing::debug!("recent via session: {error:#}; asking Web API");
                         None
                     }
                     Err(_) => None,
@@ -284,11 +284,11 @@ impl HistoryService {
                     Ok(Ok(page)) => page,
                     Ok(Err(error)) => {
                         self.auth.note_api_error(&error);
-                        tracing::debug!("история Spotify не загрузилась: {error:#}");
+                        tracing::debug!("Spotify history failed to load: {error:#}");
                         return None;
                     }
                     Err(_) => {
-                        tracing::debug!("история Spotify: Web API долго не отвечает");
+                        tracing::debug!("Spotify history: Web API is taking too long");
                         return None;
                     }
                 };
@@ -362,7 +362,7 @@ async fn session_recent(http: &sf_api::Http, session: &sf_player::Session) -> an
         }
     }
     let cards = home_feed::lookup(http, session, &uris).await.unwrap_or_else(|error| {
-        tracing::debug!("подписи недавнего: {error:#}");
+        tracing::debug!("recent labels: {error:#}");
         Vec::new()
     });
     Ok(feed::recent_records(&recent, &cards))

@@ -36,9 +36,14 @@ pub const NAME: &str = "rodio";
 pub type ErrorHook = Arc<dyn Fn(String) + Send + Sync>;
 
 /// Reported when the system has no audio output at all. The interface
-/// recognises it and shows it in the user's language.
-pub const NO_DEVICE: &str =
-    "Нет устройства вывода звука";
+/// recognises it and shows it in the user's language. Output errors stay
+/// untranslated English (the player state compares them) and are
+/// translated where they become UI text (`state::core::engine_error_text`).
+pub const NO_DEVICE: &str = "No audio output device";
+/// Reported when the open output stops accepting sound.
+pub const OUTPUT_STOPPED: &str = "The audio output device stopped working";
+/// Prefix of the error reported when the output can't be opened (`{OPEN_FAILED}: detail`).
+pub const OPEN_FAILED: &str = "Couldn't open the audio output device";
 
 /// Opens the output: the device by name, else the default.
 type Opener = fn(Option<&str>, u32, &AudioControl) -> Result<Output, OpenError>;
@@ -1074,7 +1079,7 @@ impl Sink for RodioSink {
                         continue;
                     }
                     Ok(_) | Err(_) => {
-                        let message = "Устройство вывода звука перестало работать".to_string();
+                        let message = OUTPUT_STOPPED.to_string();
                         (self.on_error)(message.clone());
                         return Err(SinkError::OnWrite(message));
                     }
@@ -1121,7 +1126,7 @@ fn take_precedence() {}
 enum OpenError {
     #[error("{NO_DEVICE}")]
     NoDevice,
-    #[error("Не удалось открыть устройство вывода звука: {0}")]
+    #[error("{OPEN_FAILED}: {0}")]
     Device(String),
 }
 

@@ -250,7 +250,7 @@ impl Album {
     pub fn kind_label(&self) -> String {
         let kind = self.album_group.as_deref().or(self.album_type.as_deref()).unwrap_or("album");
         match kind {
-            "appears_on" => "Участие".to_owned(),
+            "appears_on" => mf_i18n::t("Appearances"),
             other => md3_model::album_kind_label(other, 0),
         }
     }
@@ -843,12 +843,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn album_kind_labels_are_russian() {
+    fn album_kind_labels_are_readable() {
         let album = |group: &str| Album { album_group: Some(group.into()), ..Album::default() };
-        assert_eq!(album("single").kind_label(), "Сингл");
-        assert_eq!(album("compilation").kind_label(), "Сборник");
-        assert_eq!(album("appears_on").kind_label(), "Участие");
-        assert_eq!(Album::default().kind_label(), "Альбом");
+        assert_eq!(album("single").kind_label(), "Single");
+        assert_eq!(album("compilation").kind_label(), "Compilation");
+        assert_eq!(album("appears_on").kind_label(), "Appearances");
+        assert_eq!(Album::default().kind_label(), "Album");
     }
 
     #[test]

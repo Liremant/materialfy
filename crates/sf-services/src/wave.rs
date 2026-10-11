@@ -32,11 +32,11 @@ const LOOKUP_TIMEOUT: Duration = Duration::from_secs(8);
 /// Пачка событий подряд → одна пересборка сидов.
 const SEEDS_DEBOUNCE: Duration = Duration::from_millis(150);
 
-pub const LOCKED_TEXT: &str = "Включите воспроизведение на этом компьютере — радио собирает сессия Spotify";
-const FAILED_TEXT: &str = "Не удалось загрузить радио. Попробуйте ещё раз.";
-const TIMEOUT_TEXT: &str = "Spotify долго не отвечает. Попробуйте ещё раз.";
-const NO_RADIO_TEXT: &str = "Для этого нет радио.";
-const EMPTY_TEXT: &str = "Spotify не вернул треков для этой станции.";
+pub const LOCKED_TEXT: &str = "Turn on playback on this computer — radio needs a Spotify session";
+const FAILED_TEXT: &str = "Couldn’t load the radio. Try again.";
+const TIMEOUT_TEXT: &str = "Spotify is taking too long to respond. Try again.";
+const NO_RADIO_TEXT: &str = "There’s no radio for this.";
+const EMPTY_TEXT: &str = "Spotify returned no tracks for this station.";
 
 /// Снимок для моста Radio.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -124,14 +124,14 @@ impl WaveService {
         }
         match selected {
             Some(seed) => self.play_station(seed, String::new()),
-            None => self.snapshot.send_modify(|s| s.error_text = "Послушайте что-нибудь — радио соберётся от последнего трека".into()),
+            None => self.snapshot.send_modify(|s| s.error_text = mf_i18n::t("Play something first — the radio will start from your last track")),
         }
     }
 
     /// Радио от сида: "artist:ID" | "track:ID" | "album:ID" | "playlist:ID" | полный spotify:…-URI.
     pub fn play_station(&self, seed: String, title: String) {
         let Some((seed, station)) = normalize(&seed) else {
-            self.snapshot.send_modify(|s| s.error_text = NO_RADIO_TEXT.into());
+            self.snapshot.send_modify(|s| s.error_text = mf_i18n::t(NO_RADIO_TEXT));
             return;
         };
         let snap = self.snapshot();
@@ -163,7 +163,7 @@ impl WaveService {
     /// Открыть станцию (загрузить треки без воспроизведения) — страница радио.
     pub fn open(&self, seed_uri: String) {
         let Some((seed, station)) = normalize(&seed_uri) else {
-            self.snapshot.send_modify(|s| s.error_text = NO_RADIO_TEXT.into());
+            self.snapshot.send_modify(|s| s.error_text = mf_i18n::t(NO_RADIO_TEXT));
             return;
         };
         let snap = self.snapshot();
@@ -222,7 +222,7 @@ impl WaveService {
         let known = self.with_sources(|sources| seeds::known_seed(sources, seed));
         let item = known.clone().unwrap_or_else(|| RadioSeed {
             uri: seed.to_owned(),
-            label: kind_label(seed).to_owned(),
+            label: mf_i18n::t(kind_label(seed)),
             cover: String::new(),
             kind: uri_kind(seed).unwrap_or("track").to_owned(),
         });
@@ -334,7 +334,7 @@ impl WaveService {
         let generation = self.next_generation();
         let label_title = if title.is_empty() {
             let snap = self.snapshot();
-            seeds::find(&snap.seeds, &seed).filter(|s| s.label != kind_label(&s.uri)).map(|s| station_title(&s.label))
+            seeds::find(&snap.seeds, &seed).filter(|s| !is_kind_placeholder(&s.label, &s.uri)).map(|s| station_title(&s.label))
         } else {
             Some(title)
         };
@@ -373,7 +373,7 @@ impl WaveService {
                     if tracks.is_empty() {
                         me.snapshot.send_modify(|s| {
                             s.loading = false;
-                            s.error_text = EMPTY_TEXT.into();
+                            s.error_text = mf_i18n::t(EMPTY_TEXT);
                         });
                         return;
                     }
@@ -507,13 +507,20 @@ fn normalize(seed: &str) -> Option<(String, String)> {
     Some((seed, station))
 }
 
+/// Подпись-заглушка сида (English source; в UI — mf_i18n::t).
 fn kind_label(seed: &str) -> &'static str {
     match uri_kind(seed) {
-        Some("artist") => "Исполнитель",
-        Some("album") => "Альбом",
-        Some("playlist") => "Плейлист",
-        _ => "Трек",
+        Some("artist") => "Artist",
+        Some("album") => "Album",
+        Some("playlist") => "Playlist",
+        _ => "Track",
     }
+}
+
+/// Подпись — заглушка kind_label на любом языке (заглушка сохраняется в настройках «Любой трек», язык мог смениться).
+fn is_kind_placeholder(label: &str, seed: &str) -> bool {
+    let en = kind_label(seed);
+    label == en || mf_i18n::dictionary(mf_i18n::Lang::Ru).and_then(|ru| ru.get(en)).is_some_and(|ru| ru == label)
 }
 
 fn playable(track: &TrackItem, hidden: &dyn Fn(&str) -> bool) -> bool {
@@ -523,15 +530,15 @@ fn playable(track: &TrackItem, hidden: &dyn Fn(&str) -> bool) -> bool {
 /// Треки станции через сессию librespot (у Web API станций нет).
 async fn resolve(player: &PlayerHandle, station: &str) -> Result<Vec<TrackItem>, String> {
     let Some(session) = player.session() else {
-        return Err(LOCKED_TEXT.into());
+        return Err(mf_i18n::t(LOCKED_TEXT));
     };
     match tokio::time::timeout(RADIO_TIMEOUT, sf_player::engine::session_reads::station(&session, station)).await {
         Ok(Ok(tracks)) => Ok(tracks.iter().map(sf_api::map::track_item).collect()),
         Ok(Err(e)) => {
-            tracing::warn!("радио {station}: {e:#}");
-            Err(FAILED_TEXT.into())
+            tracing::warn!("radio {station}: {e:#}");
+            Err(mf_i18n::t(FAILED_TEXT))
         }
-        Err(_) => Err(TIMEOUT_TEXT.into()),
+        Err(_) => Err(mf_i18n::t(TIMEOUT_TEXT)),
     }
 }
 
@@ -550,8 +557,8 @@ async fn lookup(auth: &AuthService, player: &PlayerHandle, seed: &str) -> Option
                     return Some(RadioSeed { uri: seed.to_owned(), label: card.title, cover: card.cover, kind: kind.to_owned() });
                 }
             }
-            Ok(Err(error)) => tracing::debug!("подпись сида через сессию: {error:#}"),
-            Err(_) => tracing::debug!("подпись сида через сессию: таймаут"),
+            Ok(Err(error)) => tracing::debug!("seed label via session: {error:#}"),
+            Err(_) => tracing::debug!("seed label via session: timeout"),
         }
     }
     tokio::time::timeout(LOOKUP_TIMEOUT, web_lookup(&api, seed, &id)).await.ok().flatten()

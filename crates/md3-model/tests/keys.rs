@@ -33,7 +33,7 @@ const LIBRARY_KEYS: &[&str] = &[
 fn keys<T: Serialize>(value: &T) -> Vec<String> {
     let mut keys: Vec<String> = match serde_json::to_value(value).unwrap() {
         Value::Object(map) => map.keys().cloned().collect(),
-        other => panic!("не объект: {other}"),
+        other => panic!("not an object: {other}"),
     };
     keys.sort();
     keys
@@ -44,7 +44,7 @@ fn expected(sets: &[&[&str]]) -> Vec<String> {
     keys.sort();
     let before = keys.len();
     keys.dedup();
-    assert_eq!(before, keys.len(), "ключи повторяются");
+    assert_eq!(before, keys.len(), "keys repeat");
     keys
 }
 
@@ -270,9 +270,9 @@ fn list_change_shapes() {
 
 #[test]
 fn album_kinds() {
-    assert_eq!(album_kind_label("album", 10), "Альбом");
-    assert_eq!(album_kind_label("single", 1), "Сингл");
+    assert_eq!(album_kind_label("album", 10), "Album");
+    assert_eq!(album_kind_label("single", 1), "Single");
     assert_eq!(album_kind_label("single", 4), "EP");
-    assert_eq!(album_kind_label("compilation", 20), "Сборник");
-    assert_eq!(album_kind_label("", 0), "Альбом");
+    assert_eq!(album_kind_label("compilation", 20), "Compilation");
+    assert_eq!(album_kind_label("", 0), "Album");
 }

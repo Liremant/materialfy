@@ -11,14 +11,14 @@ Item {
 
     readonly property string kind: context.type ?? ""
     readonly property var kindNames: ({
-        playlist: "Плейлист", album: "Альбом", artist: "Исполнитель", show: "Подкаст", episode: "Подкаст",
-        liked: "Любимые треки", radio: "Радио", search: "Поиск", tracks: "Треки"
+        playlist: I18n.t("Playlist"), album: I18n.t("Album"), artist: I18n.t("Artist"), show: I18n.t("Podcast"), episode: I18n.t("Podcast"),
+        liked: I18n.t("Liked Songs"), radio: I18n.t("Radio"), search: I18n.t("Search"), tracks: I18n.t("Tracks")
     })
     // подпись над названием, как в макете: «Играет из плейлиста»
     readonly property var fromNames: ({
-        playlist: "Играет из плейлиста", album: "Играет из альбома", artist: "Играет исполнитель",
-        show: "Играет из подкаста", episode: "Играет из подкаста", liked: "Играет из библиотеки",
-        radio: "Играет радио", search: "Играет из поиска", tracks: "Играет из недавних"
+        playlist: I18n.t("Playing from playlist"), album: I18n.t("Playing from album"), artist: I18n.t("Playing artist"),
+        show: I18n.t("Playing from podcast"), episode: I18n.t("Playing from podcast"), liked: I18n.t("Playing from library"),
+        radio: I18n.t("Playing radio"), search: I18n.t("Playing from search"), tracks: I18n.t("Playing from recents")
     })
     readonly property var kindIcons: ({
         playlist: "queue_music", album: "album", artist: "person", show: "podcasts", episode: "podcasts",
@@ -73,7 +73,7 @@ Item {
             spacing: 0
             Label {
                 Layout.fillWidth: true
-                text: root.fromNames[root.kind] ?? "Играет из"
+                text: root.fromNames[root.kind] ?? I18n.t("Playing from")
                 type: "labelMedium"
                 color: Theme.fgSurfaceVariant
             }

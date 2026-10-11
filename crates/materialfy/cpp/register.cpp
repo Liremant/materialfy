@@ -18,6 +18,7 @@
 #include "materialfy/src/bridges/releases.cxxqt.h"
 #include "materialfy/src/bridges/settings.cxxqt.h"
 #include "materialfy/src/bridges/theme.cxxqt.h"
+#include "materialfy/src/bridges/translations.cxxqt.h"
 #include "materialfy/src/icons.cxxqt.h"
 #include "materialfy/src/models/list_model.cxxqt.h"
 #include "materialfy/src/models/track_filter.cxxqt.h"
@@ -42,6 +43,7 @@ register_qml_types()
 {
   // Порядок важен: Settings и ThemeEngine первыми (их читают остальные при создании)
   singleton<Settings>("Settings");
+  singleton<Translations>("Translations");
   singleton<ThemeEngine>("ThemeEngine");
   singleton<IconMetrics>("IconMetrics");
   singleton<Auth>("Auth");
@@ -55,7 +57,7 @@ register_qml_types()
   singleton<Lyrics>("Lyrics");
 
   qmlRegisterType<TrackFilter>(URI, 1, 0, "TrackFilter");
-  qmlRegisterUncreatableType<DictListModel>(URI, 1, 0, "DictListModel", QStringLiteral("модель создаётся в Rust"));
+  qmlRegisterUncreatableType<DictListModel>(URI, 1, 0, "DictListModel", QStringLiteral("the model is created in Rust"));
   qmlRegisterUncreatableType<AlbumData>(URI, 1, 0, "AlbumData", QStringLiteral("Catalog.album(id)"));
   qmlRegisterUncreatableType<ArtistData>(URI, 1, 0, "ArtistData", QStringLiteral("Catalog.artist(id)"));
   qmlRegisterUncreatableType<ShowData>(URI, 1, 0, "ShowData", QStringLiteral("Catalog.show(id)"));

@@ -240,7 +240,7 @@ fn playlist_context(id: &PlaylistId) -> PlayContext {
 /// «Любимые треки» вошедшего аккаунта — контекст spotify:user:<id>:collection.
 fn liked_context() -> PlayContext {
     match ctx().services.auth.account_id() {
-        Some(id) => PlayContext::with_uri(contexts::LIKED, contexts::liked_uri(id.as_str())).titled("Любимые треки"),
+        Some(id) => PlayContext::with_uri(contexts::LIKED, contexts::liked_uri(id.as_str())).titled(mf_i18n::t("Liked Songs")),
         None => PlayContext::new(contexts::LIKED),
     }
 }

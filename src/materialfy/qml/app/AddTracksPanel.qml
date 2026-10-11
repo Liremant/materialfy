@@ -113,10 +113,10 @@ Item {
                 ColumnLayout {
                     Layout.fillWidth: true
                     spacing: 0
-                    Label { text: "Добавить треки"; type: "titleMedium" }
+                    Label { text: I18n.t("Add tracks"); type: "titleMedium" }
                     Label {
                         Layout.fillWidth: true
-                        text: "в «" + root.playlistTitle + "» · в конец списка"
+                        text: I18n.t("to “{0}” · at the end", root.playlistTitle)
                         type: "bodySmall"
                         color: Theme.fgSurfaceVariant
                     }
@@ -130,7 +130,7 @@ Item {
                 Layout.leftMargin: 16
                 Layout.rightMargin: 16
                 implicitHeight: 40
-                placeholder: "Найти трек в Spotify"
+                placeholder: I18n.t("Find a track on Spotify")
                 text: root.query
                 onTextChanged: root.query = text
                 Keys.onEscapePressed: root.query !== "" ? (root.query = "") : root.closeRequested()
@@ -139,8 +139,8 @@ Item {
             Row {
                 Layout.leftMargin: 16
                 spacing: 8
-                Chip { text: "Недавние"; selected: !root.searching && root.source === "recent"; onClicked: { root.query = ""; root.source = "recent" } }
-                Chip { text: "Любимые"; selected: !root.searching && root.source === "liked"; onClicked: { root.query = ""; root.source = "liked" } }
+                Chip { text: I18n.t("Recent"); selected: !root.searching && root.source === "recent"; onClicked: { root.query = ""; root.source = "recent" } }
+                Chip { text: I18n.t("Liked"); selected: !root.searching && root.source === "liked"; onClicked: { root.query = ""; root.source = "liked" } }
             }
 
             ListView {
@@ -184,7 +184,7 @@ Item {
                         }
                         Label {
                             visible: row.present && !row.addedNow
-                            text: "уже есть"
+                            text: I18n.t("already added")
                             type: "labelSmall"
                             color: Theme.tertiary
                         }
@@ -211,8 +211,8 @@ Item {
                         width: parent.width
                         horizontalAlignment: Text.AlignHCenter
                         wrapMode: Text.WordWrap
-                        text: root.searching ? "Ничего не нашлось"
-                            : root.source === "liked" ? "Любимых треков пока нет" : "Здесь появятся недавно прослушанные треки"
+                        text: root.searching ? I18n.t("Nothing found")
+                            : root.source === "liked" ? I18n.t("No Liked Songs yet") : I18n.t("Recently played tracks will appear here")
                         type: "bodyMedium"
                         color: Theme.fgSurfaceVariant
                     }

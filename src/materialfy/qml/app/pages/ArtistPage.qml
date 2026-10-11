@@ -21,22 +21,12 @@ Page {
 
     readonly property bool followed: Library.savedRevision >= 0 && (info.uri ?? "") !== "" ? Library.isSaved(info.uri) : info.followed === true
 
-    // 12,3 млн / 450 тыс. / 8 765 (тонкий пробел между разрядами) — как подписчики в поиске и превью
-    function compactNumber(n) {
-        return n >= 1e6 ? (n / 1e6).toFixed(n >= 1e7 ? 0 : 1).replace(".", ",") + "\u00a0млн"
-             : n >= 1e4 ? Math.round(n / 1e3) + "\u00a0тыс."
-             : String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, "\u2009")
-    }
-    // после «млн»/«тыс.» — всегда родительный множественного
-    function plural(n, one, few, many) {
-        const m10 = n % 10, m100 = n % 100
-        return n >= 1e4 || m10 >= 5 || m10 === 0 || (m100 >= 11 && m100 <= 14) ? many : m10 === 1 ? one : few
-    }
+    // 12,3 млн / 450 тыс. / 8 765 — I18n.nCompact (после «млн»/«тыс.» — родительный множественного)
     function followersText(n) {
-        return n > 0 ? compactNumber(n) + " " + plural(n, "подписчик", "подписчика", "подписчиков") : ""
+        return n > 0 ? I18n.nCompact(n, "{0} follower", "{0} followers") : ""
     }
     function listenersText(n) {
-        return n > 0 ? compactNumber(n) + " " + plural(n, "слушатель", "слушателя", "слушателей") + " в месяц" : ""
+        return n > 0 ? I18n.nCompact(n, "{0} monthly listener", "{0} monthly listeners") : ""
     }
 
     // Биография приходит без HTML (sf-services), но на всякий случай теги срезаем и здесь
@@ -146,7 +136,7 @@ Page {
             ColumnLayout {
                 Layout.fillWidth: true
                 spacing: 4
-                Label { text: "ИСПОЛНИТЕЛЬ"; type: "labelLarge"; color: Theme.primary; font.letterSpacing: 1.2 }
+                Label { text: I18n.t("ARTIST"); type: "labelLarge"; color: Theme.primary; font.letterSpacing: 1.2 }
                 Label {
                     Layout.fillWidth: true
                     text: page.info.name ?? ""
@@ -176,13 +166,13 @@ Page {
                     visible: (page.info.name ?? "") !== ""
                     Button {
                         visible: page.artist && page.artist.popular.count > 0
-                        text: "Слушать"
+                        text: I18n.t("Play")
                         icon: "play_arrow"
                         size: "m"
                         onClicked: Player.playFrom(page.artist.popular, 0)
                     }
                     Button {
-                        text: "Радио исполнителя"
+                        text: I18n.t("Artist’s radio")
                         icon: "radio"
                         style: "tonal"
                         size: "m"
@@ -190,7 +180,7 @@ Page {
                         onClicked: Radio.playStation("artist:" + page.artistId, page.info.name ?? "")
                     }
                     Button {
-                        text: page.followed ? "Вы подписаны" : "Подписаться"
+                        text: page.followed ? I18n.t("Following") : I18n.t("Follow")
                         icon: page.followed ? "check" : "person_add"
                         style: "outlined"
                         size: "m"
@@ -219,15 +209,15 @@ Page {
         Layout.topMargin: 48
         visible: page.artist && page.artist.errorText !== ""
         icon: "person_off"
-        title: "Исполнитель не загрузился"
+        title: I18n.t("Couldn't load artist")
         text: page.artist ? page.artist.errorText : ""
     }
 
     // ---- Популярные треки ----
     SectionHeader {
         visible: page.artist && page.artist.popular.count > 0
-        text: "Популярные треки"
-        actionText: page.artist && page.artist.popular.count > 5 ? (page.allPopular ? "Свернуть" : "Все") : ""
+        text: I18n.t("Popular tracks")
+        actionText: page.artist && page.artist.popular.count > 5 ? (page.allPopular ? I18n.t("Show less") : I18n.t("All")) : ""
         onAction: page.allPopular = !page.allPopular
     }
     ColumnLayout {
@@ -265,8 +255,8 @@ Page {
     // ---- Альбомы ----
     SectionHeader {
         visible: page.artist && page.artist.albums.count > 0
-        text: "Альбомы и синглы"
-        actionText: page.artist && page.artist.albums.count > tilesPerRow.value * 2 ? (page.allAlbums ? "Свернуть" : "Все") : ""
+        text: I18n.t("Albums and singles")
+        actionText: page.artist && page.artist.albums.count > tilesPerRow.value * 2 ? (page.allAlbums ? I18n.t("Show less") : I18n.t("All")) : ""
         onAction: page.allAlbums = !page.allAlbums
     }
     QtObject {
@@ -293,7 +283,7 @@ Page {
 
     SectionHeader {
         visible: page.artist && page.artist.alsoAlbums.count > 0
-        text: "С участием"
+        text: I18n.t("Appears on")
     }
     Flow {
         Layout.fillWidth: true
@@ -316,7 +306,7 @@ Page {
     // ---- Об исполнителе ----
     SectionHeader {
         visible: page.biography !== ""
-        text: "Об исполнителе"
+        text: I18n.t("About")
     }
     ColumnLayout {
         Layout.fillWidth: true
@@ -344,7 +334,7 @@ Page {
         }
         Button {
             visible: bioText.implicitHeight > page.bioLines * Theme.type.bodyLarge.line + 2
-            text: page.bioOpen ? "Свернуть" : "Ещё"
+            text: page.bioOpen ? I18n.t("Show less") : I18n.t("More")
             style: "text"
             size: "xs"
             onClicked: page.bioOpen = !page.bioOpen
@@ -354,7 +344,7 @@ Page {
     // ---- Похожие ----
     SectionHeader {
         visible: page.artist && page.artist.similar.count > 0
-        text: "Похожие исполнители"
+        text: I18n.t("Fans also like")
     }
     Flow {
         Layout.fillWidth: true

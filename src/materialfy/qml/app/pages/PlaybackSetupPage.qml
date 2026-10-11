@@ -11,7 +11,7 @@ import ".."
 // Уже 760 px — одна колонка.
 Page {
     id: page
-    title: "Воспроизведение"
+    title: I18n.t("Playback")
     showHeader: false
 
     property string pst: Auth.playbackState
@@ -42,18 +42,23 @@ Page {
             page.router.reset("home")
     }
     function _cacheText(mb) {
-        return mb >= 1024 ? String(Math.round(mb / 1024 * 10) / 10).replace(".", ",") + " ГБ" : Math.round(mb) + " МБ"
+        if (mb < 1024)
+            return I18n.t("{0} MB", Math.round(mb))
+        const tenths = Math.round(mb / 1024 * 10)
+        return I18n.t("{0} GB", tenths % 10 ? I18n.decimal(tenths / 10, 1) : tenths / 10)
     }
+    // Тексты ошибок переведены в Rust — подсказку выбираем по стабильному коду (Auth.playbackErrorCode)
     function _errorHint(text) {
-        if (text.indexOf("другой аккаунт") >= 0) {
+        const code = text !== "" ? (Auth.playbackErrorCode ?? "") : ""
+        if (code === "otherAccount") {
             const n = Auth.account.displayName ?? ""
-            return (n !== "" ? "Медиатека открыта как " + n + ", а воспроизведение подтвердил другой аккаунт. " : "")
-                   + "Выйдите на accounts.spotify.com и повторите."
+            return (n !== "" ? I18n.t("Your library is open as {0}, but playback was confirmed by another account.", n) + " " : "")
+                   + I18n.t("Sign out on accounts.spotify.com and try again.")
         }
-        if (text.indexOf("8898") >= 0)
-            return "Закройте программу, которая слушает 127.0.0.1:8898, и повторите."
-        if (text.indexOf("ключ") >= 0)
-            return "Spotify не выдал ключ для этого трека. Попробуйте другой трек или повторите позже."
+        if (code === "portBusy" || text.indexOf("8898") >= 0)
+            return I18n.t("Close the program listening on 127.0.0.1:8898 and try again.")
+        if (code === "audioKey")
+            return I18n.t("Spotify didn't provide a key for this track. Try another track or try again later.")
         return ""
     }
 
@@ -158,7 +163,7 @@ Page {
                         spacing: 4
                         Label {
                             Layout.fillWidth: true
-                            text: page.shownMode === "done" ? "Устройство Spotify Connect" : "Spotify Premium"
+                            text: page.shownMode === "done" ? I18n.t("Spotify Connect device") : "Spotify Premium"
                             type: "labelMedium"
                             font.capitalization: Font.AllUppercase
                             color: Theme.primary
@@ -167,7 +172,7 @@ Page {
                         }
                         Label {
                             Layout.fillWidth: true
-                            text: "Слушать на этом компьютере"
+                            text: I18n.t("Listen on this computer")
                             type: "headlineSmall"
                             wrapMode: Text.WordWrap
                             elide: Text.ElideNone
@@ -177,10 +182,10 @@ Page {
                 Label {
                     Layout.fillWidth: true
                     text: page.mode === "done"
-                          ? "Компьютер «" + page.deviceName + "» есть в списке устройств Spotify. Сюда можно перенести музыку с телефона и обратно."
+                          ? I18n.t("This computer, “{0}”, is in your Spotify devices list. You can move music here from your phone and back.", page.deviceName)
                           : page.mode === "signedOut"
-                          ? "Войдите через Spotify с Premium — музыка на этом компьютере включится тем же входом."
-                          : "Materialfy станет устройством Spotify Connect: музыка будет играть здесь, а телефон увидит компьютер в списке устройств. Нужно подтверждение в браузере; после него медиатека тоже идёт через этот вход, без лимитов Web API."
+                          ? I18n.t("Sign in with Spotify Premium — music on this computer turns on with the same sign-in.")
+                          : I18n.t("Materialfy becomes a Spotify Connect device: music plays here, and your phone sees this computer in its device list. Confirm in your browser; after that your library also goes through this sign-in, with no Web API limits.")
                     type: "bodyMedium"
                     color: Theme.fgSurfaceVariant
                     wrapMode: Text.WordWrap
@@ -197,11 +202,11 @@ Page {
                     visible: page.mode !== "done" && page.mode !== "signedOut"
                     Repeater {
                         model: page.mode === "done" || page.mode === "signedOut" ? [] : [
-                            { icon: "high_quality", text: "До 320 кбит/с, без пауз между треками" },
-                            { icon: "devices", text: "Пульт: переносите музыку между телефоном и компьютером" },
-                            { icon: "lock", text: "Пароль не нужен: подтверждение проходит на сайте Spotify, "
-                                                  + (Qt.platform.os === "windows" ? "ключ хранится в диспетчере учётных данных"
-                                                                                  : "ключ хранится в связке ключей") }
+                            { icon: "high_quality", text: I18n.t("Up to 320 kbps, gapless") },
+                            { icon: "devices", text: I18n.t("Remote: move music between your phone and computer") },
+                            { icon: "lock", text: Qt.platform.os === "windows"
+                                                  ? I18n.t("No password needed: you confirm on the Spotify website, and the key is stored in Credential Manager")
+                                                  : I18n.t("No password needed: you confirm on the Spotify website, and the key is stored in the keychain") }
                         ]
                         RowLayout {
                             id: point
@@ -258,20 +263,20 @@ Page {
                                 spacing: 0
                                 Label {
                                     Layout.fillWidth: true
-                                    text: page.shownMode === "authorizing" ? "Подтвердите в браузере"
-                                        : page.shownMode === "connecting" ? "Подключаем к Spotify Connect…"
-                                        : page.deviceName + " · этот компьютер"
+                                    text: page.shownMode === "authorizing" ? I18n.t("Confirm in your browser")
+                                        : page.shownMode === "connecting" ? I18n.t("Connecting to Spotify Connect…")
+                                        : I18n.t("{0} · this computer", page.deviceName)
                                     type: "titleSmall"
                                     wrapMode: Text.WordWrap
                                     elide: Text.ElideNone
                                 }
                                 Label {
                                     Layout.fillWidth: true
-                                    text: page.shownMode === "authorizing" ? "Разрешение «Воспроизведение в приложениях Spotify»"
-                                        : page.shownMode === "connecting" ? "Регистрируем устройство «" + page.deviceName + "»"
-                                        : Player.localState === "failed" ? "Не удалось подключить — нажмите «Применить» в настройках ниже"
-                                        : Player.localState === "connecting" ? "Подключаемся…"
-                                        : "Подключено · " + Settings.bitrate + " кбит/с"
+                                    text: page.shownMode === "authorizing" ? I18n.t("Permission to play in Spotify apps")
+                                        : page.shownMode === "connecting" ? I18n.t("Registering device “{0}”", page.deviceName)
+                                        : Player.localState === "failed" ? I18n.t("Couldn't connect — click “Apply” in the settings below")
+                                        : Player.localState === "connecting" ? I18n.t("Connecting…")
+                                        : I18n.t("Connected · {0} kbps", Settings.bitrate)
                                     type: "bodySmall"
                                     color: Player.localState === "failed" && page.shownMode === "done" ? Theme.error : Theme.fgSurfaceVariant
                                     wrapMode: Text.WordWrap
@@ -303,7 +308,7 @@ Page {
                                     }
                                     Label {
                                         anchors.verticalCenter: parent.verticalCenter
-                                        text: Player.localState === "ready" ? "В сети" : "Ждём"
+                                        text: Player.localState === "ready" ? I18n.t("Online") : I18n.t("Waiting")
                                         type: "labelMedium"
                                         color: Theme.fgSurface
                                     }
@@ -331,7 +336,7 @@ Page {
                                 spacing: 2
                                 Label {
                                     Layout.fillWidth: true
-                                    text: Auth.playbackError !== "" ? Auth.playbackError : "Не удалось включить воспроизведение"
+                                    text: Auth.playbackError !== "" ? Auth.playbackError : I18n.t("Couldn't turn on playback")
                                     type: "titleSmall"
                                     color: Theme.fgErrorContainer
                                     wrapMode: Text.WordWrap
@@ -361,7 +366,7 @@ Page {
 
                     Button {
                         visible: page.shownMode === "setup" || page.shownMode === "free"
-                        text: "Разрешить воспроизведение"
+                        text: I18n.t("Allow playback")
                         icon: "open_in_new"
                         size: "m"
                         enabled: page.shownMode === "setup"
@@ -369,49 +374,49 @@ Page {
                     }
                     Button {
                         visible: page.shownMode === "error"
-                        text: "Повторить"
+                        text: I18n.t("Retry")
                         icon: "refresh"
                         size: "m"
                         onClicked: Auth.authorizePlayback()
                     }
                     Button {
                         visible: page.shownMode === "signedOut"
-                        text: "Войти"
+                        text: I18n.t("Sign in")
                         icon: "person"
                         size: "m"
                         onClicked: page.router ? page.router.reset("account") : null
                     }
                     Button {
                         visible: page.shownMode === "authorizing"
-                        text: "Скопировать ссылку"
+                        text: I18n.t("Copy link")
                         icon: "content_copy"
                         style: "outlined"
                         onClicked: Auth.copyAuthUrl()
                     }
                     Button {
                         visible: page.shownMode === "authorizing" || page.shownMode === "connecting"
-                        text: "Отмена"
+                        text: I18n.t("Cancel")
                         style: "text"
                         onClicked: Auth.cancelLogin()
                     }
                     Button {
                         visible: page.shownMode === "done"
                         readonly property bool here: Player.isLocal === true && Player.hasTrack
-                        text: here ? "Играет здесь" : "Играть здесь"
+                        text: here ? I18n.t("Playing here") : I18n.t("Switch here")
                         icon: here ? "check" : "play_arrow"
                         enabled: !here && Player.localState === "ready"
                         onClicked: Player.transferHere()
                     }
                     Button {
                         visible: page.shownMode === "done"
-                        text: page.sessionOnly ? "Выйти" : "Отключить"
+                        text: page.sessionOnly ? I18n.t("Sign out") : I18n.t("Disconnect")
                         icon: "logout"
                         style: "outlined"
                         onClicked: Auth.disablePlayback()
                     }
                     Button {
                         visible: page.shownMode === "setup" || page.shownMode === "free" || page.shownMode === "error"
-                        text: "Позже"
+                        text: I18n.t("Later")
                         height: 56      // по центру строки рядом с кнопкой size "m"
                         style: "text"
                         onClicked: page._later()
@@ -441,7 +446,7 @@ Page {
                 spacing: 8
                 opacity: devCard.opacity
                 Icon { name: "tune"; size: 20; color: Theme.primary }
-                Label { text: "Устройство"; type: "titleMedium"; color: Theme.primary }
+                Label { text: I18n.t("Device"); type: "titleMedium"; color: Theme.primary }
             }
             Rectangle {
                 id: devCard
@@ -461,8 +466,8 @@ Page {
                     spacing: 0
 
                     DevRow {
-                        title: "Имя в Spotify Connect"
-                        description: "Так компьютер виден на телефоне и колонках"
+                        title: I18n.t("Name in Spotify Connect")
+                        description: I18n.t("How this computer appears on phones and speakers")
                         TextField {
                             id: nameField
                             width: 240
@@ -486,8 +491,8 @@ Page {
                     }
                     RowDivider { }
                     DevRow {
-                        title: "Качество"
-                        description: "Битрейт потока, кбит/с"
+                        title: I18n.t("Quality")
+                        description: I18n.t("Stream bitrate, kbps")
                         ButtonGroup {
                             model: ["96", "160", "320"]
                             showCheck: true
@@ -498,29 +503,29 @@ Page {
                     }
                     RowDivider { }
                     DevRow {
-                        title: "Выравнивать громкость"
-                        description: "Нормализация Spotify: тихие и громкие треки звучат ровно"
+                        title: I18n.t("Normalize volume")
+                        description: I18n.t("Spotify normalization: quiet and loud tracks play at an even level")
                         Switch { checked: Settings.normalisation; onToggled: c => Settings.normalisation = c }
                     }
                     RowDivider { }
                     DevRow {
-                        title: "Без пауз между треками"
+                        title: I18n.t("Gapless playback")
                         description: "Gapless"
                         Switch { checked: Settings.gapless; onToggled: c => Settings.gapless = c }
                     }
                     RowDivider { }
                     DevRow {
-                        title: "Автовоспроизведение"
-                        description: "Когда очередь закончится, играть похожие треки"
+                        title: I18n.t("Autoplay")
+                        description: I18n.t("When the queue ends, play similar tracks")
                         Switch { checked: Settings.autoplay; onToggled: c => Settings.autoplay = c }
                     }
                     RowDivider { }
                     DevRow {
-                        title: "Аудиовыход"
+                        title: I18n.t("Audio output")
                         MenuField {
                             width: 240
                             leadingIcon: "headphones"
-                            model: [{ id: "", text: "Системный по умолчанию" }]
+                            model: [{ id: "", text: I18n.t("System default output") }]
                                    .concat((Settings.audioDevices ?? []).map(d => ({ id: d, text: d })))
                             currentValue: Settings.audioDevice
                             onActivated: v => Settings.audioDevice = v
@@ -528,8 +533,8 @@ Page {
                     }
                     RowDivider { }
                     DevRow {
-                        title: "Кэш аудио"
-                        description: "Повторы играют без загрузки"
+                        title: I18n.t("Audio cache")
+                        description: I18n.t("Replays play without downloading")
                         Switch { checked: Settings.audioCache; onToggled: c => Settings.audioCache = c }
                     }
                     RowDivider {
@@ -537,7 +542,7 @@ Page {
                     }
                     DevRow {
                         visible: Settings.audioCache
-                        title: "Размер кэша"
+                        title: I18n.t("Cache size")
                         Row {
                             spacing: 12
                             Slider {

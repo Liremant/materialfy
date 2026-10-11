@@ -397,7 +397,7 @@ impl CatalogService {
                     tracks.extend(page.items);
                 }
                 Err(error) => {
-                    tracing::debug!("треки альбома {album_id} с {offset}: {error:#}");
+                    tracing::debug!("album {album_id} tracks from {offset}: {error:#}");
                     return Ok((album, tracks, false));
                 }
             }
@@ -410,7 +410,7 @@ impl CatalogService {
         if let Some(Cached::Artist(page)) = self.cached(&key) {
             return Ok(page);
         }
-        let _permit = self.artists.acquire().await.map_err(|_| ServiceError::Other("каталог остановлен".into()))?;
+        let _permit = self.artists.acquire().await.map_err(|_| ServiceError::Other(mf_i18n::t("The catalog has stopped")))?;
         if let Some(Cached::Artist(page)) = self.cached(&key) {
             return Ok(page);
         }
@@ -429,7 +429,7 @@ impl CatalogService {
         };
         let overview = async {
             let result = artist_overview::artist(&api.http(), session.as_ref()?, artist_id).await;
-            result.map_err(|error| tracing::debug!("исполнитель {artist_id} через шлюз: {error:#}")).ok()
+            result.map_err(|error| tracing::debug!("artist {artist_id} via gateway: {error:#}")).ok()
         };
         let (read, overview) = with_extras(read, overview, EXTRAS_GRACE).await;
         let overview = overview.flatten();
@@ -473,9 +473,9 @@ impl CatalogService {
             catalog.artist_albums(artist_id, "album,single", 0, 50),
             catalog.artist_albums(artist_id, "appears_on,compilation", 0, 50),
         );
-        let popular = or_empty(popular, "популярное", artist_id);
-        let albums = or_empty(albums.map(|page| page.items), "альбомы", artist_id);
-        let also = or_empty(also.map(|page| page.items), "релизы с участием", artist_id);
+        let popular = or_empty(popular, "popular", artist_id);
+        let albums = or_empty(albums.map(|page| page.items), "albums", artist_id);
+        let also = or_empty(also.map(|page| page.items), "appears on", artist_id);
         Ok((artist, popular, albums, also))
     }
 
@@ -485,7 +485,7 @@ impl CatalogService {
             return Vec::new();
         };
         client.related_artists(artist_id).await.unwrap_or_else(|error| {
-            tracing::debug!("похожие исполнители {artist_id}: {error:#}");
+            tracing::debug!("related artists {artist_id}: {error:#}");
             Vec::new()
         })
     }
@@ -513,7 +513,7 @@ impl CatalogService {
         if let Some(session) = route::account_session(&api, &self.player) {
             match pathfinder::search(&api.http(), &session, query).await {
                 Ok(results) => return Ok(self.searched(query, kind, only(kind, results))),
-                Err(error) => tracing::debug!("поиск через сессию не удался: {error:#}; спрашиваю Web API"),
+                Err(error) => tracing::debug!("search via session failed: {error:#}; asking Web API"),
             }
         }
         let (catalog_types, playlists) = kind.api_types();
@@ -544,11 +544,11 @@ impl CatalogService {
             }
             (Ok(results), Ok(None)) => results,
             (Ok(results), Err(error)) => {
-                tracing::debug!("поиск плейлистов не удался: {error:#}");
+                tracing::debug!("playlist search failed: {error:#}");
                 results
             }
             (Err(error), Ok(Some(playlists))) => {
-                tracing::debug!("поиск по каталогу не удался: {error:#}");
+                tracing::debug!("catalog search failed: {error:#}");
                 models::SearchResults { playlists: Some(playlists), ..Default::default() }
             }
             (Err(error), _) => return Err(self.fail(error)),
@@ -688,7 +688,7 @@ impl CatalogService {
             match client.show_episodes(&show.id, 0, 6).await {
                 Ok(page) => page.items.into_iter().filter(|other| other.id != episode.id).take(3).collect(),
                 Err(error) => {
-                    tracing::debug!("соседние выпуски: {error:#}");
+                    tracing::debug!("neighbouring episodes: {error:#}");
                     Vec::new()
                 }
             }
@@ -853,8 +853,8 @@ mod tests {
     fn a_failed_section_leaves_the_artist_page_standing() {
         // 403 у популярного (режим разработки), 429 у альбомов: страница всё равно собирается
         let refused = ApiError::Status { status: 403, message: "Forbidden".into() };
-        let popular: Vec<Track> = or_empty(Err(refused), "популярное", "muse");
-        let albums: Vec<Album> = or_empty(Err(ApiError::RateLimited), "альбомы", "muse");
+        let popular: Vec<Track> = or_empty(Err(refused), "popular", "muse");
+        let albums: Vec<Album> = or_empty(Err(ApiError::RateLimited), "albums", "muse");
         let also = or_empty(Ok(vec![Album { id: "a1".into(), name: "Live".into(), ..Default::default() }]), "", "muse");
         let page = artist_page(&artist("Muse"), false, &popular, &albums, &also, &[]);
         assert_eq!(page.info.item.name, "Muse");

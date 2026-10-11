@@ -38,6 +38,6 @@ Rectangle {
         color: "white"
         font.pixelSize: 13
         font.family: "monospace"
-        text: root.fps.toFixed(0) + " fps · худший " + root.worst.toFixed(1) + " мс"
+        text: I18n.t("{0} fps · worst {1} ms", root.fps.toFixed(0), root.worst.toFixed(1))
     }
 }

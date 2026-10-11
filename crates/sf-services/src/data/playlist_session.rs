@@ -28,14 +28,14 @@ fn settle<T>(result: Result<Result<T, Failure>, tokio::time::error::Elapsed>, re
         Ok(Ok(value)) => Some(Ok(value)),
         Ok(Err(Failure::Definitive(error))) => Some(Err(error)),
         Ok(Err(Failure::Retry(error))) => {
-            tracing::debug!("плейлист через сессию не вышел: {error:#}; спрашиваю Web API");
+            tracing::debug!("playlist via session failed: {error:#}; asking Web API");
             None
         }
         Err(_) if repeatable => {
-            tracing::debug!("плейлист через сессию не успел; спрашиваю Web API");
+            tracing::debug!("playlist via session timed out; asking Web API");
             None
         }
-        Err(_) => Some(Err(ApiError::Network("Spotify не ответил вовремя — обновите плейлист".into()))),
+        Err(_) => Some(Err(ApiError::Network("Spotify did not answer in time — refresh the playlist".into()))),
     }
 }
 
@@ -84,15 +84,15 @@ pub async fn library(api: &ApiGateway, player: &PlayerHandle, wait: Duration) ->
     match tokio::time::timeout(LIBRARY_TIMEOUT, session::library(&session)).await {
         Ok(Ok(library)) => Some(library),
         Ok(Err(Failure::Definitive(error))) => {
-            tracing::debug!("rootlist не загрузился: {error}");
+            tracing::debug!("rootlist not loaded: {error}");
             None
         }
         Ok(Err(Failure::Retry(error))) => {
-            tracing::debug!("rootlist не загрузился: {error:#}");
+            tracing::debug!("rootlist not loaded: {error:#}");
             None
         }
         Err(_) => {
-            tracing::debug!("rootlist не успел загрузиться");
+            tracing::debug!("rootlist load timed out");
             None
         }
     }

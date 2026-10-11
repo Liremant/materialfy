@@ -83,8 +83,8 @@ Rectangle {
                     }
                     Label {
                         Layout.fillWidth: true
-                        text: (root._d.isThisComputer ? "Этот компьютер" : info.label)
-                              + (Player.playing ? " · играет" : " · на паузе")
+                        text: Player.playing ? I18n.t("{0} · playing", root._d.isThisComputer ? I18n.t("This computer") : info.label)
+                            : I18n.t("{0} · on pause", root._d.isThisComputer ? I18n.t("This computer") : info.label)
                         type: "bodySmall"
                         color: Theme.fgSecondaryContainer
                         opacity: 0.9
@@ -132,7 +132,7 @@ Rectangle {
             Icon { name: "lock"; size: 18; color: Theme.fgSecondaryContainer }
             Label {
                 Layout.fillWidth: true
-                text: "Громкость этого устройства меняется только на нём самом"
+                text: I18n.t("This device's volume can only be changed on the device itself")
                 type: "bodySmall"
                 color: Theme.fgSecondaryContainer
                 wrapMode: Text.WordWrap

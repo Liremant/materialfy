@@ -117,7 +117,7 @@ Item {
         }
         Player.clearManualQueue()
         if (saved.length > 0)
-            undoBar.show("Очередь очищена", "Вернуть", () => {
+            undoBar.show(I18n.t("Queue cleared"), I18n.t("Undo"), () => {
                 for (const t of saved)
                     Player.addToQueue(t)
             })
@@ -163,9 +163,9 @@ Item {
         icon: "queue_music"
         shape: "cookie6"
         animated: !Theme.reducedMotion
-        title: "Очередь пуста"
-        text: Player.remote ? "Очередь устройства «" + (Player.device.name ?? "") + "» пока пуста"
-                            : "Включите плейлист или альбом. Чтобы трек заиграл следующим — в меню трека «В очередь» или перетащите его сюда"
+        title: I18n.t("Queue is empty")
+        text: Player.remote ? I18n.t("The queue on “{0}” is empty", Player.device.name ?? "")
+                            : I18n.t("Play a playlist or album. To play a track next, choose “Add to queue” in its menu or drag it here")
     }
 
     // «Играет на …» и «Играет из …» — над списком, не прокручиваются
@@ -232,14 +232,14 @@ Item {
             }
             QueueSectionHeader {
                 width: parent.width
-                title: sec.section === "current" ? "Сейчас играет"
-                     : sec.section === "manual" ? "Далее в очереди"
-                     : Player.contextTitle !== "" ? "Далее из «" + Player.contextTitle + "»" : "Далее"
+                title: sec.section === "current" ? I18n.t("Now playing")
+                     : sec.section === "manual" ? I18n.t("Next in queue")
+                     : Player.contextTitle !== "" ? I18n.t("Next from “{0}”", Player.contextTitle) : I18n.t("Next up")
                 count: sec.section === "manual" ? Player.manualCount : -1
                 actionIcon: sec.section === "manual" && Player.canClearQueue ? "clear_all" : ""
-                actionText: "Очистить"
-                note: sec.section === "manual" && Player.remote ? "Новые треки встают в конец"
-                    : sec.section === "context" && root.dragFrom >= 0 ? "Не цель для перетаскивания" : ""
+                actionText: I18n.t("Clear")
+                note: sec.section === "manual" && Player.remote ? I18n.t("New tracks go to the end")
+                    : sec.section === "context" && root.dragFrom >= 0 ? I18n.t("Can't drop here") : ""
                 onAction: root.clearQueue()
             }
         }
@@ -320,7 +320,7 @@ Item {
                 style: "text"
                 icon: root.contextShown < root.contextRows ? "expand_more" : "chevron_right"
                 // свёрнутые строки раскрываются на месте, остальное — на странице контекста
-                text: "Ещё " + root.contextMore + " " + root._tracksWord(root.contextMore)
+                text: I18n.n(root.contextMore, "{0} more track", "{0} more tracks")
                 onClicked: {
                     if (root.contextShown < root.contextRows)
                         root.contextExpanded = true
@@ -376,13 +376,6 @@ Item {
             }
             drop.acceptProposedAction()
         }
-    }
-
-    function _tracksWord(n) {
-        const m10 = n % 10, m100 = n % 100
-        if (m10 === 1 && m100 !== 11) return "трек"
-        if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return "трека"
-        return "треков"
     }
 
     // ---- Snackbar «Очередь очищена · Вернуть» ----

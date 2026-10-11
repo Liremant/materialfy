@@ -38,7 +38,7 @@ pub async fn artist(http: &Http, session: &sf_player::Session, artist_id: &str) 
 
 fn parse(body: &Value) -> anyhow::Result<ArtistOverview> {
     let Some(artist) = body.pointer("/data/artistUnion").filter(|artist| artist.is_object()) else {
-        bail!("нет data.artistUnion: {}", body.get("errors").unwrap_or(&Value::Null));
+        bail!("no data.artistUnion: {}", body.get("errors").unwrap_or(&Value::Null));
     };
     let kind = artist.get("__typename").and_then(Value::as_str).unwrap_or("Artist");
     if kind != "Artist" {

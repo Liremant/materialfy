@@ -19,7 +19,7 @@ Surface {
         RowLayout {
             Layout.fillWidth: true
             ButtonGroup {
-                model: [{ text: "Очередь", icon: "queue_music" }, { text: "Текст", icon: "title" }]
+                model: [{ text: I18n.t("Queue"), icon: "queue_music" }, { text: I18n.t("Song lyrics"), icon: "title" }]
                 autoSelect: false
                 currentIndex: Settings.rightPanelTab === "lyrics" ? 1 : 0
                 onActivated: i => Settings.rightPanelTab = i === 1 ? "lyrics" : "queue"

@@ -14,7 +14,7 @@ Item {
     property var router
     property string folderId
     property string folderTitle
-    readonly property string title: folderId !== "" ? (folderTitle !== "" ? folderTitle : "Папка") : "Библиотека"
+    readonly property string title: folderId !== "" ? (folderTitle !== "" ? folderTitle : I18n.t("Folder")) : I18n.t("Library")
     readonly property bool showHeader: false
     readonly property bool scrolled: list.contentY - list.originY > 8
 
@@ -38,11 +38,11 @@ Item {
     }
 
     readonly property var sorts: [
-        { id: "recent", text: "Недавно прослушанные" },
-        { id: "added", text: "Недавно добавленные" },
-        { id: "alpha", text: "По алфавиту" },
-        { id: "author", text: "Автор" },
-        { id: "spotify", text: "Порядок Spotify" }
+        { id: "recent", text: I18n.t("Recents") },
+        { id: "added", text: I18n.t("Recently added") },
+        { id: "alpha", text: I18n.t("Alphabetical") },
+        { id: "author", text: I18n.t("Creator") },
+        { id: "spotify", text: I18n.t("Spotify order") }
     ]
     readonly property string sortText: (sorts.find(s => s.id === Settings.librarySort) ?? sorts[0]).text
 
@@ -129,8 +129,8 @@ Item {
             out.push(row)
         return out
     }
-    readonly property var listEntries: showLiked ? [{ kind: "liked", title: "Любимые треки",
-        subtitle: "Плейлист · " + likedCount + " " + plural(likedCount, "трек", "трека", "треков"), uri: "" }].concat(entries) : entries
+    readonly property var listEntries: showLiked ? [{ kind: "liked", title: I18n.t("Liked Songs"),
+        subtitle: I18n.t("Playlist") + " · " + I18n.n(likedCount, "{0} track", "{0} tracks"), uri: "" }].concat(entries) : entries
     // всего «Любимых»: из строки kind "liked" (сервис знает общее число), иначе — сколько уже загружено
     property int likedTotal: -1
     readonly property int likedCount: likedTotal >= 0 ? likedTotal : Library.liked ? Library.liked.count : 0
@@ -138,12 +138,6 @@ Item {
     onGridChanged: Qt.callLater(() => list.positionViewAtBeginning())
     onKindChanged: Qt.callLater(() => list.positionViewAtBeginning())
 
-    function plural(n, one, few, many) {
-        const m10 = n % 10, m100 = n % 100
-        if (m10 === 1 && m100 !== 11) return one
-        if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few
-        return many
-    }
     function notify(text, actionText, onAction) {
         const w = page.Window.window
         if (w && typeof w.notify === "function")
@@ -189,35 +183,35 @@ Item {
         const k = e.kind ?? ""
         if (k === "folder")
             return [
-                { id: "open", text: "Открыть папку", icon: "folder_open" },
+                { id: "open", text: I18n.t("Open folder"), icon: "folder_open" },
                 { separator: true },
-                { id: "rename", text: "Переименовать — только в Spotify", icon: "edit", enabled: false },
-                { id: "move", text: "Переложить — только в Spotify", icon: "folder", enabled: false }
+                { id: "rename", text: I18n.t("Rename — Spotify only"), icon: "edit", enabled: false },
+                { id: "move", text: I18n.t("Move — Spotify only"), icon: "folder", enabled: false }
             ]
         if (k === "liked")
             return [
-                { id: "play", text: "Слушать", icon: "play_arrow" },
-                { id: "shuffle", text: "Перемешать", icon: "shuffle" }
+                { id: "play", text: I18n.t("Play"), icon: "play_arrow" },
+                { id: "shuffle", text: I18n.t("Shuffle play"), icon: "shuffle" }
             ]
         const pinned = Library.pinsRevision >= 0 && Library.isPinned(e.uri ?? "")
-        const radioText = ({ playlist: "Радио по плейлисту", album: "Радио по альбому", artist: "Радио по исполнителю" })[k] ?? "Радио"
+        const radioText = ({ playlist: I18n.t("Playlist radio"), album: I18n.t("Album radio"), artist: I18n.t("Artist radio") })[k] ?? I18n.t("Radio")
         const items = [
-            { id: "play", text: "Слушать", icon: "play_arrow" },
-            { id: "shuffle", text: "Перемешать", icon: "shuffle", enabled: !!Player.shuffleContext },
+            { id: "play", text: I18n.t("Play"), icon: "play_arrow" },
+            { id: "shuffle", text: I18n.t("Shuffle play"), icon: "shuffle", enabled: !!Player.shuffleContext },
             { id: "radio", text: radioText, icon: "radio", enabled: k !== "show" },
             { separator: true },
-            { id: "pin", text: pinned ? "Открепить" : "Закрепить наверху", icon: "push_pin", hint: "локально" }
+            { id: "pin", text: pinned ? I18n.t("Unpin") : I18n.t("Pin to top"), icon: "push_pin", hint: I18n.t("local") }
         ]
         if (k === "playlist" && e.canEdit && !e.readOnly) {
-            items.push({ id: "edit", text: "Изменить", icon: "edit" })
+            items.push({ id: "edit", text: I18n.t("Edit"), icon: "edit" })
             if ((e.ownerId ?? "") === (Auth.account.id ?? "-"))
-                items.push({ id: "delete", text: "Удалить плейлист", icon: "delete" })
+                items.push({ id: "delete", text: I18n.t("Delete playlist"), icon: "delete" })
         } else if (k === "playlist") {
-            items.push({ id: "unfollow", text: "Отписаться", icon: "remove_circle" })
+            items.push({ id: "unfollow", text: I18n.t("Unfollow"), icon: "remove_circle" })
         } else {
-            items.push({ id: "unsave", text: k === "artist" ? "Не отслеживать" : "Удалить из библиотеки", icon: "remove_circle" })
+            items.push({ id: "unsave", text: k === "artist" ? I18n.t("Unfollow artist") : I18n.t("Remove from library"), icon: "remove_circle" })
         }
-        items.push({ separator: true }, { id: "link", text: "Скопировать ссылку", icon: "content_copy", enabled: (e.uri ?? "") !== "" })
+        items.push({ separator: true }, { id: "link", text: I18n.t("Copy link"), icon: "content_copy", enabled: (e.uri ?? "") !== "" })
         return items
     }
     function _menuAction(id) {
@@ -236,20 +230,20 @@ Item {
                 Player.shuffleContext(e.uri)
         } else if (id === "radio") {
             Radio.playStation(e.uri, t)
-            notify("Радио «" + t + "»")
+            notify(I18n.t("“{0}” radio", t))
         } else if (id === "pin") {
             const was = Library.isPinned(e.uri)
             Library.togglePin(e.uri)
-            notify(was ? "Откреплено" : "Закреплено — только в этом приложении")
+            notify(was ? I18n.t("Unpinned") : I18n.t("Pinned — in this app only"))
         } else if (id === "delete" || id === "unfollow") {
             Library.unfollowPlaylist(e.id)
-            notify(id === "delete" ? "Плейлист удалён" : "Вы отписались от «" + t + "»", "Вернуть", () => Library.followPlaylist(e.id))
+            notify(id === "delete" ? I18n.t("Playlist deleted") : I18n.t("Unfollowed “{0}”", t), I18n.t("Undo"), () => Library.followPlaylist(e.id))
         } else if (id === "unsave") {
             Library.toggleSaved(e.uri)
-            notify("Удалено из библиотеки", "Вернуть", () => Library.toggleSaved(e.uri))
+            notify(I18n.t("Removed from library"), I18n.t("Undo"), () => Library.toggleSaved(e.uri))
         } else if (id === "link") {
             Catalog.copyLink(Catalog.uriUrl(e.uri))
-            notify("Ссылка скопирована")
+            notify(I18n.t("Link copied"))
         }
     }
 
@@ -269,7 +263,7 @@ Item {
                     id: libSearch
                     width: 240
                     height: 40
-                    placeholder: "Искать в библиотеке"
+                    placeholder: I18n.t("Search in library")
                     text: page.query
                     onTextChanged: page.query = text
                     Keys.onEscapePressed: { page.query = ""; page.searchOpen = false }
@@ -300,7 +294,7 @@ Item {
                     const p = sortButton.mapToItem(sortMenu, 0, sortButton.height)
                     page._menuEntry = null
                     sortMenu.open(page.sorts.map(s => ({ id: s.id, text: s.text, checked: s.id === Settings.librarySort }))
-                        .concat([{ separator: true }, { id: "info", text: "Порядок не записывается в Spotify", icon: "info", enabled: false }]), p)
+                        .concat([{ separator: true }, { id: "info", text: I18n.t("Order isn't saved to Spotify"), icon: "info", enabled: false }]), p)
                 }
             }
             ButtonGroup {
@@ -360,7 +354,7 @@ Item {
                     Layout.fillWidth: true
                     spacing: 8
                     Label {
-                        text: "Библиотека"
+                        text: I18n.t("Library")
                         type: "bodyLarge"
                         color: Theme.fgSurfaceVariant
                         TapHandler { onTapped: page.router.reset("library") }
@@ -368,7 +362,7 @@ Item {
                     }
                     Icon { name: "chevron_right"; size: 20; color: Theme.fgSurfaceVariant }
                     Label { text: page.title; type: "titleLarge"; weight: 500 }
-                    ReadOnlyBadge { text: "Папка Spotify · только чтение" }
+                    ReadOnlyBadge { text: I18n.t("Spotify folder · read-only") }
                     Item { Layout.fillWidth: true }
                 }
 
@@ -379,10 +373,10 @@ Item {
                     spacing: 8
                     Repeater {
                         model: [
-                            { id: "playlists", text: "Плейлисты", n: Library.playlists.count },
-                            { id: "albums", text: "Альбомы", n: Library.albums.count },
-                            { id: "artists", text: "Исполнители", n: Library.artists.count },
-                            { id: "shows", text: "Подкасты", n: Library.shows.count }
+                            { id: "playlists", text: I18n.t("Playlists"), n: Library.playlists.count },
+                            { id: "albums", text: I18n.t("Albums"), n: Library.albums.count },
+                            { id: "artists", text: I18n.t("Artists"), n: Library.artists.count },
+                            { id: "shows", text: I18n.t("Podcasts"), n: Library.shows.count }
                         ]
                         Chip {
                             required property var modelData
@@ -399,8 +393,8 @@ Item {
                     spacing: 8
                     Repeater {
                         model: [
-                            { id: "all", text: "Все" }, { id: "mine", text: "Мои" },
-                            { id: "followed", text: "Подписки" }, { id: "collab", text: "Совместные" }
+                            { id: "all", text: I18n.t("All") }, { id: "mine", text: I18n.t("Mine") },
+                            { id: "followed", text: I18n.t("Followed") }, { id: "collab", text: I18n.t("Collaborative") }
                         ]
                         Chip {
                             required property var modelData
@@ -427,7 +421,7 @@ Item {
                         LoadingIndicator { size: 22; color: Theme.fgSecondaryContainer; running: parent.parent.visible; anchors.verticalCenter: parent.verticalCenter }
                         Label {
                             anchors.verticalCenter: parent.verticalCenter
-                            text: "Загружаем остальные страницы · " + Library.pagesLoaded + " из " + Library.pagesTotal + " — загруженное уже на месте"
+                            text: I18n.t("Loading remaining pages · {0} of {1} — loaded items are already here", Library.pagesLoaded, Library.pagesTotal)
                             type: "labelMedium"
                             color: Theme.fgSecondaryContainer
                         }
@@ -451,8 +445,8 @@ Item {
                         Label {
                             Layout.fillWidth: true
                             text: page.inFolder
-                                ? "Плейлисты внутри папки можно открывать, слушать и редактировать (свои). Саму папку изменить нельзя — librespot читает папки, но не пишет."
-                                : "Аудиокниги из сохранённых шоу скрыты: librespot их не воспроизводит."
+                                ? I18n.t("Playlists in this folder can be opened, played and edited (your own). The folder itself can't be changed — librespot reads folders but can't write them.")
+                                : I18n.t("Audiobooks from saved shows are hidden: librespot can't play them.")
                             type: "bodySmall"
                             color: Theme.fgSurfaceVariant
                             wrapMode: Text.WordWrap
@@ -467,10 +461,10 @@ Item {
                     Layout.preferredHeight: 36
                     spacing: 16
                     readonly property string sort: Settings.librarySort
-                    Head { Layout.fillWidth: true; Layout.preferredWidth: 3; text: "Название" + (active ? "  ↓" : ""); active: parent.sort === "alpha" }
-                    Head { Layout.fillWidth: true; Layout.preferredWidth: 1.4; text: "Автор" + (active ? "  ↓" : ""); active: parent.sort === "author" }
-                    Head { visible: list.width - 40 >= 640; Layout.preferredWidth: 120; text: "Добавлено" + (active ? "  ↓" : ""); active: parent.sort === "added" }
-                    Head { visible: list.width - 40 >= 860; Layout.preferredWidth: 120; text: "Слушали" + (active ? "  ↓" : ""); active: parent.sort === "recent" }
+                    Head { Layout.fillWidth: true; Layout.preferredWidth: 3; text: I18n.t("Title") + (active ? "  ↓" : ""); active: parent.sort === "alpha" }
+                    Head { Layout.fillWidth: true; Layout.preferredWidth: 1.4; text: I18n.t("Creator") + (active ? "  ↓" : ""); active: parent.sort === "author" }
+                    Head { visible: list.width - 40 >= 640; Layout.preferredWidth: 120; text: I18n.t("Added") + (active ? "  ↓" : ""); active: parent.sort === "added" }
+                    Head { visible: list.width - 40 >= 860; Layout.preferredWidth: 120; text: I18n.t("Last played") + (active ? "  ↓" : ""); active: parent.sort === "recent" }
                     Item { Layout.preferredWidth: 32 }
                 }
                 Rectangle {
@@ -615,17 +609,17 @@ Item {
         width: Math.min(parent.width - 64, 420)
         visible: page.signedIn && page.model !== null && page.model.loading !== true && page.entries.length === 0 && !page.showLiked
         readonly property var texts: page.query.trim() !== "" || page.owner !== "all"
-            ? ["search_off", "Ничего не нашлось", page.query.trim() !== "" ? "Попробуйте другой запрос" : "В этом разделе пока пусто"]
+            ? ["search_off", I18n.t("Nothing found"), page.query.trim() !== "" ? I18n.t("Try a different search") : I18n.t("This section is empty")]
             : ({
-                playlists: ["queue_music", page.inFolder ? "Папка пуста" : "Нет плейлистов", "Созданные и сохранённые плейлисты появятся здесь."],
-                albums: ["album", "Нет сохранённых альбомов", "Сохранённые альбомы появятся здесь."],
-                artists: ["person", "Нет отслеживаемых исполнителей", "Отслеживаемые исполнители появятся здесь."],
-                shows: ["podcasts", "Подкастов пока нет", "Подкасты, на которые вы подписаны, появятся здесь."]
+                playlists: ["queue_music", page.inFolder ? I18n.t("Folder is empty") : I18n.t("No playlists"), I18n.t("Playlists you create or save will appear here.")],
+                albums: ["album", I18n.t("No saved albums"), I18n.t("Saved albums will appear here.")],
+                artists: ["person", I18n.t("No followed artists"), I18n.t("Artists you follow will appear here.")],
+                shows: ["podcasts", I18n.t("No podcasts yet"), I18n.t("Podcasts you follow will appear here.")]
             })[page.kind]
         icon: texts[0]
         title: texts[1]
         text: texts[2]
-        actionText: page.kind === "albums" && page.query.trim() === "" ? "Найти альбомы" : ""
+        actionText: page.kind === "albums" && page.query.trim() === "" ? I18n.t("Find albums") : ""
         actionIcon: "search"
         onAction: page.router.reset("search")
     }
@@ -634,9 +628,9 @@ Item {
         width: Math.min(parent.width - 64, 420)
         visible: !page.signedIn
         icon: "library_music"
-        title: "Войдите, чтобы увидеть библиотеку"
-        text: "Плейлисты, альбомы, исполнители и подкасты подтянутся из вашего аккаунта Spotify"
-        actionText: "Войти"
+        title: I18n.t("Sign in to see your library")
+        text: I18n.t("Playlists, albums, artists and podcasts will load from your Spotify account")
+        actionText: I18n.t("Sign in")
         actionIcon: "login"
         onAction: page.router.reset("account")
     }

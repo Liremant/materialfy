@@ -1,21 +1,9 @@
-//! Подписи по-русски и разница списков для ListChange.
+//! Подписи (mf_i18n) и разница списков для ListChange.
 use md3_model::ListChange;
 
-/// 1 трек, 2 трека, 5 треков.
-pub fn plural(count: i64, one: &str, few: &str, many: &str) -> String {
-    let n = count.unsigned_abs();
-    let word = if n % 10 == 1 && n % 100 != 11 {
-        one
-    } else if (2..=4).contains(&(n % 10)) && !(12..=14).contains(&(n % 100)) {
-        few
-    } else {
-        many
-    };
-    format!("{count} {word}")
-}
-
+/// «1 track» / «5 tracks» (ru: 1 трек, 2 трека, 5 треков).
 pub fn tracks(count: i64) -> String {
-    plural(count, "трек", "трека", "треков")
+    mf_i18n::n(count, "{0} track", "{0} tracks")
 }
 
 /// Как изменить `old`, чтобы получить `new`, не теряя прокрутку: дописывание, одна вставка, одно удаление
@@ -62,12 +50,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn russian_plurals() {
-        assert_eq!(tracks(1), "1 трек");
-        assert_eq!(tracks(3), "3 трека");
-        assert_eq!(tracks(11), "11 треков");
-        assert_eq!(tracks(22), "22 трека");
-        assert_eq!(tracks(25), "25 треков");
+    fn track_counts() {
+        assert_eq!(tracks(1), "1 track");
+        assert_eq!(tracks(3), "3 tracks");
+        assert_eq!(tracks(0), "0 tracks");
     }
 
     #[test]

@@ -4,24 +4,17 @@ import Materialfy.Core
 import ".."
 
 TrackListPage {
-    title: "Любимые треки"
-    overline: "КОЛЛЕКЦИЯ"
+    title: I18n.t("Liked Songs")
+    overline: I18n.t("COLLECTION")
     heroIcon: "favorite"
     heroShape: "clover4"
-    subtitle: Auth.state !== "signedIn" ? "Треки, которые вы отметили"
-            : Library.liked.loading && Library.liked.count === 0 ? "Загружаем…"
-            : Library.liked.count + " " + plural(Library.liked.count, "трек", "трека", "треков")
+    subtitle: Auth.state !== "signedIn" ? I18n.t("Tracks you’ve liked")
+            : Library.liked.loading && Library.liked.count === 0 ? I18n.t("Loading…")
+            : I18n.n(Library.liked.count, "{0} track", "{0} tracks")
     model: Auth.state === "signedIn" ? Library.liked : null
     emptyIcon: "favorite"
-    emptyTitle: "Пока пусто"
-    emptyText: "Отмечайте треки сердечком — они появятся здесь"
-
-    function plural(n, one, few, many) {
-        const m10 = n % 10, m100 = n % 100
-        if (m10 === 1 && m100 !== 11) return one
-        if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few
-        return many
-    }
+    emptyTitle: I18n.t("Nothing here yet")
+    emptyText: I18n.t("Tap the heart on tracks to see them here")
 
     // Не вошли — приглашение войти
     EmptyState {
@@ -30,9 +23,9 @@ TrackListPage {
         visible: Auth.state !== "signedIn"
         icon: "favorite"
         shape: "clover4"
-        title: "Войдите, чтобы увидеть любимые треки"
-        text: "Сохранённые треки подтянутся из вашего аккаунта Spotify"
-        actionText: "Войти"
+        title: I18n.t("Sign in to see your Liked Songs")
+        text: I18n.t("Your saved tracks will sync from your Spotify account")
+        actionText: I18n.t("Sign in")
         actionIcon: "login"
         onAction: parent.router.reset("account")
     }

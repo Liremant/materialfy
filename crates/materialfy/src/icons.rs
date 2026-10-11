@@ -44,11 +44,11 @@ fn codepoints() -> &'static HashMap<String, u32> {
         match std::fs::read_to_string(&path).map(|text| serde_json::from_str(&text)) {
             Ok(Ok(map)) => map,
             Ok(Err(e)) => {
-                eprintln!("не удалось разобрать {}: {e}", path.display());
+                eprintln!("could not parse {}: {e}", path.display());
                 HashMap::new()
             }
             Err(e) => {
-                eprintln!("не удалось прочитать {}: {e}", path.display());
+                eprintln!("could not read {}: {e}", path.display());
                 HashMap::new()
             }
         }
@@ -60,7 +60,7 @@ fn glyph_text(name: &str) -> String {
         Some(c) => c.to_string(),
         None => {
             if !name.is_empty() {
-                eprintln!("иконки «{name}» нет в урезанном шрифте — запустите tools/subset_fonts.py");
+                eprintln!("icon \"{name}\" is missing from the subset font — run tools/subset_fonts.py");
             }
             String::new()
         }

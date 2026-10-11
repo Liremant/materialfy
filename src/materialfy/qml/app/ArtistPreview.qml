@@ -74,11 +74,7 @@ Item {
                             const n = root.info.followers ?? 0
                             if (!(n > 0))
                                 return ""
-                            const m10 = n % 10, m100 = n % 100
-                            const word = n >= 1e4 || (m10 >= 5 || m10 === 0 || (m100 >= 11 && m100 <= 14)) ? "подписчиков"
-                                       : m10 === 1 ? "подписчик" : "подписчика"
-                            return (n >= 1e6 ? (n / 1e6).toFixed(n >= 1e7 ? 0 : 1).replace(".", ",") + " млн"
-                                  : n >= 1e4 ? Math.round(n / 1e3) + " тыс." : String(n)) + " " + word
+                            return I18n.nCompact(n, "{0} follower", "{0} followers")
                         }
                         type: "bodyMedium"
                         color: Theme.fgSurfaceVariant
@@ -100,7 +96,7 @@ Item {
             RowLayout {
                 spacing: 8
                 Button {
-                    text: "Открыть"
+                    text: I18n.t("Open")
                     icon: "person"
                     style: "tonal"
                     onClicked: {
@@ -109,7 +105,7 @@ Item {
                     }
                 }
                 Button {
-                    text: "Радио"
+                    text: I18n.t("Radio")
                     icon: "radio"
                     enabled: !Radio.locked
                     onClicked: {

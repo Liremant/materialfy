@@ -204,10 +204,10 @@ pub fn build(sources: &SeedSources<'_>, hidden: &dyn Fn(&str) -> bool) -> Vec<Ra
     }
 
     vec![
-        recent.into_group(RECENT, "Недавние треки"),
-        artists.into_group(ARTISTS, "Артисты"),
-        collections.into_group(COLLECTIONS, "Альбомы и плейлисты"),
-        any.into_group(ANY, "Любой трек"),
+        recent.into_group(RECENT, &mf_i18n::t("Recent tracks")),
+        artists.into_group(ARTISTS, &mf_i18n::t("Your artists")),
+        collections.into_group(COLLECTIONS, &mf_i18n::t("Albums and playlists")),
+        any.into_group(ANY, &mf_i18n::t("Any track")),
     ]
 }
 
@@ -226,9 +226,9 @@ pub fn find<'a>(groups: &'a [RadioSeedGroup], uri: &str) -> Option<&'a RadioSeed
     groups.iter().flat_map(|g| g.items.iter()).find(|s| s.uri == uri)
 }
 
-/// «Радио «…»».
+/// «Радио «…»» (Radio “…”).
 pub fn station_title(label: &str) -> String {
-    if label.is_empty() { "Радио".to_owned() } else { format!("Радио «{label}»") }
+    if label.is_empty() { mf_i18n::t("Radio") } else { mf_i18n::tf("Radio “{0}”", &[&label]) }
 }
 
 #[cfg(test)]
@@ -344,7 +344,7 @@ mod tests {
 
     #[test]
     fn titles() {
-        assert_eq!(station_title("Песня"), "Радио «Песня»");
-        assert_eq!(station_title(""), "Радио");
+        assert_eq!(station_title("Song"), "Radio “Song”");
+        assert_eq!(station_title(""), "Radio");
     }
 }

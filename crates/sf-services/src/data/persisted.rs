@@ -64,7 +64,7 @@ fn load(path: &Path) -> Found {
 fn save(path: &Path, found: &Found) {
     let result = serde_json::to_vec_pretty(found).map_err(std::io::Error::other).and_then(|bytes| fsio::write_atomic(path, &bytes));
     if let Err(error) = result {
-        tracing::debug!("хэши pathfinder не сохранились: {error}");
+        tracing::debug!("pathfinder hashes not saved: {error}");
     }
 }
 
@@ -105,7 +105,7 @@ pub async fn query(
     {
         return Ok(body);
     }
-    Err(anyhow!("{operation}: хэши сохранённого запроса отозваны (PersistedQueryNotFound)"))
+    Err(anyhow!("{operation}: persisted query hashes retired (PersistedQueryNotFound)"))
 }
 
 /// Один запрос; None — хэш отозван.
@@ -171,12 +171,12 @@ async fn discover_now(client: &reqwest::Client, operation: &str) -> Option<Strin
     let read = match read_bundle(client, operation).await {
         Ok(read) => read,
         Err(error) => {
-            tracing::debug!("бандл веб-плеера не прочитался: {error:#}");
+            tracing::debug!("web player bundle not read: {error:#}");
             return None;
         }
     };
     let hash = read.get(operation).cloned();
-    tracing::debug!("бандл веб-плеера: {} операций, {operation}: {:?}", read.len(), hash.as_deref().map(|h| &h[..8]));
+    tracing::debug!("web player bundle: {} operations, {operation}: {:?}", read.len(), hash.as_deref().map(|h| &h[..8]));
     let found = {
         let mut book = lock(&BOOK);
         let found = book.found.get_or_insert_with(Found::default);
@@ -204,7 +204,7 @@ async fn fetch(client: &reqwest::Client, url: &str) -> anyhow::Result<String> {
 async fn read_bundle(client: &reqwest::Client, wanted: &str) -> anyhow::Result<BTreeMap<String, String>> {
     let page = fetch(client, WEB_PLAYER).await?;
     let scripts = main_scripts(&page);
-    anyhow::ensure!(!scripts.is_empty(), "на open.spotify.com нет web-player.*.js");
+    anyhow::ensure!(!scripts.is_empty(), "no web-player.*.js on open.spotify.com");
     let mut operations = BTreeMap::new();
     let mut chunks = Vec::new();
     for script in &scripts {
@@ -220,7 +220,7 @@ async fn read_bundle(client: &reqwest::Client, wanted: &str) -> anyhow::Result<B
         }
         match fetch(client, url).await {
             Ok(js) => operations.extend(triples(&js)),
-            Err(error) => tracing::debug!("чанк веб-плеера: {error:#}"),
+            Err(error) => tracing::debug!("web player chunk: {error:#}"),
         }
     }
     Ok(operations)

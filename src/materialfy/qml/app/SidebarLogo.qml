@@ -17,7 +17,7 @@ Item {
     // Наведение или фокус; стенды и снимки могут выставить вручную
     property bool highlighted: area.containsMouse || mark.activeFocus
     readonly property string actionIcon: expanded ? "left_panel_close" : "left_panel_open"
-    readonly property string actionText: expanded ? "Свернуть панель" : "Развернуть панель"
+    readonly property string actionText: expanded ? I18n.t("Collapse sidebar") : I18n.t("Expand sidebar")
     readonly property alias markItem: mark
 
     signal activated()

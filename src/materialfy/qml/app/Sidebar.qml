@@ -49,11 +49,11 @@ Item {
     readonly property real labelWidth: expandedWidth - 2 * margin - iconInset - 28 - 8 - 12
 
     readonly property var sections: [
-        { name: "home", icon: "home", text: "Главная" },
-        { name: "search", icon: "search", text: "Поиск" },
-        { name: "releases", icon: "new_releases", text: "Новинки" },
-        { name: "library", icon: "library_music", text: "Библиотека" },
-        { name: "liked", icon: "favorite", text: "Любимые треки" }
+        { name: "home", icon: "home", text: I18n.t("Home") },
+        { name: "search", icon: "search", text: I18n.t("Search") },
+        { name: "releases", icon: "new_releases", text: I18n.t("New releases") },
+        { name: "library", icon: "library_music", text: I18n.t("Library") },
+        { name: "liked", icon: "favorite", text: I18n.t("Liked Songs") }
     ]
 
     // Плейлисты и папки верхнего уровня rootlist (порядок Spotify; закреплённые — первыми, их ставит сервис)
@@ -226,7 +226,7 @@ Item {
                 id: sectionLabel
                 x: root.iconInset
                 anchors.verticalCenter: parent.verticalCenter
-                text: "Плейлисты"
+                text: I18n.t("Playlists")
                 type: "labelMedium"
                 color: Theme.fgSurfaceVariant
             }
@@ -255,7 +255,7 @@ Item {
             Layout.preferredWidth: root.labelWidth + 28 + 8
             Layout.leftMargin: root.iconInset
             Layout.topMargin: 4
-            text: "Войдите, чтобы увидеть свои плейлисты"
+            text: I18n.t("Sign in to see your playlists")
             type: "bodySmall"
             color: Theme.fgSurfaceVariant
             wrapMode: Text.WordWrap
@@ -314,7 +314,7 @@ Item {
             iconInset: root.iconInset
             labelWidth: root.labelWidth
             icon: "settings"
-            text: "Настройки"
+            text: I18n.t("Settings")
             selected: root.router.rootName === "settings"
             onClicked: root.go("settings")
         }
@@ -350,17 +350,17 @@ Item {
                 Behavior on opacity { NumberAnimation { duration: Theme.motion.effectsFast } }
                 Label {
                     width: parent.width
-                    text: root.signedIn ? (Auth.account.displayName ?? "") : "Войти"
+                    text: root.signedIn ? (Auth.account.displayName ?? "") : I18n.t("Sign in")
                     type: "titleSmall"
                     color: root.signedIn ? Theme.fgSurface : Theme.fgSecondaryContainer
                 }
                 Label {
                     width: parent.width
-                    text: root.signedIn ? (Auth.playbackState === "authorizing" ? "Ждём браузер…"
+                    text: root.signedIn ? (Auth.playbackState === "authorizing" ? I18n.t("Waiting for browser…")
                                           : Auth.premium ? "Premium" : "Spotify Free")
-                        : Auth.state === "awaitingBrowser" ? "Ждём браузер…"
-                        : Auth.state === "checking" || Auth.state === "connecting" ? "Входим…"
-                        : "Аккаунт Spotify"
+                        : Auth.state === "awaitingBrowser" ? I18n.t("Waiting for browser…")
+                        : Auth.state === "checking" || Auth.state === "connecting" ? I18n.t("Signing in…")
+                        : I18n.t("Spotify account")
                     type: "bodySmall"
                     color: Theme.fgSurfaceVariant
                 }

@@ -43,12 +43,12 @@ impl ProxyMode {
     }
 
     /// Подпись для интерфейса.
-    pub fn label(self) -> &'static str {
+    pub fn label(self) -> String {
         match self {
-            Self::Off => "Без прокси",
-            Self::System => "Системный",
-            Self::Http => "HTTP",
-            Self::Socks => "SOCKS5",
+            Self::Off => mf_i18n::t("No proxy"),
+            Self::System => mf_i18n::t("System proxy"),
+            Self::Http => "HTTP".to_owned(),
+            Self::Socks => "SOCKS5".to_owned(),
         }
     }
 }
@@ -137,17 +137,17 @@ impl ProxyConfig {
 
     /// Выбранный вручную прокси, через который librespot пойти не может (SOCKS5, HTTP с логином):
     /// движок тогда не запускают, чтобы он не ушёл к Spotify напрямую. Текст — для интерфейса.
-    pub fn engine_unsupported(&self) -> Option<&'static str> {
+    pub fn engine_unsupported(&self) -> Option<String> {
         match self {
-            Self::Socks(_) => Some(ENGINE_NEEDS_PLAIN_HTTP),
-            Self::Http(manual) if manual.librespot_url().is_none() => Some(ENGINE_NEEDS_PLAIN_HTTP),
+            Self::Socks(_) => Some(mf_i18n::t(ENGINE_NEEDS_PLAIN_HTTP)),
+            Self::Http(manual) if manual.librespot_url().is_none() => Some(mf_i18n::t(ENGINE_NEEDS_PLAIN_HTTP)),
             _ => None,
         }
     }
 }
 
 const ENGINE_NEEDS_PLAIN_HTTP: &str =
-    "Воспроизведение на этом ПК работает только через HTTP-прокси без пароля — иначе звук шёл бы мимо прокси";
+    "Playback on this computer only works through an HTTP proxy without a password — otherwise audio would bypass the proxy";
 
 /// HTTP-прокси, который режим System отдал бы движку. Системный SOCKS движок не умеет.
 fn system_http_proxy() -> Option<reqwest::Url> {
@@ -174,7 +174,7 @@ fn http_proxy_from_uri(uri: &http::Uri) -> Option<reqwest::Url> {
 fn validate_host(host: &str) -> Result<String, String> {
     let host = host.trim();
     if host.is_empty() {
-        return Err("укажите хост прокси".into());
+        return Err(mf_i18n::t("Enter the proxy host"));
     }
     let host = host
         .split_once("://")
@@ -182,12 +182,12 @@ fn validate_host(host: &str) -> Result<String, String> {
         .trim_start_matches('[')
         .trim_end_matches(']');
     if host.is_empty() {
-        return Err("укажите хост прокси".into());
+        return Err(mf_i18n::t("Enter the proxy host"));
     }
     if host.parse::<std::net::IpAddr>().is_ok() || is_hostname(host) {
         return Ok(host.to_string());
     }
-    Err("хост прокси — имя сервера или IP-адрес".into())
+    Err(mf_i18n::t("The proxy host must be a server name or IP address"))
 }
 
 fn is_hostname(host: &str) -> bool {
@@ -205,14 +205,14 @@ fn is_hostname(host: &str) -> bool {
 fn validate_port(port: &str) -> Result<u16, String> {
     let port = port.trim();
     if port.is_empty() {
-        return Err("укажите порт прокси".into());
+        return Err(mf_i18n::t("Enter the proxy port"));
     }
     if !port.bytes().all(|byte| byte.is_ascii_digit()) {
-        return Err("порт прокси — число от 1 до 65535".into());
+        return Err(mf_i18n::t("The proxy port must be a number from 1 to 65535"));
     }
     match port.parse::<u16>() {
         Ok(port) if port > 0 => Ok(port),
-        _ => Err("порт прокси — число от 1 до 65535".into()),
+        _ => Err(mf_i18n::t("The proxy port must be a number from 1 to 65535")),
     }
 }
 
@@ -227,7 +227,7 @@ impl ManualProxy {
             ManualKind::Socks => "socks5h",
         };
         let endpoint = reqwest::Url::parse(&format!("{scheme}://{host}:{port}"))
-            .map_err(|_| "неверный адрес прокси".to_string())?;
+            .map_err(|_| mf_i18n::t("Invalid proxy address"))?;
         Ok(Self { endpoint, username: username.to_string(), password: password.to_string() })
     }
 
@@ -365,7 +365,7 @@ mod tests {
         assert_eq!(ProxyConfig::Off.engine_unsupported(), None);
         let ProxyConfig::Socks(from_parts) = ProxyConfig::from_parts(ProxyMode::Socks, "127.0.0.1", "1080", "", "").unwrap()
         else {
-            panic!("ожидался SOCKS");
+            panic!("expected SOCKS");
         };
         assert_eq!(from_parts.redacted().scheme(), "socks5h");
     }
@@ -415,10 +415,10 @@ mod tests {
 
     #[test]
     fn proxy_parse_rejects_a_missing_host_or_port() {
-        assert!(manual(ManualKind::Http, "", "8080", "", "").unwrap_err().contains("хост"));
-        assert!(manual(ManualKind::Http, "127.0.0.1", "", "", "").unwrap_err().contains("порт"));
-        assert!(manual(ManualKind::Http, "127.0.0.1", "abc", "", "").unwrap_err().contains("число"));
-        assert!(manual(ManualKind::Http, "not a host", "1080", "", "").unwrap_err().contains("имя сервера"));
+        assert!(manual(ManualKind::Http, "", "8080", "", "").unwrap_err().contains("host"));
+        assert!(manual(ManualKind::Http, "127.0.0.1", "", "", "").unwrap_err().contains("port"));
+        assert!(manual(ManualKind::Http, "127.0.0.1", "abc", "", "").unwrap_err().contains("number"));
+        assert!(manual(ManualKind::Http, "not a host", "1080", "", "").unwrap_err().contains("server name"));
         assert!(manual(ManualKind::Http, "127.0.0.1", "0", "", "").unwrap_err().contains("65535"));
         assert!(manual(ManualKind::Http, "127.0.0.1", "65536", "", "").unwrap_err().contains("65535"));
         manual(ManualKind::Http, "localhost", "8080", "", "").unwrap();
@@ -434,7 +434,7 @@ mod tests {
         // http://host:80 — Url прячет порт, но пароль всё равно сохраняется и восстанавливается
         let http = manual(ManualKind::Http, "proxy.example", "80", "user", "secret").unwrap();
         assert_eq!(http.port(), 80);
-        let record = http.password_record().expect("запись пароля");
+        let record = http.password_record().expect("password record");
         assert_eq!(record.port, 80);
         let mut restored = manual(ManualKind::Http, "proxy.example", "80", "user", "").unwrap();
         assert!(restored.restore_password(&record));

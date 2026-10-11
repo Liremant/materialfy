@@ -70,12 +70,12 @@ Item {
             anchors.margins: 24
             spacing: 16
 
-            Label { text: "Новый плейлист"; type: "headlineSmall" }
+            Label { text: I18n.t("New playlist"); type: "headlineSmall" }
 
             SearchField {
                 id: field
                 Layout.fillWidth: true
-                placeholder: "Название"
+                placeholder: I18n.t("Name")
                 leadingIcon: "queue_music"
                 onAccepted: root.submit()
                 Keys.onEscapePressed: root.close()
@@ -84,9 +84,9 @@ Item {
             RowLayout {
                 Layout.alignment: Qt.AlignRight
                 spacing: 8
-                Button { text: "Отмена"; style: "text"; onClicked: root.close() }
+                Button { text: I18n.t("Cancel"); style: "text"; onClicked: root.close() }
                 Button {
-                    text: "Создать"
+                    text: I18n.t("Create")
                     enabled: field.text.trim() !== ""
                     onClicked: root.submit()
                 }

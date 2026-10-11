@@ -29,28 +29,28 @@ Item {
 
     readonly property string title: {
         const n = _d.name ?? ""
-        return (setup || (_here && disabled)) && n !== "" ? n + " (этот компьютер)" : n
+        return (setup || (_here && disabled)) && n !== "" ? I18n.t("{0} (this computer)", n) : n
     }
     readonly property string subtitle: {
         if (busy)
-            return "Переносим воспроизведение…"
+            return I18n.t("Transferring playback…")
         if (_setupBusy)
-            return "Настраиваем…"
+            return I18n.t("Setting up…")
         if (setup)
-            return "Настроить воспроизведение здесь"
+            return I18n.t("Set up playback here")
         if (disabled && _here)
-            return "Нужен Premium"
+            return I18n.t("Premium required")
         if (_receiver)
-            return "В сети · нажмите, чтобы подключить"
+            return I18n.t("Online · tap to connect")
         if (_here)
-            return _d.isActive && variant === "settings" ? "Этот компьютер · играет" : "Этот компьютер"
+            return _d.isActive && variant === "settings" ? I18n.t("This computer · playing") : I18n.t("This computer")
         const kind = info.label
         if (_d.isRestricted || _d.supportsVolume === false)
-            return kind + " · громкость только на устройстве"
-        return _d.isActive && variant === "settings" ? kind + " · играет" : kind
+            return I18n.t("{0} · volume on device only", kind)
+        return _d.isActive && variant === "settings" ? I18n.t("{0} · playing", kind) : kind
     }
-    readonly property string actionText: setup ? "" : _receiver ? "Подключить" : _here ? "Слушать здесь"
-                                         : _d.isActive ? "" : "Перенести"
+    readonly property string actionText: setup ? "" : _receiver ? I18n.t("Connect") : _here ? I18n.t("Play here")
+                                         : _d.isActive ? "" : I18n.t("Transfer")
 
     implicitWidth: 320
     implicitHeight: Math.max(56, content.implicitHeight + 12)

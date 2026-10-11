@@ -30,7 +30,7 @@ impl SessionData {
             Ok(data) if data.version == Self::VERSION => Some(data),
             Ok(_) => None,
             Err(error) => {
-                tracing::warn!("сессия плеера не прочитана: {error:#}");
+                tracing::warn!("player session not read: {error:#}");
                 None
             }
         }

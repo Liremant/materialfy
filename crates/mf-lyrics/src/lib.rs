@@ -250,7 +250,7 @@ impl LyricsFetcher {
         source: impl Fn() -> Result<reqwest::Client, String> + Send + Sync + 'static,
     ) -> Self {
         if let Err(e) = std::fs::create_dir_all(&cache_dir) {
-            tracing::warn!("lyrics: каталог кэша {} не создан: {e}", cache_dir.display());
+            tracing::warn!("lyrics: cache directory {} not created: {e}", cache_dir.display());
         }
         Self { cache_dir, http: std::sync::Arc::new(source) }
     }
@@ -302,7 +302,7 @@ impl LyricsFetcher {
         if (result.ok || result.details.is_empty())
             && let Err(e) = self.write_cache(&query.track_id, &result).await
         {
-            tracing::warn!("lyrics: кэш {} не записан: {e}", query.track_id);
+            tracing::warn!("lyrics: cache {} not written: {e}", query.track_id);
         }
         result
     }

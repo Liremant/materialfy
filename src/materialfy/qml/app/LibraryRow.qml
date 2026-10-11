@@ -18,14 +18,13 @@ Item {
 
     implicitHeight: 64
 
-    readonly property var _months: ["янв.", "февр.", "мар.", "апр.", "мая", "июн.", "июл.", "авг.", "сент.", "окт.", "нояб.", "дек."]
     function date(iso) {
         if (!iso)
             return "—"
         const d = new Date(iso)
         if (isNaN(d.getTime()))
             return "—"
-        return d.getDate() + " " + _months[d.getMonth()] + " " + d.getFullYear()
+        return I18n.date(d)
     }
     function ago(iso) {
         if (!iso)
@@ -33,17 +32,7 @@ Item {
         const d = new Date(iso)
         if (isNaN(d.getTime()))
             return "—"
-        const min = (Date.now() - d.getTime()) / 60000
-        if (min < 10) return "Сейчас"
-        if (min < 60) return Math.round(min) + " мин назад"
-        const h = min / 60
-        if (h < 24) return Math.round(h) + " ч назад"
-        const days = Math.floor(h / 24)
-        if (days === 1) return "Вчера"
-        if (days < 7) return days + " " + (days < 5 ? "дня" : "дней") + " назад"
-        if (days < 14) return "На прошлой неделе"
-        if (days < 31) return Math.floor(days / 7) + " недели назад"
-        return date(iso)
+        return I18n.relative(d)
     }
 
     RowLayout {
@@ -107,7 +96,7 @@ Item {
                     Label {
                         Layout.fillWidth: implicitWidth > width
                         Layout.maximumWidth: implicitWidth
-                        text: root.kind === "liked" ? "Любимые треки" : (root.entry.title ?? "")
+                        text: root.kind === "liked" ? I18n.t("Liked Songs") : (root.entry.title ?? "")
                         type: "bodyLarge"
                         weight: 500
                     }
@@ -127,7 +116,7 @@ Item {
         Label {
             Layout.fillWidth: true
             Layout.preferredWidth: 1.4
-            text: root.kind === "liked" ? "Вы" : (root.entry.owner ?? "")
+            text: root.kind === "liked" ? I18n.t("You") : (root.entry.owner ?? "")
             type: "bodyMedium"
             color: Theme.fgSurfaceVariant
         }

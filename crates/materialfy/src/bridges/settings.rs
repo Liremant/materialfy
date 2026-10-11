@@ -38,6 +38,8 @@ pub mod qobject {
         #[qproperty(bool, cover_pulse, cxx_name = "coverPulse", READ, WRITE = set_cover_pulse, NOTIFY = cover_pulse_changed)]
         #[qproperty(bool, calm_when_inactive, cxx_name = "calmWhenInactive", READ, WRITE = set_calm_when_inactive, NOTIFY = calm_when_inactive_changed)]
         #[qproperty(QString, animations, READ, WRITE = set_animations, NOTIFY = animations_changed)]
+        /// "en" | "ru"; the applied language and the dictionary — Translations (Md3/I18n.qml)
+        #[qproperty(QString, language, READ, WRITE = set_language, NOTIFY = language_changed)]
         #[qproperty(bool, right_panel_open, cxx_name = "rightPanelOpen", READ, WRITE = set_right_panel_open, NOTIFY = right_panel_open_changed)]
         #[qproperty(QString, right_panel_tab, cxx_name = "rightPanelTab", READ, WRITE = set_right_panel_tab, NOTIFY = right_panel_tab_changed)]
         #[qproperty(bool, sidebar_collapsed, cxx_name = "sidebarCollapsed", READ, WRITE = set_sidebar_collapsed, NOTIFY = sidebar_collapsed_changed)]
@@ -96,6 +98,7 @@ pub mod qobject {
         fn set_cover_pulse(self: Pin<&mut Settings>, value: bool);
         fn set_calm_when_inactive(self: Pin<&mut Settings>, value: bool);
         fn set_animations(self: Pin<&mut Settings>, value: QString);
+        fn set_language(self: Pin<&mut Settings>, value: QString);
         fn set_right_panel_open(self: Pin<&mut Settings>, value: bool);
         fn set_right_panel_tab(self: Pin<&mut Settings>, value: QString);
         fn set_sidebar_collapsed(self: Pin<&mut Settings>, value: bool);
@@ -165,6 +168,9 @@ pub mod qobject {
         #[qsignal]
         #[cxx_name = "animationsChanged"]
         fn animations_changed(self: Pin<&mut Settings>);
+        #[qsignal]
+        #[cxx_name = "languageChanged"]
+        fn language_changed(self: Pin<&mut Settings>);
         #[qsignal]
         #[cxx_name = "rightPanelOpenChanged"]
         fn right_panel_open_changed(self: Pin<&mut Settings>);
@@ -446,6 +452,7 @@ settings! {
     cover_pulse: bool = CoverPulse, set_cover_pulse, cover_pulse_changed;
     calm_when_inactive: bool = CalmWhenInactive, set_calm_when_inactive, calm_when_inactive_changed;
     animations: QString = Animations, set_animations, animations_changed;
+    language: QString = Language, set_language, language_changed;
     right_panel_open: bool = RightPanelOpen, set_right_panel_open, right_panel_open_changed;
     right_panel_tab: QString = RightPanelTab, set_right_panel_tab, right_panel_tab_changed;
     sidebar_collapsed: bool = SidebarCollapsed, set_sidebar_collapsed, sidebar_collapsed_changed;
@@ -523,7 +530,7 @@ impl qobject::Settings {
         ctx().rt.spawn_blocking(move || {
             // занятые файлы (аудио играющего трека) пропускаются — остальное уже удалено, пользователю не мешаем
             if let Err(error) = mf_platform::dirs::clear_cache() {
-                tracing::info!("кэш очищен не полностью: {error}");
+                tracing::info!("cache only partially cleared: {error}");
             }
             let usage = mf_platform::dirs::cache_usage();
             let _ = thread.queue(move |settings| settings.set_cache_usage(usage));
@@ -533,10 +540,10 @@ impl qobject::Settings {
     fn open_cache_folder(&self) {
         let dir = mf_platform::dirs::cache_dir();
         if let Err(error) = std::fs::create_dir_all(&dir) {
-            tracing::warn!("каталог кэша {}: {error}", dir.display());
+            tracing::warn!("cache directory {}: {error}", dir.display());
         }
         if !crate::qt::open_local_folder(&dir) {
-            tracing::warn!("не удалось открыть {}", dir.display());
+            tracing::warn!("could not open {}", dir.display());
         }
     }
 

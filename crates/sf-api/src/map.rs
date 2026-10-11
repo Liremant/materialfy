@@ -383,7 +383,7 @@ mod tests {
         let single: models::Album =
             serde_json::from_str(r#"{"id":"s","album_type":"single","total_tracks":1,"release_date":"x"}"#).unwrap();
         let item = album_item(&single);
-        assert_eq!((item.kind.as_str(), item.year), ("Сингл", 0));
+        assert_eq!((item.kind.as_str(), item.year), ("Single", 0));
         assert_eq!(item.uri, "spotify:album:s");
     }
 

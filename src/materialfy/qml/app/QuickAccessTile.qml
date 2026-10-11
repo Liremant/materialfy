@@ -68,7 +68,7 @@ Item {
         }
         Label {
             Layout.fillWidth: true
-            text: root.liked ? "Любимые треки" : (root.entry.title ?? "")
+            text: root.liked ? I18n.t("Liked Songs") : (root.entry.title ?? "")
             type: "titleSmall"
             fade: true
         }

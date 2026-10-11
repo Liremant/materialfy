@@ -7,6 +7,9 @@ use crate::client::{ApiClient, ApiError, NetActivity, TokenProvider};
 use crate::limits::{LimitKind, Limits, WebApiLimits};
 use crate::models::Playlist;
 
+/// Общий и личный Web API вошли в разные аккаунты (ключ перевода; sf-services сверяет по нему код ошибки).
+pub const ACCOUNT_MISMATCH: &str = "The shared and personal Spotify apps are signed in to different accounts";
+
 pub use md3_model::{AccountId, PlaylistId};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -232,7 +235,7 @@ impl ApiGateway {
         {
             return Err(ApiError::Status {
                 status: 403,
-                message: "Общее и личное приложение Spotify вошли в разные аккаунты".into(),
+                message: mf_i18n::t(ACCOUNT_MISMATCH),
             });
         }
         self.session(source)

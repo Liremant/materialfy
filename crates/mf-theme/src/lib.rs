@@ -231,7 +231,7 @@ pub struct Scheme {
 
 #[derive(Debug, thiserror::Error)]
 pub enum ThemeError {
-    #[error("не удалось открыть картинку: {0}")]
+    #[error("could not open image: {0}")]
     Image(String),
 }
 

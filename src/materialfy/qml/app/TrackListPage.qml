@@ -18,7 +18,7 @@ Item {
     property bool showHeader: true
     property var model: null                  // DictListModel треков
     property string emptyIcon: "music_note"
-    property string emptyTitle: "Здесь пусто"
+    property string emptyTitle: I18n.t("Nothing here")
     property string emptyText: ""
     property Component headerExtra: null       // доп. содержимое шапки (кнопки и т. п.)
     property Component heroMeta: null          // строка под подзаголовком (владелец, бейджи)
@@ -114,7 +114,7 @@ Item {
 
     function _duration(ms) {
         const m = Math.round(ms / 60000)
-        return m >= 60 ? Math.floor(m / 60) + " ч " + (m % 60) + " мин" : m + " мин"
+        return m >= 60 ? I18n.t("{0} h {1} min", Math.floor(m / 60), m % 60) : I18n.t("{0} min", m)
     }
 
     // Медленно плывущие фигуры за шапкой. Слой вне ListView (иначе его clip режет фигуры по краю
@@ -255,7 +255,7 @@ Item {
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.Wrap
                 visible: filter.active && filter.count === 0 && !(page.model && page.model.loading)
-                text: "По запросу «" + page.searchText.trim() + "» в этом списке ничего нет"
+                text: I18n.t("Nothing in this list matches “{0}”", page.searchText.trim())
                 type: "bodyLarge"
                 color: Theme.fgSurfaceVariant
             }
@@ -381,7 +381,7 @@ Item {
                     visible: page.model !== null && (page.model.count > 0 || page.headerExtra !== null)
                     Button {
                         visible: page.showPlayButtons
-                        text: "Слушать"
+                        text: I18n.t("Play")
                         icon: "play_arrow"
                         size: "m"
                         enabled: page.shownModel !== null && page.shownModel.count > 0
@@ -389,7 +389,7 @@ Item {
                     }
                     Button {
                         visible: page.showPlayButtons
-                        text: "Перемешать"
+                        text: I18n.t("Shuffle play")
                         icon: "shuffle"
                         style: "tonal"
                         size: "m"
@@ -427,14 +427,14 @@ Item {
                         id: searchField
                         Layout.fillWidth: true
                         Layout.maximumWidth: 420
-                        placeholder: "Найти в списке"
+                        placeholder: I18n.t("Find in list")
                         text: page.searchText
                         onTextChanged: page.searchText = text
                         Keys.onEscapePressed: page.closeSearch()
                     }
                     Label {
                         visible: filter.active
-                        text: filter.count + " из " + (page.model ? page.model.count : 0)
+                        text: I18n.t("{0} of {1}", filter.count, page.model ? page.model.count : 0)
                         type: "bodyMedium"
                         color: Theme.fgSurfaceVariant
                     }

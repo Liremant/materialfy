@@ -26,6 +26,9 @@ void app_set_quit_on_last_window_closed(bool value);
 void app_set_window_icon(const QString& path);
 // QFontDatabase::addApplicationFont; -1 — ошибка
 int app_add_font(const QString& path);
+// Qt's own strings (dialogs, context menus): qtbase_<code>.qm from translations/ next to the exe or Qt's
+// TranslationsPath; "en" removes the translator. Also sets the default QLocale.
+void app_set_qt_language(const QString& code);
 
 // Буфер обмена (Auth.copyToClipboard, Catalog.copyLink)
 void copy_to_clipboard(const QString& text);

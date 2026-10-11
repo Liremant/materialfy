@@ -9,7 +9,7 @@ Item {
     id: root
 
     property bool shown: Settings.engineRestartPending === true
-    property string text: "Новые настройки применятся после перезапуска воспроизведения, музыка прервётся на секунду"
+    property string text: I18n.t("New settings apply after playback restarts; the music will pause for a second")
     signal applied()
 
     readonly property bool _instant: Theme.reducedMotion === true
@@ -49,7 +49,7 @@ Item {
                 maximumLineCount: 3
             }
             Button {
-                text: "Применить"
+                text: I18n.t("Apply")
                 onClicked: {
                     Settings.applyEngineSettings()
                     root.applied()

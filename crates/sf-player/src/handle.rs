@@ -37,7 +37,8 @@ struct Inner {
     connect: Arc<ConnectBackend>,
 }
 
-const NOT_READY: &str = "воспроизведение на этом компьютере не включено";
+/// Английский ключ перевода; наружу — `mf_i18n::t(NOT_READY)`.
+const NOT_READY: &str = "Playback on this computer is off";
 
 impl PlayerHandle {
     /// Запустить актор на `rt`. Web API (опрос /me/player, удалённые команды, очередь) — через `api`.
@@ -142,12 +143,12 @@ impl PlayerHandle {
 
     /// Текст Spotify (color-lyrics) через сессию; Ok(None) — нет текста.
     pub async fn lyrics_json(&self, track_uri: &str) -> Result<Option<serde_json::Value>, String> {
-        let link = self.inner.host.engine().ok_or_else(|| NOT_READY.to_owned())?;
+        let link = self.inner.host.engine().ok_or_else(|| mf_i18n::t(NOT_READY))?;
         link.engine.lyrics_json(track_uri).await.map_err(|error| format!("{error:#}"))
     }
 
     pub async fn rootlist(&self) -> Result<Rootlist, String> {
-        let link = self.inner.host.engine().ok_or_else(|| NOT_READY.to_owned())?;
+        let link = self.inner.host.engine().ok_or_else(|| mf_i18n::t(NOT_READY))?;
         link.engine.rootlist().await.map_err(|error| format!("{error:#}"))
     }
 

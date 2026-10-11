@@ -1,0 +1,18 @@
+[package]
+name = "mf-i18n"
+description = "Materialfy localisation: English source strings, embedded Russian dictionary (i18n/ru/*.json)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+build = "build.rs"
+
+[dependencies]
+serde_json.workspace = true
+
+[build-dependencies]
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+serde.workspace = true

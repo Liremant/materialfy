@@ -67,7 +67,7 @@ Item {
             const i = m && m.count > 0 ? m.find("isThisComputer", true) : -1
             if (i >= 0)
                 return m.get(i)
-            return { id: Devices.thisDeviceId ?? "", name: Devices.thisDeviceName || "Этот компьютер", type: "computer",
+            return { id: Devices.thisDeviceId ?? "", name: Devices.thisDeviceName || I18n.t("This computer"), type: "computer",
                      isActive: false, isThisComputer: true, isRestricted: false, supportsVolume: true, volume: -1, source: "api" }
         }
         readonly property bool hereActive: hasActive && active.isThisComputer === true
@@ -98,7 +98,7 @@ Item {
             spacing: 8
             Label {
                 Layout.fillWidth: true
-                text: "Слушать на"
+                text: I18n.t("Play on")
                 type: "titleSmall"
             }
             Item {
@@ -154,7 +154,7 @@ Item {
             Label {
                 Layout.fillWidth: true
                 horizontalAlignment: Text.AlignHCenter
-                text: content.signedIn ? "Нет активных устройств" : "Войдите в аккаунт"
+                text: content.signedIn ? I18n.t("No active devices") : I18n.t("Sign in to your account")
                 type: "titleSmall"
             }
             Label {
@@ -163,8 +163,8 @@ Item {
                 Layout.rightMargin: 12
                 horizontalAlignment: Text.AlignHCenter
                 text: content.signedIn
-                      ? "Откройте Spotify на телефоне или колонке, и они появятся здесь. Или включите музыку на этом компьютере."
-                      : "Устройства Spotify Connect появятся здесь после входа."
+                      ? I18n.t("Open Spotify on a phone or speaker and it will show up here. Or start playing music on this computer.")
+                      : I18n.t("Spotify Connect devices will appear here after you sign in.")
                 type: "bodySmall"
                 color: Theme.fgSurfaceVariant
                 wrapMode: Text.WordWrap
@@ -178,7 +178,7 @@ Item {
             Layout.leftMargin: 12
             Layout.topMargin: 6
             Layout.bottomMargin: 4
-            text: "Другие устройства"
+            text: I18n.t("Other devices")
             type: "labelMedium"
             color: Theme.fgSurfaceVariant
         }
@@ -252,7 +252,7 @@ Item {
             Icon { Layout.alignment: Qt.AlignTop; name: "info"; size: 16; color: Theme.fgSurfaceVariant }
             Label {
                 Layout.fillWidth: true
-                text: "Колонки Google Cast появляются здесь, только когда их уже включило приложение Spotify"
+                text: I18n.t("Google Cast speakers only appear here once the Spotify app has already turned them on")
                 type: "bodySmall"
                 color: Theme.fgSurfaceVariant
                 wrapMode: Text.WordWrap

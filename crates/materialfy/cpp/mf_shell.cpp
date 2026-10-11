@@ -1,10 +1,13 @@
 #include "mf_shell.h"
 
 #include <QtCore/QCoreApplication>
+#include <QtCore/QLibraryInfo>
+#include <QtCore/QLocale>
 #include <QtCore/QMetaObject>
 #include <QtCore/QMutex>
 #include <QtCore/QPointer>
 #include <QtCore/QTimer>
+#include <QtCore/QTranslator>
 #include <QtCore/QUrl>
 #include <QtGui/QClipboard>
 #include <QtGui/QDesktopServices>
@@ -210,6 +213,35 @@ app_add_font(const QString& path)
 }
 
 void
+app_set_qt_language(const QString& code)
+{
+  static QTranslator* translator = nullptr;
+  if (translator) {
+    QCoreApplication::removeTranslator(translator);
+    delete translator;
+    translator = nullptr;
+  }
+  const bool english = code.isEmpty() || code == QLatin1String("en");
+  QLocale::setDefault(english ? QLocale(QLocale::English, QLocale::UnitedStates) : QLocale(code));
+  if (english)
+    return;
+  // windeployqt --translations <code> puts qtbase_<code>.qm into translations/ next to the exe;
+  // a development build finds it in the Qt installation.
+  const QString name = QStringLiteral("qtbase_") + code;
+  auto* t = new QTranslator();
+  const QStringList dirs{ QCoreApplication::applicationDirPath() + QStringLiteral("/translations"),
+                          QLibraryInfo::path(QLibraryInfo::TranslationsPath) };
+  for (const auto& dir : dirs) {
+    if (t->load(name, dir)) {
+      QCoreApplication::installTranslator(t);
+      translator = t;
+      return;
+    }
+  }
+  delete t;
+}
+
+void
 copy_to_clipboard(const QString& text)
 {
   // Windows: буфер бывает занят другим процессом (история буфера и т. п.) — OleSetClipboard
@@ -366,7 +398,7 @@ schedule_screenshot(QObject* window, const QString& path, int delay_ms)
   QPointer<QQuickWindow> target = qobject_cast<QQuickWindow*>(window);
   QTimer::singleShot(delay_ms, qApp, [target, path] {
     if (target && !target->grabWindow().save(path))
-      qWarning("не удалось сохранить снимок %s", qPrintable(path));
+      qWarning("could not save screenshot %s", qPrintable(path));
     QCoreApplication::quit();
   });
 }
@@ -380,30 +412,30 @@ prefer_fastest_screen()
   // QWindowSystemInterface::handlePrimaryScreenChanged (её зовут платформенные плагины).
   const auto screens = QGuiApplication::screens();
   if (screens.size() < 2)
-    return QStringLiteral("primary screen: один монитор");
+    return QStringLiteral("primary screen: single monitor");
   QScreen* primary = QGuiApplication::primaryScreen();
   QScreen* fastest = *std::max_element(
     screens.begin(), screens.end(), [](QScreen* a, QScreen* b) { return a->refreshRate() < b->refreshRate(); });
   if (fastest == primary || fastest->refreshRate() <= primary->refreshRate() + 0.5)
-    return QStringLiteral("primary screen: %1 уже самый быстрый").arg(primary->name());
+    return QStringLiteral("primary screen: %1 is already the fastest").arg(primary->name());
 
   using SetPrimary = void (*)(void*);
   auto set_primary = reinterpret_cast<SetPrimary>(
     dlsym(RTLD_DEFAULT, "_ZN22QWindowSystemInterface26handlePrimaryScreenChangedEP15QPlatformScreen"));
   if (!set_primary)
-    return QStringLiteral("primary screen: не удалось подключиться к Qt (нет handlePrimaryScreenChanged)");
+    return QStringLiteral("primary screen: could not hook into Qt (no handlePrimaryScreenChanged)");
   void* platform_screen = fastest->handle();
   if (!platform_screen)
-    return QStringLiteral("primary screen: у экрана нет платформенного объекта");
+    return QStringLiteral("primary screen: the screen has no platform object");
   const QString before =
-    QStringLiteral("%1 (%2 Гц)").arg(primary->name()).arg(qRound(primary->refreshRate()));
+    QStringLiteral("%1 (%2 Hz)").arg(primary->name()).arg(qRound(primary->refreshRate()));
   set_primary(platform_screen);
   QScreen* now = QGuiApplication::primaryScreen();
-  return QStringLiteral("primary screen: %1 → %2 (%3 Гц)")
+  return QStringLiteral("primary screen: %1 → %2 (%3 Hz)")
     .arg(before, now->name())
     .arg(qRound(now->refreshRate()));
 #else
-  return QStringLiteral("primary screen: переключение частоты не поддерживается на этой ОС");
+  return QStringLiteral("primary screen: refresh-rate switching is not supported on this OS");
 #endif
 }
 

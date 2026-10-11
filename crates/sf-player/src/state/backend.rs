@@ -166,7 +166,7 @@ async fn run(api: Arc<ApiGateway>, call: ApiCall) -> ApiReply {
 }
 
 fn out_of_order() -> ApiError {
-    ApiError::Decode("треки альбома пришли не по порядку, попробуйте ещё раз".into())
+    ApiError::Decode("album tracks arrived out of order, try again".into())
 }
 
 /// Все страницы альбома по порядку — целиком или ошибка (частичный альбом в очередь не попадает).

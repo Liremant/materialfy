@@ -46,7 +46,7 @@ pub use wave::{WaveService, WaveSnapshot};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ServiceError {
-    #[error("Войдите в аккаунт")]
+    #[error("{}", mf_i18n::t("Sign in to your account"))]
     NotSignedIn,
     #[error("{}", data::route::api_error_text(.0))]
     Api(#[from] sf_api::ApiError),
@@ -97,7 +97,7 @@ impl Services {
         // применённый прокси из настроек; пароль из хранилища подставит auth.start()
         let proxy = auth::settings_proxy(&settings, None);
         let http = sf_api::Http::from_proxy(&proxy).unwrap_or_else(|error| {
-            tracing::warn!("настройки прокси неверны: {error:#}");
+            tracing::warn!("invalid proxy settings: {error:#}");
             sf_api::Http::unavailable(error)
         });
         let api = Arc::new(ApiGateway::new(http.clone(), Arc::new(sf_api::NetActivity::default())));
@@ -107,7 +107,7 @@ impl Services {
             volume: settings.get_f64(SettingKey::Volume).clamp(0.0, 1.0),
             http: http.clone(),
         };
-        let player = PlayerHandle::start(rt, config, api.clone()).map_err(|e| anyhow::anyhow!("плеер: {e}"))?;
+        let player = PlayerHandle::start(rt, config, api.clone()).map_err(|e| anyhow::anyhow!("player: {e}"))?;
         let store = sf_auth::Store::with_runtime(mf_platform::dirs::state_dir(), rt.clone());
         let auth = AuthService::new(rt.clone(), settings.clone(), api.clone(), http.clone(), player.clone(), store);
         let history = HistoryService::new(rt.clone(), auth.clone(), player.clone());

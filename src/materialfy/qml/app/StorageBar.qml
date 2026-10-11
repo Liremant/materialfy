@@ -11,24 +11,17 @@ ColumnLayout {
     property real limit: 0
 
     readonly property var parts: [
-        { key: "audio", text: "Аудио", color: Theme.primary },
-        { key: "covers", text: "Обложки", color: Theme.tertiary },
-        { key: "playlists", text: "Плейлисты", color: Theme.secondary },
-        { key: "lyrics", text: "Тексты", color: Theme.outline }
+        { key: "audio", text: I18n.t("Audio"), color: Theme.primary },
+        { key: "covers", text: I18n.t("Covers"), color: Theme.tertiary },
+        { key: "playlists", text: I18n.t("Playlists"), color: Theme.secondary },
+        { key: "lyrics", text: I18n.t("Saved lyrics"), color: Theme.outline }
     ]
     readonly property real total: Number((usage ?? {}).total ?? 0)
                                   || parts.reduce((s, p) => s + Number((usage ?? {})[p.key] ?? 0), 0)
     readonly property real _scale: Math.max(total, limit, 1)
 
     function formatBytes(b) {
-        b = Number(b) || 0
-        if (b >= 1024 * 1024 * 1024)
-            return (b / 1024 / 1024 / 1024).toFixed(1).replace(".", ",") + " ГБ"
-        if (b >= 1024 * 1024)
-            return Math.round(b / 1024 / 1024) + " МБ"
-        if (b >= 1024)
-            return Math.round(b / 1024) + " КБ"
-        return b + " Б"
+        return I18n.bytes(b)
     }
 
     Layout.fillWidth: true
@@ -38,12 +31,12 @@ ColumnLayout {
         Layout.fillWidth: true
         Label {
             Layout.fillWidth: true
-            text: "Занято " + root.formatBytes(root.total)
+            text: I18n.t("{0} used", root.formatBytes(root.total))
             type: "titleSmall"
         }
         Label {
             visible: root.limit > 0
-            text: "из " + root.formatBytes(root.limit)
+            text: I18n.t("of {0}", root.formatBytes(root.limit))
             type: "bodyMedium"
             color: Theme.fgSurfaceVariant
         }

@@ -280,13 +280,13 @@ impl HomeService {
                 let read = async { tokio::join!(home_feed::home(&http, session), home_feed::made_for_you(&http, session)) };
                 let (home, browse) = match tokio::time::timeout(SESSION_TIMEOUT, read).await {
                     Ok(answers) => answers,
-                    Err(_) => (Err(anyhow::anyhow!("таймаут")), Err(anyhow::anyhow!("таймаут"))),
+                    Err(_) => (Err(anyhow::anyhow!("timeout")), Err(anyhow::anyhow!("timeout"))),
                 };
                 if let Err(error) = &home {
-                    tracing::debug!("главная Spotify через сессию: {error:#}");
+                    tracing::debug!("Spotify home via session: {error:#}");
                 }
                 if let Err(error) = &browse {
-                    tracing::debug!("«Для тебя» через сессию: {error:#}");
+                    tracing::debug!("“Made for you” via session: {error:#}");
                 }
                 if home.is_ok() || browse.is_ok() {
                     let home = home.unwrap_or_default();
@@ -331,7 +331,7 @@ impl HomeService {
                                 shelves::made_for_you(term, found).into_iter().filter(|p| seen.insert(p.playlist_id.clone())),
                             );
                         }
-                        Err(e) => tracing::debug!("главная: «{term}» не найден: {e}"),
+                        Err(e) => tracing::debug!("home: “{term}” not found: {e}"),
                     }
                 }
                 Ok::<_, sf_api::ApiError>(all)
@@ -354,8 +354,8 @@ impl HomeService {
                         });
                         return Ok(());
                     }
-                    Ok(Err(error)) => tracing::debug!("топ через сессию: {error:#}"),
-                    Err(_) => tracing::debug!("топ через сессию: таймаут"),
+                    Ok(Err(error)) => tracing::debug!("top via session: {error:#}"),
+                    Err(_) => tracing::debug!("top via session: timeout"),
                 }
             }
             let read = async {
@@ -395,7 +395,7 @@ impl HomeService {
                             podcasts.push((show, episodes));
                         }
                         // полка необязательная: квота/429 — без этого шоу
-                        Err(e) => tracing::debug!("главная: выпуски {}: {e}", show.show_id),
+                        Err(e) => tracing::debug!("home: episodes of {}: {e}", show.show_id),
                     }
                 }
                 Ok::<_, sf_api::ApiError>(podcasts)
@@ -441,7 +441,7 @@ async fn web<T>(read: impl std::future::Future<Output = Result<T, sf_api::ApiErr
     match tokio::time::timeout(WEB_TIMEOUT, sf_api::limits::background(read)).await {
         Ok(Ok(value)) => Ok(value),
         Ok(Err(error)) => Err(ServiceError::from(error).to_string()),
-        Err(_) => Err("Spotify долго не отвечает".to_owned()),
+        Err(_) => Err(mf_i18n::t("Spotify is taking too long to respond")),
     }
 }
 

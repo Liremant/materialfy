@@ -240,7 +240,7 @@ impl qobject::ThemeEngine {
                 Some(path) => match mf_theme::seed_from_image(path) {
                     Ok(seed) => seed,
                     Err(error) => {
-                        tracing::debug!("тема: {error}");
+                        tracing::debug!("theme: {error}");
                         return;
                     }
                 },

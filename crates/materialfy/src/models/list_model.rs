@@ -559,7 +559,7 @@ mod tests {
 
     /// Применить шаги к списку так же, как sync_rows к модели.
     fn apply(old: &[Row], new: &[Row]) -> (Vec<Row>, Vec<SyncOp>) {
-        let ops = sync_ops(old, new, "uid").expect("ключи уникальны");
+        let ops = sync_ops(old, new, "uid").expect("keys are unique");
         let mut cur = old.to_vec();
         for op in &ops {
             match *op {

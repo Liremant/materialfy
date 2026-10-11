@@ -43,22 +43,18 @@ Item {
             Player.playEpisode(uri, fullyPlayed ? 0 : resumeMs)
     }
 
-    readonly property var _months: ["янв", "февр", "мар", "апр", "мая", "июн", "июл", "авг", "сент", "окт", "нояб", "дек"]
     function _date(iso) {
         const m = /^(\d{4})(?:-(\d{2}))?(?:-(\d{2}))?/.exec(iso ?? "")
         if (!m)
             return ""
         if (!m[2])
             return m[1]
-        const thisYear = new Date().getFullYear() === Number(m[1])
-        const month = _months[Number(m[2]) - 1] ?? ""
         if (!m[3])
-            return month + " " + m[1]
-        return Number(m[3]) + " " + month + (thisYear ? "" : " " + m[1])
+            return I18n.monthYear(new Date(Number(m[1]), Number(m[2]) - 1, 1))
+        return I18n.shortDate(new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])))
     }
     function _minutes(ms) {
-        const min = Math.max(1, Math.round(ms / 60000))
-        return min >= 60 ? Math.floor(min / 60) + " ч " + (min % 60 ? (min % 60) + " мин" : "") : min + " мин"
+        return I18n.duration(Math.max(60000, ms))      // не меньше «1 мин»
     }
 
     Rectangle {
@@ -219,9 +215,9 @@ Item {
                     }
                     Label {
                         anchors.verticalCenter: parent.verticalCenter
-                        text: root.fullyPlayed ? "Прослушано"
-                            : root.started ? "Осталось " + root._minutes(Math.max(0, root.durationMs - root.progress * root.durationMs))
-                            : "Новый"
+                        text: root.fullyPlayed ? I18n.t("Played")
+                            : root.started ? I18n.t("{0} left", root._minutes(Math.max(0, root.durationMs - root.progress * root.durationMs)))
+                            : I18n.t("Unplayed")
                         type: "labelMedium"
                         color: root.isCurrent || !root.started ? Theme.primary : Theme.fgSurfaceVariant
                     }

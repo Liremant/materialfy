@@ -25,6 +25,8 @@ pub mod ffi {
         fn app_set_quit_on_last_window_closed(value: bool);
         fn app_set_window_icon(path: &QString);
         fn app_add_font(path: &QString) -> i32;
+        /// "en" — no translator; otherwise qtbase_<code>.qm (Qt's own dialogs and menus) + QLocale default
+        fn app_set_qt_language(code: &QString);
 
         fn copy_to_clipboard(text: &QString);
         unsafe fn set_cpp_ownership(object: *mut QObject);

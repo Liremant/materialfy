@@ -73,7 +73,6 @@ Item {
         return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0")
     }
 
-    readonly property var _months: ["янв.", "февр.", "мар.", "апр.", "мая", "июн.", "июл.", "авг.", "сент.", "окт.", "нояб.", "дек."]
     function _date(iso) {
         if (!iso)
             return ""
@@ -84,10 +83,10 @@ Item {
         const day = 24 * 3600 * 1000
         const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
         if (d.getTime() >= start)
-            return "Сегодня"
+            return I18n.t("Today")
         if (d.getTime() >= start - day)
-            return "Вчера"
-        return d.getDate() + " " + _months[d.getMonth()] + (d.getFullYear() !== now.getFullYear() ? " " + d.getFullYear() : "")
+            return I18n.t("Yesterday")
+        return I18n.shortDate(d)
     }
 
     readonly property bool _compactAdded: width < 600

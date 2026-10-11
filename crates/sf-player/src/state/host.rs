@@ -15,7 +15,9 @@ use crate::{Credentials, EngineStarted};
 const RECONNECT_LIMIT: usize = 5;
 const RECONNECT_WINDOW: Duration = Duration::from_secs(600);
 
-pub(crate) const PREMIUM_REQUIRED: &str = "Нужен Spotify Premium";
+/// Английский ключ перевода; наружу — `mf_i18n::t(PREMIUM_REQUIRED)` (в обоих языках есть «Premium»: по нему
+/// sf-services узнаёт отказ).
+pub(crate) const PREMIUM_REQUIRED: &str = "Spotify Premium required";
 
 pub(crate) struct Slot {
     pub engine: Arc<EngineLink>,
@@ -82,8 +84,9 @@ impl EngineHost {
         let engine = match result {
             Ok(engine) => engine,
             Err(error) => {
-                let text = if error.to_lowercase().contains("premium") { PREMIUM_REQUIRED.to_owned() } else { error };
-                tracing::warn!("локальное воспроизведение не запустилось: {text}");
+                // ошибки движка уже переведены (friendly_connect_error), а «Premium» есть в обоих языках
+                let text = if error.to_lowercase().contains("premium") { mf_i18n::t(PREMIUM_REQUIRED) } else { error };
+                tracing::warn!("local playback didn't start: {text}");
                 if generation == self.current_generation() {
                     let _ = self.tx.send(Msg::Local(LocalMsg::Failed(text.clone())));
                 }
@@ -92,7 +95,7 @@ impl EngineHost {
         };
         if generation != self.current_generation() {
             engine.shutdown();
-            return Err("подключение отменено".into());
+            return Err(mf_i18n::t("Playback setup cancelled"));
         }
         let device_id = engine.device_id().to_owned();
         let reusable = engine.credentials();
@@ -154,11 +157,11 @@ impl EngineHost {
                 old.engine.engine.shutdown();
             }
             let _ = self.tx.send(Msg::Local(LocalMsg::Failed(
-                "Локальное воспроизведение постоянно обрывается. Включите его заново в настройках".into(),
+                mf_i18n::t("Local playback keeps dropping. Turn it on again in Settings"),
             )));
             return;
         }
-        tracing::info!("сессия librespot закончилась; переподключаемся");
+        tracing::info!("the librespot session ended; reconnecting");
         self.restart(rt, None, volume, None);
     }
 
@@ -184,13 +187,13 @@ fn resume_playback(link: Arc<EngineLink>, resume: PlaybackResume) {
     tokio::spawn(async move {
         for attempt in 0..3 {
             if let Err(error) = link.engine.resume(resume.clone()) {
-                tracing::warn!("не удалось подхватить воспроизведение: {error:#}");
+                tracing::warn!("couldn't resume playback: {error:#}");
             }
             tokio::time::sleep(Duration::from_secs(4)).await;
             if link.engine.interrupted().is_some() {
                 return;
             }
-            tracing::info!("повторяем подхват воспроизведения (попытка {})", attempt + 2);
+            tracing::info!("retrying playback resume (attempt {})", attempt + 2);
         }
     });
 }

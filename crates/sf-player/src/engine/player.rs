@@ -80,7 +80,7 @@ impl EngineConfig {
             self.audio_cache_limit,
         )
         .map(Cache::with_memory_credentials)
-        .context("не удалось открыть кэш воспроизведения")
+        .with_context(|| mf_i18n::t("Couldn't open the playback cache"))
     }
 
     fn bitrate(&self) -> Bitrate {
@@ -309,13 +309,16 @@ pub enum EngineEvent {
 pub type Notify = Arc<dyn Fn(EngineEvent) + Send + Sync>;
 
 /// Ошибка трека, которого нет у Spotify (в LocalState.error, дальше — Player.errorText).
-pub const UNAVAILABLE: &str = "Трек недоступен";
-pub const AUDIO_KEY_REFUSED: &str = "Spotify не выдал ключ для воспроизведения. Попробуйте позже";
+/// Ошибки в LocalState.error — непереведённый английский; переводит `state::core::engine_error_text`.
+pub const UNAVAILABLE: &str = "Track unavailable";
+pub const AUDIO_KEY_REFUSED: &str = "Spotify didn't provide a playback key. Try again later";
 /// Локальное воспроизведение без Premium: librespot 0.8 на таком аккаунте завершает процесс (exit(1)).
-pub const PREMIUM_REQUIRED: &str = "Для воспроизведения на этом компьютере нужен Spotify Premium";
+/// Английский ключ перевода; наружу уходит `mf_i18n::t(PREMIUM_REQUIRED)` (в обоих языках есть «Premium»).
+pub const PREMIUM_REQUIRED: &str = "Spotify Premium is required to play on this computer";
 /// Время на точки доступа (повторы), резолвер и вход: как у spotifast.
 pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(75);
-pub const CONNECT_TIMED_OUT: &str = "Не удалось подключиться к Spotify: истекло время ожидания";
+/// Английский ключ перевода; наружу уходит `mf_i18n::t(CONNECT_TIMED_OUT)`.
+pub const CONNECT_TIMED_OUT: &str = "Couldn't reach Spotify: timed out";
 
 /// Тип аккаунта из Web API (`/me` → `product`), известный процессу. `Engine::connect` отказывает,
 /// если он известен и это не Premium. `None` — неизвестен (проверяет вызывающий).
@@ -336,16 +339,17 @@ pub fn playback_allowed() -> bool {
         .is_none_or(|product| product == "premium")
 }
 
-/// Ошибка подключения в виде для интерфейса.
+/// Ошибка подключения в виде для интерфейса (уже переведена). Текст премиум-отказа в обоих языках содержит
+/// «Premium» — по нему `state::host` и sf-services узнают отказ.
 pub fn friendly_connect_error(error: &anyhow::Error) -> String {
     let text = format!("{error:#}");
     let lower = text.to_lowercase();
     if lower.contains("badcredentials") || lower.contains("bad credentials") {
-        "Spotify не принял сохранённый вход. Разрешите воспроизведение заново".to_string()
+        mf_i18n::t("Spotify didn't accept the saved sign-in. Allow playback again")
     } else if lower.contains("premium") {
-        PREMIUM_REQUIRED.to_string()
+        mf_i18n::t(PREMIUM_REQUIRED)
     } else if lower.contains("dns") || lower.contains("connect") || lower.contains("resolve") {
-        format!("Не удалось связаться со Spotify: {text}")
+        mf_i18n::tf("Couldn't reach Spotify: {0}", &[&text])
     } else {
         text
     }
@@ -387,7 +391,7 @@ impl Engine {
         notify: Notify,
     ) -> Result<Self> {
         if !playback_allowed() {
-            anyhow::bail!(PREMIUM_REQUIRED);
+            anyhow::bail!(mf_i18n::t(PREMIUM_REQUIRED));
         }
         match with_deadline(
             CONNECT_TIMEOUT,
@@ -400,7 +404,7 @@ impl Engine {
                 tracing::error!("engine connect failed: {error:#}");
                 Err(anyhow!(friendly_connect_error(&error)))
             }
-            Err(_) => Err(anyhow!(CONNECT_TIMED_OUT)),
+            Err(_) => Err(anyhow!(mf_i18n::t(CONNECT_TIMED_OUT))),
         }
     }
 
@@ -436,7 +440,7 @@ impl Engine {
         };
 
         let mixer_builder =
-            mixer::find(Some("softvol")).ok_or_else(|| anyhow!("нет программного микшера громкости"))?;
+            mixer::find(Some("softvol")).ok_or_else(|| anyhow!("no software volume mixer"))?;
         // librespot's default curve spans 60 dB logarithmically, which puts
         // half the slider below -30 dB and every level anyone wants in its
         // top quarter. The cubic curve reaches -16 dB at the middle and -7 dB
@@ -445,7 +449,7 @@ impl Engine {
             volume_ctrl: VolumeCtrl::Cubic(VolumeCtrl::DEFAULT_DB_RANGE),
             ..MixerConfig::default()
         })
-        .context("не удалось создать микшер")?;
+        .context("couldn't create the mixer")?;
 
         let state = Arc::new(Mutex::new(LocalState {
             volume: config.initial_volume,
@@ -485,7 +489,8 @@ impl Engine {
             Arc::clone(&mixer),
         )
         .await
-        .context("не удалось подключиться к Spotify")?;
+        // без «connect»/«dns»/«premium»: friendly_connect_error ищет их в тексте ошибки
+        .with_context(|| mf_i18n::t("Spotify session didn't start"))?;
 
         {
             let mut current = state.lock().unwrap_or_else(|p| p.into_inner());
@@ -730,7 +735,7 @@ impl Engine {
                 } else if !spec.uris.is_empty() {
                     LoadRequest::from_tracks(spec.uris, options)
                 } else {
-                    anyhow::bail!("нечего воспроизводить");
+                    anyhow::bail!("nothing to play");
                 };
                 spirc.activate()?;
                 spirc.load(request)?;
@@ -1799,13 +1804,13 @@ mod tests {
     #[test]
     fn connect_errors_read_for_the_interface() {
         let bad = anyhow!("Login failed with reason: BadCredentials");
-        assert!(friendly_connect_error(&bad).starts_with("Spotify не принял"));
+        assert!(friendly_connect_error(&bad).starts_with("Spotify didn't accept"));
         let premium = anyhow!("account needs premium");
         assert_eq!(friendly_connect_error(&premium), PREMIUM_REQUIRED);
         let dns = anyhow!("failed to resolve ap");
-        assert!(friendly_connect_error(&dns).starts_with("Не удалось связаться"));
-        let other = anyhow!("что-то ещё");
-        assert_eq!(friendly_connect_error(&other), "что-то ещё");
+        assert!(friendly_connect_error(&dns).starts_with("Couldn't reach Spotify"));
+        let other = anyhow!("something else");
+        assert_eq!(friendly_connect_error(&other), "something else");
     }
 
     #[tokio::test]
@@ -1842,7 +1847,7 @@ mod tests {
             "",
         )
         .unwrap();
-        let proxy_url = config.librespot_url().expect("HTTP-прокси без пароля доступен движку");
+        let proxy_url = config.librespot_url().expect("an HTTP proxy without a password is available to the engine");
         let client = librespot_core::http_client::HttpClient::new(Some(&proxy_url));
         let request = http::Request::builder()
             .method("GET")
@@ -1853,7 +1858,7 @@ mod tests {
         let seen = proxy_thread.join().unwrap();
         assert!(
             seen.to_ascii_uppercase().contains("CONNECT") && seen.contains("apresolve.spotify.com"),
-            "librespot должен идти через прокси, получено {seen:?}"
+            "librespot must go through the proxy, got {seen:?}"
         );
     }
 }

@@ -18,12 +18,6 @@ Item {
     implicitWidth: 358
     implicitHeight: 216
 
-    function _plural(n) {
-        const m10 = n % 10, m100 = n % 100
-        if (m10 === 1 && m100 !== 11) return "трек"
-        if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return "трека"
-        return "треков"
-    }
     // «Исполнитель Трек · …» по первым строкам Любимых
     readonly property string sample: {
         const m = Library.liked
@@ -84,10 +78,10 @@ Item {
                 maximumLineCount: 2
                 elide: Text.ElideRight
             }
-            Label { text: "Любимые треки"; type: "headlineMedium"; weight: 500; color: Theme.fgPrimaryContainer }
+            Label { text: I18n.t("Liked Songs"); type: "headlineMedium"; weight: 500; color: Theme.fgPrimaryContainer }
             Label {
-                text: Library.liked && Library.liked.loading && root.trackCount === 0 ? "Загружаем…"
-                    : root.trackCount + " " + root._plural(root.trackCount)
+                text: Library.liked && Library.liked.loading && root.trackCount === 0 ? I18n.t("Loading…")
+                    : I18n.n(root.trackCount, "{0} track", "{0} tracks")
                 type: "bodyMedium"
                 color: Theme.fgPrimaryContainer
                 opacity: 0.8

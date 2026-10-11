@@ -8,7 +8,7 @@ Item {
     property var model: []
     property var currentValue
     property string label
-    property string placeholderText: "Не выбрано"
+    property string placeholderText: I18n.t("Not selected")
     property string leadingIcon
 
     signal activated(var value)

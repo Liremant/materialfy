@@ -69,7 +69,7 @@ Item {
     function _make(name, props) {
         const url = pages[name]
         if (!url) {
-            console.error("Router: нет страницы", name)
+            console.error("Router: no such page", name)
             return null
         }
         let comp = _components[name]

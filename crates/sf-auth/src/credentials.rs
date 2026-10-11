@@ -94,39 +94,61 @@ struct Record {
     grant: Grant,
 }
 
-/// Ошибки хранилища. Display — по-русски (показываются в Auth.errorText / Settings).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+/// Ошибки хранилища. Display — текст интерфейса через mf_i18n (показываются в Auth.errorText / Settings).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Error {
-    #[error("Хранилище учётных данных системы недоступно — вход не запомнится.")]
     Unavailable,
-    #[error("Хранилище учётных данных заблокировано или доступ запрещён.")]
     Locked,
-    #[error("Хранилище учётных данных не ответило вовремя.")]
     Timeout,
-    #[error("Сохранённое разрешение Spotify повреждено — войдите снова.")]
     Invalid,
-    #[error("Не удалось обновить служебные файлы хранилища (проверьте права на каталог данных).")]
     Filesystem,
-    #[error("Хранилище не сохранило разрешение — вход не запомнится.")]
     Verification,
-    #[error("Вход изменился, пока сохранялось разрешение.")]
     Stale,
 }
 
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let text = match self {
+            Self::Unavailable => {
+                mf_i18n::t("The system credential store is unavailable — your sign-in won't be remembered.")
+            }
+            Self::Locked => mf_i18n::t("The credential store is locked or access was denied."),
+            Self::Timeout => mf_i18n::t("The credential store didn't respond in time."),
+            Self::Invalid => mf_i18n::t("The saved Spotify grant is damaged — sign in again."),
+            Self::Filesystem => mf_i18n::t(
+                "Couldn't update the credential store's service files (check permissions on the data folder).",
+            ),
+            Self::Verification => {
+                mf_i18n::t("The credential store didn't save the grant — your sign-in won't be remembered.")
+            }
+            Self::Stale => mf_i18n::t("The sign-in changed while the grant was being saved."),
+        };
+        f.write_str(&text)
+    }
+}
+
+impl std::error::Error for Error {}
+
 impl Error {
     /// Текст той же ошибки для пароля прокси.
-    pub fn proxy_message(self) -> &'static str {
+    pub fn proxy_message(self) -> String {
         match self {
             Self::Unavailable | Self::Locked => {
-                "Разблокируйте или включите хранилище учётных данных, чтобы запомнить пароль прокси."
+                mf_i18n::t("Unlock or turn on the credential store to remember the proxy password.")
             }
-            Self::Timeout => "Хранилище учётных данных не ответило — пароль прокси действует только до выхода.",
-            Self::Invalid => "Сохранённый пароль прокси или его адрес неверны — введите настройки прокси снова.",
-            Self::Filesystem => {
-                "Не удалось обновить служебные файлы пароля прокси (проверьте права на каталог данных)."
+            Self::Timeout => {
+                mf_i18n::t("The credential store didn't respond — the proxy password only lasts until you quit.")
             }
-            Self::Verification => "Хранилище не сохранило пароль прокси — он действует только до выхода.",
-            Self::Stale => "Настройки прокси изменились, пока сохранялся пароль.",
+            Self::Invalid => {
+                mf_i18n::t("The saved proxy password or its address is invalid — enter the proxy settings again.")
+            }
+            Self::Filesystem => mf_i18n::t(
+                "Couldn't update the proxy password's service files (check permissions on the data folder).",
+            ),
+            Self::Verification => {
+                mf_i18n::t("The credential store didn't save the proxy password — it only lasts until you quit.")
+            }
+            Self::Stale => mf_i18n::t("The proxy settings changed while the password was being saved."),
         }
     }
 }
@@ -281,7 +303,7 @@ impl Store {
             }
         });
         if spawned.is_err() {
-            tracing::warn!("не удалось запустить поток хранилища учётных данных");
+            tracing::warn!("failed to start the credential store thread");
         }
         let profile = std::fs::read_to_string(state_dir.join("credential-profile"))
             .ok()
@@ -676,7 +698,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "нужно разблокированное хранилище ОС; только фиктивные гранты"]
+    #[ignore = "needs an unlocked OS credential store; dummy grants only"]
     async fn native_store_round_trip() {
         let f = Fixture::new();
         let key = f.store.lease(Slot::Shared).key();
@@ -831,7 +853,7 @@ mod tests {
     }
 
     #[test]
-    fn errors_are_russian_and_proxy_messages_differ() {
+    fn errors_are_readable_and_proxy_messages_differ() {
         for error in [
             Error::Unavailable,
             Error::Locked,
@@ -841,8 +863,8 @@ mod tests {
             Error::Verification,
             Error::Stale,
         ] {
-            assert!(error.to_string().chars().any(|c| ('а'..='я').contains(&c)));
-            assert!(error.proxy_message().contains("прокси"));
+            assert!(!error.to_string().is_empty());
+            assert!(error.proxy_message().contains("proxy"));
         }
     }
 }
