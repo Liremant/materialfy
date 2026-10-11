@@ -1859,6 +1859,19 @@ fn a_paused_station_list_stays_shown_as_the_station() {
 }
 
 #[test]
+fn an_album_started_without_a_title_is_named_after_the_playing_track() {
+    let mut core = headless();
+    core.local.connected = true;
+    core.remember(&TrackItem { album_id: "al".into(), album: "Discovery".into(), cover: "c.jpg".into(), ..named("spotify:track:a", "One More Time") });
+    // плитка «Слушать» на главной: только URI, без подписи
+    core.play_context(PlayContext::with_uri("album", "spotify:album:al"), None, None);
+    playing(&mut core, "spotify:track:a");
+    let context = core.shown_context();
+    assert_eq!(context.title, "Discovery");
+    assert_eq!(context.cover, "c.jpg");
+}
+
+#[test]
 fn a_context_known_only_by_uri_is_named_by_its_kind() {
     let mut core = headless();
     core.local_ready = false;

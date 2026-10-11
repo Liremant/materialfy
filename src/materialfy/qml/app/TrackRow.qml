@@ -135,6 +135,8 @@ Item {
         anchors.leftMargin: 12 - 8 * root._editT
         anchors.rightMargin: 16
         spacing: 16
+        // недоступный в регионе трек приглушён, как в очереди (QueueRow)
+        opacity: root.available ? 1 : Theme.stateLayer.disabledContent
 
         // Ручка перетаскивания: ширина 0 → 28 при входе в правку
         Item {

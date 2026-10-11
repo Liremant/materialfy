@@ -4,7 +4,7 @@ import Md3
 import Materialfy.Core
 
 // Строка очереди: место под ручку перетаскивания (ручка — только в «Далее в очереди» на этом компьютере,
-// видна при наведении) · обложка · название/исполнители · меню · длительность 36 px.
+// видна при наведении) · обложка · название/исполнители · длительность 36 px (при наведении — меню).
 Item {
     id: root
 
@@ -128,29 +128,36 @@ Item {
             }
         }
 
+        // Длительность; при наведении на её месте — «⋯» (панель узкая: отдельная колонка под кнопку
+        // отнимала у названия ~40 px, и оно обрезалось даже у коротких треков)
         Item {
-            implicitWidth: 28
-            implicitHeight: 28
+            Layout.preferredWidth: 36
+            Layout.fillHeight: true
+            readonly property bool menuShown: root.hovered || moreButton.pressed || root.activeFocus
+            Label {
+                anchors.fill: parent
+                text: root._time(root.track.durationMs)
+                type: "bodySmall"
+                color: Theme.fgSurfaceVariant
+                horizontalAlignment: Text.AlignRight
+                opacity: parent.menuShown ? 0 : 1
+                Behavior on opacity { NumberAnimation { duration: Theme.motion.effectsFast } }
+            }
             IconButton {
                 id: moreButton
-                anchors.fill: parent
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                width: 32
+                height: 32
                 icon: "more_horiz"
                 size: "xs"
                 iconSize: 22
                 iconWeight: 700
-                opacity: root.hovered || pressed ? 1 : 0
+                opacity: parent.menuShown ? 1 : 0
                 visible: opacity > 0
                 Behavior on opacity { NumberAnimation { duration: Theme.motion.effectsFast } }
                 onClicked: root.openMenu(moreButton, 0, moreButton.height)
             }
-        }
-
-        Label {
-            Layout.preferredWidth: 36
-            text: root._time(root.track.durationMs)
-            type: "bodySmall"
-            color: Theme.fgSurfaceVariant
-            horizontalAlignment: Text.AlignRight
         }
     }
 

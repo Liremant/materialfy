@@ -106,7 +106,7 @@ Item {
         let items = mini.concat(_radioItems())
         if (items.length > mini.length)
             items.push({ separator: true })
-        items.push({ id: "addqueue", text: I18n.t("Add to queue"), icon: "queue_music", enabled: (track.uri ?? "") !== "" })
+        items.push({ id: "addqueue", text: I18n.t("Add to queue"), icon: "add_to_queue", enabled: (track.uri ?? "") !== "" })
         // в мини-режиме повтор уже в верхней группе
         if (_isCurrent && !_mini)
             items.push({ id: "repeat", text: I18n.t("Repeat this"), icon: Player.repeat === "one" ? "repeat_one" : "repeat",

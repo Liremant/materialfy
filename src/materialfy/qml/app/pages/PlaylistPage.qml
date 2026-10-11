@@ -174,7 +174,8 @@ TrackListPage {
         IconButton {
             icon: "radio"
             size: "m"
-            enabled: page.uri !== ""
+            // станции идут через сессию воспроизведения (как «Радио исполнителя»)
+            enabled: page.uri !== "" && !Radio.locked
             onClicked: {
                 Radio.playStation(page.uri, page.title)
                 page.notify(I18n.t("Playlist radio: “{0}”", page.title))
@@ -295,7 +296,7 @@ TrackListPage {
     // ---- Меню «⋯» ----
     function _menuItems() {
         const items = [
-            { id: "queue", text: I18n.t("Add to queue"), icon: "queue_music", enabled: page.uri !== "" },
+            { id: "queue", text: I18n.t("Add to queue"), icon: "add_to_queue", enabled: page.uri !== "" },
             { id: "pin", text: (Library.pinsRevision >= 0 && Library.isPinned(page.uri)) ? I18n.t("Unpin") : I18n.t("Pin in library"),
               icon: "push_pin" }
         ]

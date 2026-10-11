@@ -246,6 +246,17 @@ Page {
         onAction: Releases.refresh(true)
     }
 
+    // фильтр ничего не оставил — сказать об этом, а не показывать пустое место
+    Label {
+        Layout.fillWidth: true
+        visible: page.releases.length > 0 && page.shown.length === 0
+        text: page.filter === "album" ? I18n.t("No new albums in the past 6 weeks")
+                                      : I18n.t("No new singles or EPs in the past 6 weeks")
+        type: "bodyLarge"
+        color: Theme.fgSurfaceVariant
+        wrapMode: Text.WordWrap
+    }
+
     Flow {
         Layout.fillWidth: true
         spacing: 20

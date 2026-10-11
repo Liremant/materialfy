@@ -313,8 +313,10 @@ Item {
                     Layout.maximumWidth: left.colWidth
                     Layout.topMargin: -6
                     horizontalAlignment: Text.AlignHCenter
-                    previewArtistId: (Player.track.artistRefs ?? []).length === 1 ? Player.track.artistRefs[0].id : ""
-                    onClicked: Catalog.openArtists(Player.track.artistRefs ?? [])
+                    // у выпуска подкаста под названием — подкаст: ссылка на его страницу
+                    linkEnabled: Player.isEpisode ? (Player.track.showId ?? "") !== "" : (Player.track.artistRefs ?? []).length > 0
+                    previewArtistId: !Player.isEpisode && (Player.track.artistRefs ?? []).length === 1 ? Player.track.artistRefs[0].id : ""
+                    onClicked: Player.isEpisode ? Catalog.openShow(Player.track.showId ?? "") : Catalog.openArtists(Player.track.artistRefs ?? [])
                     opacity: Math.max(0, left.infoIn * 1.3 - 0.3)    // чуть позже названия
                     transform: Translate { y: (1 - left.infoIn) * 18 }
                     text: Player.artist
@@ -326,6 +328,8 @@ Item {
                     Layout.maximumWidth: left.colWidth
                     Layout.topMargin: -6
                     horizontalAlignment: Text.AlignHCenter
+                    // у выпуска подкаста и трека без альбома ссылки нет
+                    linkEnabled: (Player.track.albumId ?? "") !== ""
                     onClicked: Catalog.openAlbum(Player.track.albumId ?? "")
                     opacity: Math.max(0, left.infoIn * 1.3 - 0.3)    // чуть позже названия
                     transform: Translate { y: (1 - left.infoIn) * 18 }

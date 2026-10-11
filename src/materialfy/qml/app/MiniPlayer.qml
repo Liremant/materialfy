@@ -183,9 +183,11 @@ Item {
                             Layout.fillWidth: true
                             // в тесной пилюле при игре на другом устройстве вместо исполнителя — «Играет на …»
                             visible: !(remoteLabel.shown && !root.roomForMenu && Player.errorText === "")
+                            // у выпуска подкаста — ссылка на подкаст
                             linkEnabled: Player.errorText === "" && Player.hasTrack
-                            previewArtistId: (Player.track.artistRefs ?? []).length === 1 ? Player.track.artistRefs[0].id : ""
-                            onClicked: Catalog.openArtists(Player.track.artistRefs ?? [])
+                                         && (Player.isEpisode ? (Player.track.showId ?? "") !== "" : (Player.track.artistRefs ?? []).length > 0)
+                            previewArtistId: !Player.isEpisode && (Player.track.artistRefs ?? []).length === 1 ? Player.track.artistRefs[0].id : ""
+                            onClicked: Player.isEpisode ? Catalog.openShow(Player.track.showId ?? "") : Catalog.openArtists(Player.track.artistRefs ?? [])
                             text: Player.errorText !== "" ? Player.errorText
                                 : Player.hasTrack ? Player.artist : I18n.t("Play a track, album or playlist")
                             type: "bodySmall"

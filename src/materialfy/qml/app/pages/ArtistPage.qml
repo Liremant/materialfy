@@ -240,6 +240,8 @@ Page {
                 albumId: model.albumId
                 album: model.album
                 cover: model.cover
+                coverLarge: model.coverLarge ?? ""
+                uri: model.uri ?? ""
                 durationMs: model.durationMs
                 explicit: model.explicit
                 available: model.available

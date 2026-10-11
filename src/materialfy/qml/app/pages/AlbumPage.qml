@@ -34,6 +34,7 @@ TrackListPage {
     }
     model: album ? album.tracks : null
     showPlays: true
+    showAlbum: false
     // сведения о выпуске под списком: дата, треки и длительность, лейбл, правообладатели
     footerExtra: album && album.tracks.count > 0 ? releaseInfo : null
     emptyIcon: "album"

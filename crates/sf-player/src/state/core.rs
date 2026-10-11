@@ -2901,19 +2901,24 @@ impl Core {
         let uri = self.playing_context_uri().or_else(|| self.resume_only().then(|| self.resume_context.clone()).flatten());
         match uri {
             Some(uri) => {
-                if self.context_info.context_uri.as_deref() == Some(uri.as_str()) {
+                // Запуск по одному URI (плитка «Слушать», Player.playContext) приходит без подписи —
+                // такой context_info не перекрывает известную подпись и название играющего альбома
+                let started = self.context_info.context_uri.as_deref() == Some(uri.as_str());
+                if started && !self.context_info.title.is_empty() {
                     return self.context_info.clone();
                 }
                 if let Some(known) = self.known_contexts.get(&uri) {
                     return known.clone();
                 }
-                let mut context = map::context_from_uri(&uri);
+                let mut context = if started { self.context_info.clone() } else { map::context_from_uri(&uri) };
                 if context.kind == contexts::ALBUM
                     && let Some(now) = self.now_playing()
                     && sf_api::util::uri_id(&uri) == Some(now.track.album_id.as_str())
                 {
                     context.title = now.track.album.clone();
-                    context.cover = now.track.cover.clone();
+                    if context.cover.is_empty() {
+                        context.cover = now.track.cover.clone();
+                    }
                 }
                 context
             }

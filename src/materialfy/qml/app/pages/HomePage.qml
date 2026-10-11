@@ -71,8 +71,20 @@ Page {
         else if (e.uri)
             Catalog.openUri(e.uri)
     }
-    function playEntry(e) {
+    // играет (или стоит на паузе) именно отсюда
+    function isCurrent(e) {
+        return Player.hasTrack && ((e.kind ?? "") === "liked" ? Player.source === "liked"
+                                   : (e.uri ?? "") !== "" && Player.contextUri === e.uri)
+    }
+    // toggle — кнопка на плитке: у играющего отсюда она показывает паузу и ставит на паузу, а не запускает
+    // заново (у радио — без новой подборки из 50 треков); «Слушать» в меню только продолжает
+    function playEntry(e, toggle) {
         const k = e.kind ?? ""
+        if (isCurrent(e)) {
+            if (toggle !== false || !Player.playing)
+                Player.togglePlay()
+            return
+        }
         if (k === "liked") {
             if (Library.liked && Library.liked.count > 0)
                 Player.playFrom(Library.liked, 0)
@@ -81,10 +93,7 @@ Page {
         } else if (k === "radio") {
             Radio.playStation(e.uri, e.title ?? "")
         } else if (e.uri) {
-            if (Player.contextUri === e.uri && Player.hasTrack)
-                Player.togglePlay()
-            else
-                Player.playContext(e.uri, "")
+            Player.playContext(e.uri, "")
         }
     }
     function isPlaying(e) {
@@ -98,7 +107,8 @@ Page {
         if (k !== "radio" && k !== "artist")
             items.push({ id: "shuffle", text: I18n.t("Shuffle play"), icon: "shuffle", enabled: k === "liked" || !!Player.shuffleContext })
         if (k === "playlist" || k === "album" || k === "artist")
-            items.push({ id: "radio", text: ({ playlist: I18n.t("Playlist radio"), album: I18n.t("Album radio"), artist: I18n.t("Artist radio") })[k], icon: "radio" })
+            items.push({ id: "radio", text: ({ playlist: I18n.t("Playlist radio"), album: I18n.t("Album radio"), artist: I18n.t("Artist radio") })[k], icon: "radio",
+                         enabled: !Radio.locked })
         if (k !== "liked" && k !== "radio" && (e.uri ?? "") !== "") {
             const pinned = Library.pinsRevision >= 0 && Library.isPinned(e.uri)
             items.push({ separator: true }, { id: "pin", text: pinned ? I18n.t("Unpin") : I18n.t("Pin in library"), icon: "push_pin", hint: I18n.t("local") },
@@ -111,7 +121,7 @@ Page {
         if (!e)
             return
         if (id === "play")
-            playEntry(e)
+            playEntry(e, false)
         else if (id === "shuffle")
             e.kind === "liked" ? Player.shuffleFrom(Library.liked) : Player.shuffleContext(e.uri)
         else if (id === "radio") {
@@ -311,7 +321,10 @@ Page {
                 Layout.fillWidth: true
                 Layout.topMargin: 8
                 spacing: 8
+                z: 1        // подсказка у «ⓘ» длиннее строки заголовка: поверх плиток полки, а не под ними
                 Label {
+                    Layout.fillWidth: true
+                    Layout.maximumWidth: implicitWidth
                     text: rowCol.shelfData.title ?? ""
                     type: "headlineSmall"
                     weight: 600
