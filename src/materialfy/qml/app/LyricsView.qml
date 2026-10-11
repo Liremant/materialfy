@@ -131,7 +131,9 @@ Item {
     // мелкий дрейф подтягивается плавно, перемотка — скачком.
     property real _basePos: 0
     property real _baseTime: 0
-    property bool _wasPlaying: Player.playing
+    // пока говорит DJ, трек стоит на месте: позиция не идёт, хотя плеер «играет»
+    readonly property bool advancing: Player.playing && !Player.narrating
+    property bool _wasPlaying: advancing
 
     function playerPos() {
         return _basePos + (_wasPlaying ? (Date.now() - _baseTime) / 1000 : 0)
@@ -153,7 +155,7 @@ Item {
         }
         function onStateChanged() {
             root.sync(root.playerPos())
-            root._wasPlaying = Player.playing
+            root._wasPlaying = root.advancing
         }
     }
 
@@ -179,7 +181,7 @@ Item {
     }
 
     FrameAnimation {
-        running: root.live && Player.playing
+        running: root.live && root.advancing
         onTriggered: root.tick()
     }
 
