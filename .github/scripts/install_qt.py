@@ -45,6 +45,18 @@ def log(msg: str) -> None:
     print(f"[install_qt] {msg}", file=sys.stderr, flush=True)
 
 
+def fetch_with_curl(url: str, dest: Path | None) -> bytes | None:
+    """Download through the system curl, which verifies with the OS certificate store; None on failure."""
+    cmd = ["curl", "-fsSL", "--retry", "3", "-A", "materialfy-ci", url]
+    if dest is not None:
+        cmd += ["-o", str(dest)]
+    result = subprocess.run(cmd, capture_output=True)
+    if result.returncode != 0:
+        log(f"curl failed for {url}: {result.stderr.decode(errors='replace').strip()}")
+        return None
+    return b"" if dest is not None else result.stdout
+
+
 def fetch(url: str, dest: Path | None = None, attempts: int = 5) -> bytes:
     err: Exception | None = None
     for i in range(1, attempts + 1):
@@ -62,6 +74,12 @@ def fetch(url: str, dest: Path | None = None, attempts: int = 5) -> bytes:
             err = e
         except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as e:
             err = e
+            # Python's own certificate store can miss a mirror's intermediate certificate (seen on a
+            # self-hosted Windows runner); the system curl completes the chain itself
+            if "CERTIFICATE_VERIFY_FAILED" in str(e) and shutil.which("curl"):
+                data = fetch_with_curl(url, dest)
+                if data is not None:
+                    return data
         log(f"failed {url}: {err}; attempt {i}/{attempts}")
         time.sleep(5 * i)
     raise RuntimeError(f"could not download {url}: {err}")
