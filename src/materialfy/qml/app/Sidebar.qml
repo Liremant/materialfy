@@ -263,6 +263,19 @@ Item {
             lineHeightMode: Text.ProportionalHeight
             lineHeight: 1.2
         }
+        FadeLabel {
+            visible: opacity > 0 && root.signedIn && root._source !== null && !root._source.loading && root.playlists.length === 0
+            Layout.preferredWidth: root.labelWidth + 28 + 8
+            Layout.leftMargin: root.iconInset
+            Layout.topMargin: 4
+            text: I18n.t("No playlists yet. Create one with +")
+            type: "bodySmall"
+            color: Theme.fgSurfaceVariant
+            wrapMode: Text.WordWrap
+            elide: Text.ElideNone
+            lineHeightMode: Text.ProportionalHeight
+            lineHeight: 1.2
+        }
         LoadingIndicator {
             visible: root.signedIn && root._source !== null && root._source.loading && root.playlists.length === 0
             Layout.leftMargin: 40 - root.margin - size / 2

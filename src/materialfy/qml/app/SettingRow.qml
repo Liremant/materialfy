@@ -48,5 +48,7 @@ GridLayout {
         id: slot
         implicitWidth: childrenRect.width
         implicitHeight: childrenRect.height
+        // контрол стал шире (другой язык, длиннее подпись кнопки) — пересчитать перенос
+        onImplicitWidthChanged: root._updateStack()
     }
 }

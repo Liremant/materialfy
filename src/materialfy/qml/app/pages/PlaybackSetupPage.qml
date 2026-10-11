@@ -510,7 +510,7 @@ Page {
                     RowDivider { }
                     DevRow {
                         title: I18n.t("Gapless playback")
-                        description: "Gapless"
+                        description: I18n.t("The next track starts without silence — for live albums and mixes")
                         Switch { checked: Settings.gapless; onToggled: c => Settings.gapless = c }
                     }
                     RowDivider { }
@@ -546,6 +546,7 @@ Page {
                         Row {
                             spacing: 12
                             Slider {
+                                wheelEnabled: false     // колесо прокручивает страницу, а не меняет настройку
                                 id: cacheSlider
                                 anchors.verticalCenter: parent.verticalCenter
                                 width: 168

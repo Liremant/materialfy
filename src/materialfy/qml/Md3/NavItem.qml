@@ -91,9 +91,46 @@ Item {
     }
 
     StateLayer {
+        id: hit
         anchors.fill: parent
         radius: height / 2
         color: Theme.fgSurface
         onClicked: root.clicked()
+    }
+
+    // В рейле подписей нет — подсказка MD3 справа от пункта после короткой задержки. Живёт в корне окна:
+    // пункт и панель обрезают своё содержимое.
+    Timer {
+        id: tipDelay
+        interval: 500
+        running: root.compact && hit.containsMouse && !hit.pressed && root.text !== ""
+    }
+    Rectangle {
+        id: tip
+        readonly property bool shown: root.compact && hit.containsMouse && !hit.pressed && !tipDelay.running && root.text !== ""
+        parent: root.Window.contentItem
+        z: 1000
+        width: Math.min(tipLabel.implicitWidth + 16, 320)
+        height: 24
+        radius: Theme.shape.extraSmall
+        color: Theme.inverseSurface
+        opacity: shown ? 1 : 0
+        visible: opacity > 0
+        Behavior on opacity { NumberAnimation { duration: Theme.motion.effectsFast } }
+        onShownChanged: if (shown && parent) {
+            const p = root.mapToItem(parent, root.width + 8, (root.height - height) / 2)
+            x = Math.round(p.x)
+            y = Math.round(p.y)
+        }
+
+        Label {
+            id: tipLabel
+            anchors.verticalCenter: parent.verticalCenter
+            x: 8
+            width: parent.width - 16
+            text: root.text
+            type: "bodySmall"
+            color: Theme.fgInverseSurface
+        }
     }
 }

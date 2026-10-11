@@ -13,6 +13,8 @@ Item {
     property real handleHeight: 44
     property real gap: 6
     property bool showValue: true
+    // колесо меняет значение; false — колесо прокручивает страницу (слайдеры в длинных списках настроек)
+    property bool wheelEnabled: true
     property var valueText: v => Math.round(v * 100) + "%"
     property color activeColor: Theme.primary
     property color inactiveColor: Theme.secondaryContainer
@@ -129,6 +131,10 @@ Item {
         onPressed: mouse => root._setFromX(mouse.x)
         onPositionChanged: mouse => { if (pressed) root._setFromX(mouse.x) }
         onWheel: wheel => {
+            if (!root.wheelEnabled) {
+                wheel.accepted = false
+                return
+            }
             const step = root.stepSize > 0 ? root.stepSize : (root.to - root.from) / 50
             const v = Math.max(root.from, Math.min(root.to, root.value + (wheel.angleDelta.y > 0 ? step : -step)))
             if (v !== root.value) { root.value = v; root.moved(v) }

@@ -61,6 +61,18 @@ Page {
         implicitHeight: 56
         placeholder: I18n.t("Track, album, artist, playlist or podcast")
         onTextChanged: debounce.restart()
+        // Enter — искать сразу, не дожидаясь паузы ввода; Esc — очистить поле
+        onAccepted: {
+            debounce.stop()
+            if (field.text.trim() !== "")
+                Catalog.search(field.text, page.type)
+        }
+        Keys.onEscapePressed: event => {
+            if (field.text !== "")
+                field.text = ""
+            else
+                event.accepted = false
+        }
     }
 
     Flow {
@@ -95,9 +107,14 @@ Page {
             : Catalog.searchState === "empty" ? I18n.t("Try different wording or another filter")
             : Catalog.searchState === "error" ? I18n.t("Check your connection and try again")
             : I18n.t("Search for tracks, albums, artists, playlists and podcasts. You can also just paste an open.spotify.com link")
-        actionText: !page.signedIn ? I18n.t("Sign in") : ""
-        actionIcon: "login"
-        onAction: page.router.reset("account")
+        actionText: !page.signedIn ? I18n.t("Sign in") : Catalog.searchState === "error" ? I18n.t("Retry") : ""
+        actionIcon: !page.signedIn ? "login" : "refresh"
+        onAction: {
+            if (!page.signedIn)
+                page.router.reset("account")
+            else
+                Catalog.search(field.text, page.type)
+        }
     }
     LoadingIndicator {
         Layout.alignment: Qt.AlignHCenter
@@ -181,7 +198,7 @@ Page {
         SectionHeader {
             visible: Catalog.searchTracks.count > 0 && (page.all || page.type === "tracks")
             text: I18n.t("Tracks")
-            actionText: page.all && Catalog.totals.tracks > 5 ? I18n.t("All") : ""
+            actionText: page.all && Catalog.totals.tracks > 5 ? I18n.t("Show all") : ""
             onAction: page.showFilter("tracks")
         }
         ColumnLayout {
@@ -220,7 +237,7 @@ Page {
         SectionHeader {
             visible: Catalog.searchArtists.count > 0 && (page.all || page.type === "artists")
             text: I18n.t("Artists")
-            actionText: page.all && Catalog.totals.artists > page.perRow ? I18n.t("All") : ""
+            actionText: page.all && Catalog.totals.artists > page.perRow ? I18n.t("Show all") : ""
             onAction: page.showFilter("artists")
         }
         Flow {
@@ -247,7 +264,7 @@ Page {
         SectionHeader {
             visible: Catalog.searchAlbums.count > 0 && (page.all || page.type === "albums")
             text: I18n.t("Albums")
-            actionText: page.all && Catalog.totals.albums > page.perRow ? I18n.t("All") : ""
+            actionText: page.all && Catalog.totals.albums > page.perRow ? I18n.t("Show all") : ""
             onAction: page.showFilter("albums")
         }
         Flow {
@@ -273,7 +290,7 @@ Page {
         SectionHeader {
             visible: Catalog.searchPlaylists.count > 0 && (page.all || page.type === "playlists")
             text: I18n.t("Playlists")
-            actionText: page.all && Catalog.totals.playlists > page.perRow ? I18n.t("All") : ""
+            actionText: page.all && Catalog.totals.playlists > page.perRow ? I18n.t("Show all") : ""
             onAction: page.showFilter("playlists")
         }
         Flow {
@@ -302,7 +319,7 @@ Page {
         SectionHeader {
             visible: page.showsModel !== null && page.showsModel.count > 0 && (page.all || page.type === "shows")
             text: I18n.t("Podcasts")
-            actionText: page.all && (Catalog.totals.shows ?? 0) > page.perRow ? I18n.t("All") : ""
+            actionText: page.all && (Catalog.totals.shows ?? 0) > page.perRow ? I18n.t("Show all") : ""
             onAction: page.showFilter("shows")
         }
         Flow {
@@ -329,7 +346,7 @@ Page {
         SectionHeader {
             visible: page.episodesModel !== null && page.episodesModel.count > 0 && (page.all || page.type === "episodes")
             text: I18n.t("Episodes")
-            actionText: page.all && (Catalog.totals.episodes ?? 0) > 3 ? I18n.t("All") : ""
+            actionText: page.all && (Catalog.totals.episodes ?? 0) > 3 ? I18n.t("Show all") : ""
             onAction: page.showFilter("episodes")
         }
         ColumnLayout {

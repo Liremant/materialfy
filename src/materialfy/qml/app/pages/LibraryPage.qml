@@ -102,11 +102,14 @@ Item {
     }
     Timer { id: cascadeOff; interval: 900; onTriggered: page._cascade = false }
 
-    // ---- Сетка: ячейка 168, зазор 28 × ≥22, ряды по cols ----
-    readonly property real cell: 168
+    // ---- Сетка: ячейка от 168, зазор 28 × 22, ряды по cols ----
+    // Остаток ширины делится между плитками (они растут), а не уходит в зазоры: иначе при 2–3 колонках
+    // между плитками зияли бы промежутки по 100+ px
+    readonly property real minCell: 168
     readonly property real gapY: 28
     readonly property real innerWidth: list.width - 64
-    readonly property int cols: Math.max(2, Math.floor((innerWidth + 22) / (cell + 22)))
+    readonly property int cols: Math.max(2, Math.floor((innerWidth + 22) / (minCell + 22)))
+    readonly property real cell: Math.max(minCell, Math.floor((innerWidth - (cols - 1) * 22) / cols))
     readonly property real gapX: cols > 1 ? Math.max(22, (innerWidth - cols * cell) / (cols - 1)) : 0
     readonly property var rows: {
         const out = []
@@ -533,7 +536,7 @@ Item {
                             LikedTile {
                                 width: 2 * page.cell + page.gapX
                                 trackCount: page.likedCount
-                                height: 216
+                                height: page.cell + 48
                                 onClicked: page.open({ kind: "liked" })
                                 onPlayClicked: page.play({ kind: "liked" })
                                 onMenuRequested: p => page.showMenu({ kind: "liked" }, p)
@@ -619,9 +622,21 @@ Item {
         icon: texts[0]
         title: texts[1]
         text: texts[2]
-        actionText: page.kind === "albums" && page.query.trim() === "" ? I18n.t("Find albums") : ""
-        actionIcon: "search"
-        onAction: page.router.reset("search")
+        // ничего не нашлось — кнопка снимает то, что сузило список (поиск или фильтр владельца)
+        actionText: page.query.trim() !== "" ? I18n.t("Clear search")
+                  : page.owner !== "all" ? I18n.t("Show all")
+                  : page.kind === "albums" ? I18n.t("Find albums") : ""
+        actionIcon: page.query.trim() !== "" || page.owner !== "all" ? "close" : "search"
+        onAction: {
+            if (page.query.trim() !== "") {
+                page.query = ""
+                page.searchOpen = false
+            } else if (page.owner !== "all") {
+                page.owner = "all"
+            } else {
+                page.router.reset("search")
+            }
+        }
     }
     EmptyState {
         anchors.centerIn: parent

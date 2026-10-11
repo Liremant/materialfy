@@ -69,6 +69,13 @@ T.Popup {
             color: Theme.surfaceContainerLow
             Behavior on drag { enabled: !dragHandler.active; NumberAnimation { duration: Theme.motion.spatialFast; easing.type: Easing.OutCubic } }
 
+            // нажатие на пустое место листа (подписи, поля) не должно пройти к scrim под ним и закрыть лист
+            MouseArea {
+                anchors.fill: parent
+                acceptedButtons: Qt.AllButtons
+                onWheel: wheel => wheel.accepted = true
+            }
+
             // ручка: тянуть вниз — закрыть
             Item {
                 id: handleBox

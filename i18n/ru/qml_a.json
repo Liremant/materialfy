@@ -224,7 +224,6 @@
   "How this computer appears in Spotify on your phone and other devices": "Так этот компьютер виден в Spotify на телефоне и других устройствах",
   "Account devices": "Устройства аккаунта",
   "Sign in to see devices": "Войдите, чтобы видеть устройства",
-  "From Spotify and your local network. “Play there” moves playback": "Из Spotify и из локальной сети. «Играть там» переносит воспроизведение",
   "No other devices found. Open Spotify on your phone or speaker and tap “Refresh”.": "Других устройств не видно. Откройте Spotify на телефоне или колонке и нажмите «Обновить».",
   "Google Cast and Chromecast aren’t supported.": "Google Cast и Chromecast не поддерживаются.",
   "Proxy": "Прокси",
@@ -293,6 +292,5 @@
   "Closing the window hides it in the tray and the music keeps playing. Quit from the tray menu or with Ctrl+Q": "Закрытое окно прячется в значок в трее, музыка играет дальше. Выход — из меню значка или Ctrl+Q",
   "Mouse wheel scroll step": "Шаг прокрутки колесом",
   "About the app": "О программе",
-  "An unofficial Spotify client in Material 3 Expressive style. Playback requires Spotify Premium; no lossless, crossfade or offline downloads.": "Неофициальный клиент Spotify в стиле Material 3 Expressive. Для воспроизведения нужен Spotify Premium; без lossless, кроссфейда и офлайн-загрузок.",
   "Based on spotifast (crmne, MIT) and yamusic-md3 (yaskorinov, MIT); not affiliated with Spotify AB. Playback: librespot (MIT). Fonts: Google Sans (OFL), Material Symbols (Apache 2.0).": "Основан на spotifast (crmne, MIT) и yamusic-md3 (yaskorinov, MIT); не связан со Spotify AB. Воспроизведение — librespot (MIT). Шрифты: Google Sans (OFL), Material Symbols (Apache 2.0)."
 }

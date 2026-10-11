@@ -151,7 +151,8 @@ Item {
         anchors.fill: parent
         z: -1
         radius: Theme.shape.medium
-        enabled: !root.disabled && !root._working
+        // уже играющее устройство (действия нет) не кликается: перенос «на себя» ничего не даёт
+        enabled: !root.disabled && !root._working && (root.actionText !== "" || root.setup)
         onClicked: root.activated()
     }
 }

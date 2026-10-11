@@ -193,7 +193,8 @@ Page {
             Button {
                 visible: page.signedIn
                 Layout.alignment: Qt.AlignTop
-                text: page.compact ? "" : I18n.t("Sign out")
+                // всегда с подписью: голая иконка «выйти» рядом с именем легко нажать, не поняв, что это
+                text: I18n.t("Sign out")
                 icon: "logout"
                 style: "outlined"
                 onClicked: Auth.signOut()
@@ -516,6 +517,7 @@ Page {
                 : Settings.crossfade > 0 ? I18n.t("The end of a track fades out as the next one fades in")
                 : I18n.t("Off: tracks play back to back")
             Slider {
+                wheelEnabled: false     // колесо прокручивает страницу, а не меняет настройку
                 width: 220
                 from: 0
                 to: 12
@@ -529,6 +531,7 @@ Page {
             title: I18n.t("Playback speed")
             description: I18n.t("Pitch stays the same. Applies on this computer")
             Slider {
+                wheelEnabled: false     // колесо прокручивает страницу, а не меняет настройку
                 width: 220
                 from: 0.5
                 to: 2
@@ -555,6 +558,7 @@ Page {
             opacity: enabled ? 1 : 0.5
             description: Player.remote ? I18n.t("Another device is playing — its volume is in the mini player") : ""
             Slider {
+                wheelEnabled: false     // колесо прокручивает страницу, а не меняет настройку
                 width: 220
                 from: 0
                 to: 1
@@ -613,7 +617,7 @@ Page {
                         Layout.fillWidth: true
                         text: !page.signedIn ? I18n.t("Sign in to see devices")
                               : Devices.errorText !== "" ? Devices.errorText
-                              : I18n.t("From Spotify and your local network. “Play there” moves playback")
+                              : I18n.t("From Spotify and your local network. “Transfer” moves playback to that device")
                         type: "bodySmall"
                         color: Devices.errorText !== "" ? Theme.error : Theme.fgSurfaceVariant
                         wrapMode: Text.WordWrap
@@ -840,6 +844,7 @@ Page {
             opacity: enabled ? 1 : 0.5
             description: I18n.t("Older tracks are removed when the cache is full")
             Slider {
+                wheelEnabled: false     // колесо прокручивает страницу, а не меняет настройку
                 width: 220
                 from: 256
                 to: 10240
@@ -933,8 +938,10 @@ Page {
                         readonly property bool current: Settings.customSeed.toUpperCase() === modelData
                         width: 32
                         height: 32
-                        shape: current ? "cookie6" : "circle"
+                        shape: current || swatchArea.containsMouse ? "cookie6" : "circle"
                         color: modelData
+                        scale: swatchArea.pressed ? 0.9 : 1
+                        Behavior on scale { NumberAnimation { duration: Theme.motion.effectsFast } }
                         MorphShape {
                             anchors.centerIn: parent
                             width: 12; height: 12
@@ -942,7 +949,13 @@ Page {
                             shape: "circle"
                             color: "white"
                         }
-                        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: Settings.customSeed = parent.modelData }
+                        MouseArea {
+                            id: swatchArea
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: Settings.customSeed = parent.modelData
+                        }
                     }
                 }
             }
@@ -1037,6 +1050,7 @@ Page {
             description: Settings.backdropMode === "palette" ? I18n.t("The gradient doesn’t depend on the cover")
                 : I18n.t("{0}% · 0 is a sharp cover, 100 is color only", Math.round(Settings.nowPlayingBlur * 100))
             Slider {
+                wheelEnabled: false     // колесо прокручивает страницу, а не меняет настройку
                 width: 220
                 from: 0
                 to: 1
@@ -1052,6 +1066,7 @@ Page {
                 ? I18n.t("Background colors slowly shift while music plays")
                 : I18n.t("Off — the blur stays still")
             Slider {
+                wheelEnabled: false     // колесо прокручивает страницу, а не меняет настройку
                 width: 220
                 from: 0
                 to: 1
@@ -1101,6 +1116,7 @@ Page {
             title: I18n.t("Mouse wheel scroll step")
             description: I18n.t("{0} px per notch; grows up to ×2 when scrolling fast", Settings.wheelStep)
             Slider {
+                wheelEnabled: false     // колесо прокручивает страницу, а не меняет настройку
                 width: 220
                 from: 60
                 to: 480
@@ -1118,7 +1134,7 @@ Page {
 
         SettingRow {
             title: "Materialfy 0.1"
-            description: I18n.t("An unofficial Spotify client in Material 3 Expressive style. Playback requires Spotify Premium; no lossless, crossfade or offline downloads.")
+            description: I18n.t("An unofficial Spotify client in Material 3 Expressive style. Playback requires Spotify Premium; no lossless or offline downloads.")
         }
         Label {
             Layout.fillWidth: true

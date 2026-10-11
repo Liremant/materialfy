@@ -40,17 +40,19 @@ Item {
             GradientStop { position: 1; color: Theme.tertiaryContainer }
         }
 
+        // clip у Rectangle — по прямоугольнику, не по скруглению: фигура не должна доходить до угла карточки,
+        // иначе за скруглённым углом остаётся её квадратный край
         MorphShape {
-            x: parent.width - width + 18
-            y: -26
+            x: parent.width - width + 4
+            y: -14
             width: 150
             height: 150
             shape: root.hovered ? "flower8" : "cookie12"
             color: Qt.alpha(Theme.fgPrimaryContainer, 0.18)
             Icon {
                 anchors.centerIn: parent
-                anchors.horizontalCenterOffset: -10
-                anchors.verticalCenterOffset: 10
+                anchors.horizontalCenterOffset: -2
+                anchors.verticalCenterOffset: 7
                 name: "favorite"
                 size: 56
                 fill: 1

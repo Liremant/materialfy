@@ -57,6 +57,8 @@ Item {
         font.letterSpacing: Theme.type.bodyLarge.tracking
         font.variableAxes: Theme.fontAxes(Theme.type.bodyLarge.size, 400)
         clip: true
+        // без фокуса длинный текст виден с начала, а не прокручен к курсору в конце
+        autoScroll: activeFocus
         onAccepted: root.accepted(text)
 
         Label {

@@ -19,15 +19,9 @@ Page {
     showHeader: false
     readonly property bool heroTitle: true     // название — в шапке; в верхней панели — после прокрутки
 
+    // год / месяц и год / полная дата — по точности даты ("October 9, 2024", «9 октября 2024»)
     function _date(iso) {
-        const m = /^(\d{4})(?:-(\d{2}))?(?:-(\d{2}))?/.exec(iso ?? "")
-        if (!m)
-            return ""
-        if (!m[2])
-            return m[1]
-        if (!m[3])
-            return I18n.monthYear(new Date(Number(m[1]), Number(m[2]) - 1, 1))
-        return I18n.dayMonth(new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))) + " " + m[1]
+        return I18n.releaseDate(iso ?? "")
     }
     function _minutes(ms) {
         return I18n.duration(Math.max(60000, ms))
