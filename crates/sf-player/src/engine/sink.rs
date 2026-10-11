@@ -18,6 +18,7 @@ use std::time::{Duration, Instant};
 
 use fastframe_audio::{Buffer, BufferSize, Maintained, OutputOptions, Render};
 use librespot_playback::audio_backend::{Sink, SinkError, SinkResult};
+use librespot_playback::config::PlaybackReport;
 use librespot_playback::convert::Converter;
 use librespot_playback::decoder::AudioPacket;
 use librespot_playback::mixer::VolumeGetter;
@@ -26,6 +27,7 @@ use librespot_playback::{NUM_CHANNELS, SAMPLE_RATE};
 use rodio::Source;
 
 use super::resample::Resampler;
+use super::stretch::TimeStretch;
 
 /// The backend name Settings uses for this sink.
 pub const NAME: &str = "rodio";
@@ -99,6 +101,13 @@ const INTERRUPT_FADE: Duration = Duration::from_millis(50);
 /// How long Play takes to come up, and Pause and Stop to go down.
 const TRANSPORT_FADE: Duration = Duration::from_millis(50);
 
+/// A crossfade shorter than this is not worth starting.
+const CROSSFADE_MIN: Duration = Duration::from_millis(500);
+
+/// How much past the crossfade the outgoing track may be read ahead before
+/// the fade is given up, should the next track not come.
+const CROSSFADE_SLACK: Duration = Duration::from_secs(3);
+
 /// Smooths slider and mute changes at the device's sample rate.
 const VOLUME_RAMP: Duration = Duration::from_millis(30);
 
@@ -127,12 +136,17 @@ pub struct AudioControl {
     reset_output: AtomicBool,
     reset_processing: AtomicBool,
     buffer_ms: u32,
+    /// What librespot is feeding the sink, for the crossfade.
+    report: Arc<PlaybackReport>,
 }
 
 #[derive(Default)]
 struct AudioTarget {
     sink: Weak<rodio::Sink>,
     envelope: Option<Arc<Envelope>>,
+    /// The outgoing track while it fades under the next one.
+    tail: Weak<rodio::Sink>,
+    tail_envelope: Option<Arc<Envelope>>,
 }
 
 impl AudioControl {
@@ -143,7 +157,13 @@ impl AudioControl {
             reset_output: AtomicBool::new(false),
             reset_processing: AtomicBool::new(false),
             buffer_ms: buffer_ms.clamp(*BUFFER_MS_RANGE.start(), *BUFFER_MS_RANGE.end()),
+            report: Arc::default(),
         })
+    }
+
+    /// Where librespot reports what it feeds the sink (`PlayerConfig::playback_report`).
+    pub fn report(&self) -> Arc<PlaybackReport> {
+        Arc::clone(&self.report)
     }
 
     /// Follows confirmed decoder transitions, including seeks requested by
@@ -155,6 +175,9 @@ impl AudioControl {
                 let target = self.target.lock().unwrap_or_else(PoisonError::into_inner);
                 if let Some(sink) = target.sink.upgrade() {
                     sink.stop();
+                }
+                if let Some(tail) = target.tail.upgrade() {
+                    tail.stop();
                 }
                 self.reset_output.store(true, Ordering::SeqCst);
                 self.reset_processing.store(true, Ordering::SeqCst);
@@ -174,24 +197,39 @@ impl AudioControl {
         if self.waiting_for_track.swap(true, Ordering::SeqCst) {
             return;
         }
-        let (sink, envelope) = {
+        let (sink, envelope, tail, tail_envelope) = {
             let target = self.target.lock().unwrap_or_else(PoisonError::into_inner);
-            (target.sink.upgrade(), target.envelope.clone())
+            (
+                target.sink.upgrade(),
+                target.envelope.clone(),
+                target.tail.upgrade(),
+                target.tail_envelope.clone(),
+            )
         };
-        if let (Some(sink), Some(envelope)) = (&sink, &envelope) {
+        // A skip in the middle of a crossfade takes both tracks down.
+        let tail_envelope = tail.as_ref().and(tail_envelope);
+        for envelope in [&envelope, &tail_envelope].into_iter().flatten() {
             envelope.fade_out();
-            let wait =
-                Duration::from_millis(u64::from(self.buffer_ms)).saturating_add(INTERRUPT_FADE * 2);
-            let deadline = Instant::now() + wait;
-            while !envelope.silent() && Instant::now() < deadline {
-                thread::sleep(Duration::from_millis(1));
-            }
-            // Unlike `clear`, this does not wait for every queued source.
-            // The replacement gets a fresh rodio sink on its first write.
+        }
+        for envelope in [&envelope, &tail_envelope].into_iter().flatten() {
+            Self::settle(envelope, self.buffer_ms);
+        }
+        // Unlike `clear`, this does not wait for every queued source.
+        // The replacement gets a fresh rodio sink on its first write.
+        for sink in [&sink, &tail].into_iter().flatten() {
             sink.stop();
         }
         self.reset_output.store(true, Ordering::SeqCst);
         self.reset_processing.store(true, Ordering::SeqCst);
+    }
+
+    /// Waits for a fade to reach silence, or as long as one can take.
+    fn settle(envelope: &Envelope, buffer_ms: u32) {
+        let wait = Duration::from_millis(u64::from(buffer_ms)).saturating_add(INTERRUPT_FADE * 2);
+        let deadline = Instant::now() + wait;
+        while !envelope.silent() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(1));
+        }
     }
 
     /// Opens the write gate once librespot has left the old decoder behind.
@@ -222,6 +260,21 @@ impl AudioControl {
         let mut target = self.target.lock().unwrap_or_else(PoisonError::into_inner);
         target.sink = Arc::downgrade(sink);
         target.envelope = Some(envelope);
+    }
+
+    /// The outgoing track of a crossfade, for a skip or seek to stop too.
+    fn register_tail(&self, tail: Option<(&Arc<rodio::Sink>, Arc<Envelope>)>) {
+        let mut target = self.target.lock().unwrap_or_else(PoisonError::into_inner);
+        match tail {
+            Some((sink, envelope)) => {
+                target.tail = Arc::downgrade(sink);
+                target.tail_envelope = Some(envelope);
+            }
+            None => {
+                target.tail = Weak::new();
+                target.tail_envelope = None;
+            }
+        }
     }
 }
 
@@ -299,6 +352,9 @@ struct Envelope {
     step: AtomicU32,
     /// The step for this envelope's nominal length, and its slowest.
     full_step: u32,
+    /// Gain follows a quarter sine of the level, so two crossfading tracks
+    /// keep their summed power steady instead of dipping in the middle.
+    equal_power: AtomicBool,
 }
 
 impl Envelope {
@@ -326,6 +382,7 @@ impl Envelope {
             target: AtomicU32::new(level),
             step: AtomicU32::new(full_step),
             full_step,
+            equal_power: AtomicBool::new(false),
         })
     }
 
@@ -346,6 +403,15 @@ impl Envelope {
         self.step
             .store(step_over(frames).max(self.full_step), Ordering::Relaxed);
         self.target.store(0, Ordering::Relaxed);
+    }
+
+    /// Moves to fully open or closed over exactly `frames` of sound, on an
+    /// equal-power curve: one side of a crossfade.
+    fn crossfade(&self, open: bool, frames: u64) {
+        let frames = frames.clamp(1, u64::from(u32::MAX)) as u32;
+        self.equal_power.store(true, Ordering::Relaxed);
+        self.step.store(step_over(frames), Ordering::Relaxed);
+        self.target.store(if open { SCALE } else { 0 }, Ordering::Relaxed);
     }
 
     /// Puts the envelope at silence at once, wherever its ramp had reached.
@@ -372,7 +438,12 @@ impl Envelope {
             std::cmp::Ordering::Equal => level,
         };
         self.level.store(next, Ordering::Relaxed);
-        level as f32 / SCALE as f32
+        let linear = level as f32 / SCALE as f32;
+        if self.equal_power.load(Ordering::Relaxed) {
+            (linear * std::f32::consts::FRAC_PI_2).sin()
+        } else {
+            linear
+        }
     }
 }
 
@@ -492,6 +563,13 @@ pub struct RodioSink {
     buffer_ms: u32,
     control: Arc<AudioControl>,
     open: Opener,
+    /// Plays the music faster or slower without changing its pitch.
+    stretch: TimeStretch,
+    /// The track count last seen in the report, to notice a new track.
+    track: u64,
+    /// Reading the outgoing track's last seconds ahead for a crossfade:
+    /// how many frames of it have gone to the queue so far.
+    collecting: Option<u64>,
 }
 
 struct Output {
@@ -514,6 +592,8 @@ struct Output {
     /// Whether this track has supplied audio since its last stop.
     fed: bool,
     last_write: Option<Instant>,
+    /// The outgoing track of a crossfade, playing out under the new one.
+    tail: Option<Arc<rodio::Sink>>,
 }
 
 impl Output {
@@ -537,6 +617,49 @@ impl Output {
         self.queued = Queued::new();
         self.fed = false;
         self.last_write = None;
+        // The tail played on the old mixer, which this one replaces.
+        self.tail = None;
+        control.register_tail(None);
+    }
+
+    /// Hands the queue to a tail that fades out over what it holds, and
+    /// starts a fresh one for the incoming track that fades in alongside.
+    /// Returns false, changing nothing, when too little is queued to fade.
+    fn start_crossfade(&mut self, control: &AudioControl) -> bool {
+        let frames = self.queued.frames();
+        let least = u64::from(self.sample_rate) * CROSSFADE_MIN.as_millis() as u64 / 1_000;
+        if frames < least {
+            return false;
+        }
+        if let Some(tail) = self.tail.take() {
+            // A crossfade still sounding when the next begins needs a track
+            // shorter than three fades, which never starts one. Cut it.
+            tail.stop();
+        }
+        self.envelope.crossfade(false, frames);
+        let incoming = Envelope::closed(self.sample_rate, INTERRUPT_FADE);
+        incoming.crossfade(true, frames);
+        let sink = Arc::new(rodio::Sink::connect_new(&self.mixer));
+        if self.sink.is_paused() {
+            sink.pause();
+        }
+        let outgoing = std::mem::replace(&mut self.sink, sink);
+        control.register(&self.sink, Arc::clone(&incoming));
+        control.register_tail(Some((&outgoing, Arc::clone(&self.envelope))));
+        self.envelope = incoming;
+        self.queued = Queued::new();
+        self.tail = Some(outgoing);
+        // An empty queue here is the handover, not an underrun.
+        self.fed = false;
+        true
+    }
+
+    /// Lets go of a tail that has finished playing.
+    fn drop_finished_tail(&mut self, control: &AudioControl) {
+        if self.tail.as_ref().is_some_and(|tail| tail.empty()) {
+            self.tail = None;
+            control.register_tail(None);
+        }
     }
 
     /// Has the device ask for sound, reopening it if it failed, moved to a
@@ -679,7 +802,35 @@ impl RodioSink {
             buffer_ms,
             control,
             open: open_output,
+            stretch: TimeStretch::new(SAMPLE_RATE, NUM_CHANNELS as usize),
+            track: 0,
+            collecting: None,
         }
+    }
+
+    /// Whether to start reading the rest of this track ahead, so its end
+    /// can play under the next one. Only when the next track is loaded and
+    /// will follow at once, and the track is long enough to spare it.
+    fn should_collect(&self) -> bool {
+        let fade = super::fx::crossfade();
+        if fade < CROSSFADE_MIN || self.collecting.is_some() {
+            return false;
+        }
+        let report = &self.control.report;
+        if !report.next_ready.load(Ordering::Relaxed) {
+            return false;
+        }
+        let duration = u64::from(report.duration_ms.load(Ordering::Relaxed));
+        let position = u64::from(report.position_ms.load(Ordering::Relaxed));
+        // In track time: at 1.5x a fade of six seconds spends nine of it.
+        let fade_ms = (fade.as_millis() as f64 * f64::from(super::fx::speed())) as u64;
+        duration > fade_ms * 3 && position >= fade_ms && duration.saturating_sub(position) <= fade_ms
+    }
+
+    /// The most frames of a track to read ahead before giving up on a fade.
+    fn collect_limit(&self) -> u64 {
+        let fade = super::fx::crossfade().as_secs_f64() * f64::from(super::fx::speed());
+        ((fade + CROSSFADE_SLACK.as_secs_f64()) * f64::from(SAMPLE_RATE)) as u64
     }
 
     fn apply_volume(&mut self) {
@@ -743,13 +894,29 @@ impl Sink for RodioSink {
         if let Some(output) = &mut self.output {
             output.transport.fade_in();
             output.sink.play();
+            if let Some(tail) = &output.tail {
+                tail.play();
+            }
         }
         Ok(())
     }
 
     /// Never fails: librespot exits the process when a sink cannot stop.
     fn stop(&mut self) -> SinkResult<()> {
+        let collected = self.collecting.take().is_some();
         if let Some(output) = &mut self.output {
+            if collected {
+                // The track was read ahead for a crossfade, and playback
+                // stopped instead of moving on: the end of the list. Its
+                // last seconds are already queued; let them play.
+                let left = Duration::from_secs_f64(
+                    output.queued.frames() as f64 / f64::from(output.sample_rate.max(1)),
+                );
+                let deadline = Instant::now() + left + DRAIN_TIMEOUT;
+                while !output.sink.empty() && !output.failed() && Instant::now() < deadline {
+                    thread::sleep(Duration::from_millis(10));
+                }
+            }
             // The drain below plays the queue out, so the ramp is cut to
             // what is in it. During steady playback that is the whole
             // 50 ms; just after a seek or a track change it is whatever has
@@ -760,6 +927,9 @@ impl Sink for RodioSink {
                 thread::sleep(Duration::from_millis(10));
             }
             output.sink.pause();
+            if let Some(tail) = &output.tail {
+                tail.pause();
+            }
             // With the queue played out, the device can stop asking for
             // sound until Play: a paused app costs no audio work (#636).
             output.device.pause();
@@ -784,11 +954,21 @@ impl Sink for RodioSink {
             return Ok(());
         }
         let samples = converter.f64_to_f32(samples);
+        let track = self.control.report.track.load(Ordering::Relaxed);
+        let new_track = track != self.track;
+        self.track = track;
         // Sound arriving without a Play first still has a device to go to.
         self.ensure_open()?;
-        if self.control.take_reset()
-            && let Some(output) = &mut self.output
-        {
+        let reset = self.control.take_reset();
+        if reset {
+            self.stretch.reset();
+            self.collecting = None;
+        }
+        let collect_now = self.should_collect();
+        let collect_limit = self.collect_limit();
+        if reset && let Some(output) = &mut self.output {
+            output.tail = None;
+            self.control.register_tail(None);
             let sink = Arc::new(rodio::Sink::connect_new(&output.mixer));
             let envelope = Envelope::rising(output.sample_rate, INTERRUPT_FADE);
             self.control.register(&sink, Arc::clone(&envelope));
@@ -807,10 +987,25 @@ impl Sink for RodioSink {
                 "the audio output is not open".into(),
             ));
         };
+        output.drop_finished_tail(&self.control);
+        if new_track && self.collecting.take().is_some() && output.start_crossfade(&self.control) {
+            log::debug!("crossfade into the next track");
+        }
+        let input_frames = (samples.len() / NUM_CHANNELS as usize) as u64;
+        let samples = self.stretch.process(&samples, super::fx::speed());
         let samples = match &mut output.resampler {
             Some(resampler) => resampler.process(&samples),
             None => samples,
         };
+        if samples.is_empty() {
+            // The stretch is still gathering its next piece. An empty chunk
+            // would take a place in the queue, which counts chunks, and
+            // leave less sound in it than the limit means.
+            if let Some(collected) = self.collecting.as_mut() {
+                *collected += input_frames;
+            }
+            return Ok(());
+        }
         let now = Instant::now();
         if output.fed && output.sink.empty() && !output.sink.is_paused() {
             let late_ms = output
@@ -839,13 +1034,32 @@ impl Sink for RodioSink {
         ));
         output.fed = true;
         output.last_write = Some(now);
+        // A track read ahead for a crossfade goes to the queue as fast as
+        // it decodes, so the next one starts while its end still plays.
+        let read_ahead = match self.collecting.as_mut() {
+            Some(collected) => {
+                *collected += input_frames;
+                if *collected > collect_limit {
+                    log::info!("crossfade given up: the next track did not follow");
+                    self.collecting = None;
+                    false
+                } else {
+                    true
+                }
+            }
+            None if collect_now => {
+                self.collecting = Some(input_frames);
+                true
+            }
+            None => false,
+        };
         // Let rodio drain a little; without this the whole track would be
         // decoded into memory at once. A full queue sleeps until rodio has
         // played `REFILL` of it, then is topped up in one go.
         let refill = u64::from(output.sample_rate) * REFILL.as_millis() as u64 / 1_000;
         let mut stall = Stall::new(output.queued.consumed(), Instant::now());
         let mut stalled = false;
-        while output.sink.len() > QUEUE_LIMIT {
+        while !read_ahead && output.sink.len() > QUEUE_LIMIT {
             if output.failed() {
                 // Headphones that connect, a new default output or a device
                 // that went away: move to the output to use now and carry on
@@ -978,6 +1192,7 @@ fn open_output(
         queued: Queued::new(),
         fed: false,
         last_write: None,
+        tail: None,
     };
     output.attach((mixer, sample_rate), control);
     Ok(output)
@@ -1548,6 +1763,68 @@ mod tests {
         let transport = Envelope::open(RATE, TRANSPORT_FADE);
         transport.fade_out_over(u64::from(nominal) * 10);
         falls_silent_after(&transport, nominal);
+    }
+
+    /// The two sides of a crossfade keep their summed power steady, so the
+    /// music neither dips nor swells while one track gives way to the next.
+    #[test]
+    fn a_crossfade_keeps_the_power_steady() {
+        let frames = 400;
+        let outgoing = Envelope::open(RATE, INTERRUPT_FADE);
+        let incoming = Envelope::closed(RATE, INTERRUPT_FADE);
+        outgoing.crossfade(false, frames);
+        incoming.crossfade(true, frames);
+        for frame in 0..=frames {
+            let (out, inc) = (outgoing.next_gain(), incoming.next_gain());
+            let power = out * out + inc * inc;
+            assert!((power - 1.0).abs() < 0.01, "frame {frame}: {power}");
+        }
+        assert!(outgoing.silent());
+        assert_eq!(incoming.next_gain(), 1.0);
+    }
+
+    /// A skip during a crossfade still takes the 50 ms interruption fade,
+    /// not the seconds the crossfade was set to.
+    #[test]
+    fn a_skip_mid_crossfade_fades_out_quickly() {
+        let incoming = Envelope::closed(RATE, INTERRUPT_FADE);
+        incoming.crossfade(true, 10_000);
+        for _ in 0..5_000 {
+            incoming.next_gain();
+        }
+        incoming.fade_out();
+        let mut frames = 0;
+        while !incoming.silent() {
+            incoming.next_gain();
+            frames += 1;
+        }
+        assert!(frames <= fade_frames(RATE, INTERRUPT_FADE), "{frames} frames");
+    }
+
+    /// The end of a track is read ahead only with a fade set, the next
+    /// track loaded, and the track long enough to spare the time.
+    #[test]
+    fn a_track_is_read_ahead_only_near_its_end_with_a_next_one_loaded() {
+        super::super::fx::set_crossfade(Duration::from_secs(6));
+        let sink = RodioSink::new(
+            None,
+            Arc::new(|_| {}),
+            Box::new(librespot_playback::mixer::NoOpVolume),
+            DEFAULT_BUFFER_MS,
+            AudioControl::new(DEFAULT_BUFFER_MS),
+        );
+        let report = sink.control.report();
+        let at = |duration: u32, position: u32, next: bool| {
+            report.duration_ms.store(duration, Ordering::Relaxed);
+            report.position_ms.store(position, Ordering::Relaxed);
+            report.next_ready.store(next, Ordering::Relaxed);
+            sink.should_collect()
+        };
+        assert!(at(200_000, 194_500, true), "five and a half seconds left");
+        assert!(!at(200_000, 190_000, true), "ten seconds left");
+        assert!(!at(200_000, 194_500, false), "nothing follows");
+        assert!(!at(15_000, 10_000, true), "too short to spare a fade");
+        assert!(sink.collect_limit() > u64::from(SAMPLE_RATE) * 6);
     }
 
     #[test]

@@ -461,9 +461,33 @@ Page {
         }
         SettingRow {
             title: "Плавный переход между треками"
-            description: "Движок воспроизведения Spotify (librespot) не умеет кроссфейд"
-            opacity: 0.5
-            StatusChip { text: "Недоступно" }
+            enabled: Settings.gapless
+            opacity: enabled ? 1 : 0.5
+            description: !Settings.gapless ? "Работает вместе с «Без пауз между треками»"
+                : Settings.crossfade > 0 ? "Конец трека затихает, пока нарастает следующий"
+                : "Выключено: треки идут встык"
+            Slider {
+                width: 220
+                from: 0
+                to: 12
+                stepSize: 1
+                value: Settings.crossfade
+                valueText: v => Math.round(v) === 0 ? "Выкл." : Math.round(v) + " с"
+                onMoved: v => Settings.crossfade = Math.round(v)
+            }
+        }
+        SettingRow {
+            title: "Скорость воспроизведения"
+            description: "Высота голоса не меняется. Действует на этом компьютере"
+            Slider {
+                width: 220
+                from: 0.5
+                to: 2
+                stepSize: 0.05
+                value: Settings.playbackSpeed
+                valueText: v => (Math.round(v * 100) / 100).toString().replace(".", ",") + "×"
+                onMoved: v => Settings.playbackSpeed = Math.round(v * 20) / 20
+            }
         }
         SettingRow {
             title: "Устройство вывода"

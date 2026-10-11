@@ -12,21 +12,34 @@ use mf_platform::{SettingKey, SettingsStore};
 
 use crate::AppRequest;
 
-/// «Живое» из настроек → плеер: только Autoplay. Громкость в плеер передаёт только мост Player (начальная —
-/// PlayerConfig.volume); параметры движка не трогает (флаг перезапуска ведёт AuthService).
+/// «Живое» из настроек → плеер: Autoplay, скорость и кроссфейд (последние два вывод звука читает сам на каждом
+/// пакете). Громкость в плеер передаёт только мост Player (начальная — PlayerConfig.volume); параметры движка
+/// не трогает (флаг перезапуска ведёт AuthService).
 pub fn spawn_settings_glue(rt: &Handle, settings: Arc<SettingsStore>, player: PlayerHandle) {
+    apply_audio_fx(&settings);
     let mut changes = settings.subscribe();
     rt.spawn(async move {
         loop {
             match changes.recv().await {
-                Ok(SettingKey::Autoplay) | Err(broadcast::error::RecvError::Lagged(_)) => {
+                Ok(SettingKey::Autoplay) => player.set_autoplay(settings.get_bool(SettingKey::Autoplay)),
+                Ok(SettingKey::PlaybackSpeed | SettingKey::Crossfade) => apply_audio_fx(&settings),
+                Err(broadcast::error::RecvError::Lagged(_)) => {
                     player.set_autoplay(settings.get_bool(SettingKey::Autoplay));
+                    apply_audio_fx(&settings);
                 }
                 Ok(_) => {}
                 Err(broadcast::error::RecvError::Closed) => return,
             }
         }
     });
+}
+
+/// Скорость и кроссфейд из настроек → вывод звука.
+fn apply_audio_fx(settings: &SettingsStore) {
+    use sf_player::engine::fx;
+    fx::set_speed(settings.get_f64(SettingKey::PlaybackSpeed) as f32);
+    let seconds = settings.get_int(SettingKey::Crossfade).clamp(0, mf_platform::settings::CROSSFADE_MAX_S) as u64;
+    fx::set_crossfade(Duration::from_secs(seconds));
 }
 
 /// EngineConfig из настроек: имя устройства (DeviceName или DevicesService::default_device_name), битрейт,

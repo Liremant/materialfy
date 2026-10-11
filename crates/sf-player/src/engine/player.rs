@@ -221,7 +221,7 @@ impl LocalState {
     pub fn position_now(&self) -> u32 {
         match (self.playback, self.position_at) {
             (Playback::Playing, Some(at)) => {
-                let elapsed = at.elapsed().as_millis() as u32;
+                let elapsed = super::fx::track_elapsed_ms(at.elapsed());
                 let limit = self
                     .track
                     .as_ref()
@@ -419,6 +419,7 @@ impl Engine {
             ..SessionConfig::default()
         };
         let normalisation_factor = Arc::new(std::sync::atomic::AtomicU64::new(1.0f64.to_bits()));
+        let audio = AudioControl::new(config.buffer_ms);
         let player_config = PlayerConfig {
             bitrate: config.bitrate(),
             gapless: config.gapless,
@@ -429,6 +430,8 @@ impl Engine {
             // the tap can undo it for the visualisers: they show the music,
             // not the loudness housekeeping.
             normalisation_report: Some(Arc::clone(&normalisation_factor)),
+            // Where each packet sits in its track, for the crossfade.
+            playback_report: Some(audio.report()),
             ..PlayerConfig::default()
         };
 
@@ -449,7 +452,6 @@ impl Engine {
             ..LocalState::default()
         }));
         let session = Session::new(session_config, Some(cache));
-        let audio = AudioControl::new(config.buffer_ms);
         let (sink_builder, volume) = sink_builder(
             config,
             Arc::clone(&state),

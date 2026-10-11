@@ -722,7 +722,7 @@ impl Core {
             let position_ms = match self.pending_local_position {
                 Some((position, at)) if at.elapsed() < OPTIMISTIC_HOLD => {
                     if self.local.playback == Playback::Playing {
-                        let elapsed = at.elapsed().as_millis() as u32;
+                        let elapsed = crate::engine::fx::track_elapsed_ms(at.elapsed());
                         position.saturating_add(elapsed).min(track.duration_ms.max(position))
                     } else {
                         position

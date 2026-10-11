@@ -58,6 +58,8 @@ pub mod qobject {
         #[qproperty(bool, audio_cache, cxx_name = "audioCache", READ, WRITE = set_audio_cache, NOTIFY = audio_cache_changed)]
         #[qproperty(i32, audio_cache_mb, cxx_name = "audioCacheMb", READ, WRITE = set_audio_cache_mb, NOTIFY = audio_cache_mb_changed)]
         #[qproperty(bool, playback_authorized, cxx_name = "playbackAuthorized", READ, WRITE = set_playback_authorized, NOTIFY = playback_authorized_changed)]
+        #[qproperty(f64, playback_speed, cxx_name = "playbackSpeed", READ, WRITE = set_playback_speed, NOTIFY = playback_speed_changed)]
+        #[qproperty(i32, crossfade, READ, WRITE = set_crossfade, NOTIFY = crossfade_changed)]
         #[qproperty(QString, device_name, cxx_name = "deviceName", READ, WRITE = set_device_name, NOTIFY = device_name_changed)]
         #[qproperty(QString, web_client_id, cxx_name = "webClientId", READ, WRITE = set_web_client_id, NOTIFY = web_client_id_changed)]
         #[qproperty(QString, proxy_mode, cxx_name = "proxyMode", READ, NOTIFY = proxy_mode_changed)]
@@ -112,6 +114,8 @@ pub mod qobject {
         fn set_audio_cache(self: Pin<&mut Settings>, value: bool);
         fn set_audio_cache_mb(self: Pin<&mut Settings>, value: i32);
         fn set_playback_authorized(self: Pin<&mut Settings>, value: bool);
+        fn set_playback_speed(self: Pin<&mut Settings>, value: f64);
+        fn set_crossfade(self: Pin<&mut Settings>, value: i32);
         fn set_device_name(self: Pin<&mut Settings>, value: QString);
         fn set_web_client_id(self: Pin<&mut Settings>, value: QString);
         fn set_close_to_tray(self: Pin<&mut Settings>, value: bool);
@@ -219,6 +223,12 @@ pub mod qobject {
         #[qsignal]
         #[cxx_name = "playbackAuthorizedChanged"]
         fn playback_authorized_changed(self: Pin<&mut Settings>);
+        #[qsignal]
+        #[cxx_name = "playbackSpeedChanged"]
+        fn playback_speed_changed(self: Pin<&mut Settings>);
+        #[qsignal]
+        #[cxx_name = "crossfadeChanged"]
+        fn crossfade_changed(self: Pin<&mut Settings>);
         #[qsignal]
         #[cxx_name = "deviceNameChanged"]
         fn device_name_changed(self: Pin<&mut Settings>);
@@ -449,6 +459,8 @@ settings! {
     audio_cache: bool = AudioCache, set_audio_cache, audio_cache_changed;
     audio_cache_mb: i32 = AudioCacheMb, set_audio_cache_mb, audio_cache_mb_changed;
     playback_authorized: bool = PlaybackAuthorized, set_playback_authorized, playback_authorized_changed;
+    playback_speed: f64 = PlaybackSpeed, set_playback_speed, playback_speed_changed;
+    crossfade: i32 = Crossfade, set_crossfade, crossfade_changed;
     device_name: QString = DeviceName, set_device_name, device_name_changed;
     web_client_id: QString = WebClientId, set_web_client_id, web_client_id_changed;
     close_to_tray: bool = CloseToTray, set_close_to_tray, close_to_tray_changed;

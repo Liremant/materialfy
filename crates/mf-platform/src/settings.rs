@@ -70,6 +70,10 @@ pub enum SettingKey {
     AudioCacheMb,
     /// пользователь включил воспроизведение на этом ПК (грант playback выдан)
     PlaybackAuthorized,
+    /// скорость воспроизведения 0.5…2.0 (шаг 0.05), без смены высоты тона; меняется на лету
+    PlaybackSpeed,
+    /// кроссфейд между треками, секунды 0…12 (0 — выкл.); меняется на лету
+    Crossfade,
     // Spotify Connect и сеть
     /// имя Connect-устройства; "" — «Materialfy · <имя ПК>»
     DeviceName,
@@ -109,7 +113,7 @@ pub enum SettingType {
 }
 
 impl SettingKey {
-    pub const ALL: [SettingKey; 45] = [
+    pub const ALL: [SettingKey; 47] = [
         SettingKey::ThemeMode,
         SettingKey::SchemeVariant,
         SettingKey::AccentFromCover,
@@ -144,6 +148,8 @@ impl SettingKey {
         SettingKey::AudioCache,
         SettingKey::AudioCacheMb,
         SettingKey::PlaybackAuthorized,
+        SettingKey::PlaybackSpeed,
+        SettingKey::Crossfade,
         SettingKey::DeviceName,
         SettingKey::WebClientId,
         SettingKey::ProxyMode,
@@ -195,6 +201,8 @@ impl SettingKey {
             AudioCache => "audioCache",
             AudioCacheMb => "audioCacheMb",
             PlaybackAuthorized => "playbackAuthorized",
+            PlaybackSpeed => "playbackSpeed",
+            Crossfade => "crossfade",
             DeviceName => "deviceName",
             WebClientId => "webClientId",
             ProxyMode => "proxyMode",
@@ -260,6 +268,8 @@ impl SettingKey {
             AudioCache => Bool(true),
             AudioCacheMb => Int(2048),
             PlaybackAuthorized => Bool(false),
+            PlaybackSpeed => Float(1.0),
+            Crossfade => Int(0),
             DeviceName => Str(String::new()),
             WebClientId => Str(String::new()),
             ProxyMode => Str("system".into()),
@@ -288,10 +298,18 @@ impl SettingKey {
                 let steps = (mb + AUDIO_CACHE_MB_STEP / 2) / AUDIO_CACHE_MB_STEP;
                 SettingValue::Int((steps * AUDIO_CACHE_MB_STEP).clamp(AUDIO_CACHE_MB_MIN, AUDIO_CACHE_MB_MAX))
             }
+            (SettingKey::PlaybackSpeed, SettingValue::Float(speed)) => {
+                let speed = if speed.is_finite() { speed } else { 1.0 };
+                SettingValue::Float(((speed.clamp(0.5, 2.0) * 20.0).round() / 20.0).clamp(0.5, 2.0))
+            }
+            (SettingKey::Crossfade, SettingValue::Int(seconds)) => SettingValue::Int(seconds.clamp(0, CROSSFADE_MAX_S)),
             (_, value) => value,
         }
     }
 }
+
+/// Самый длинный кроссфейд, секунды.
+pub const CROSSFADE_MAX_S: i64 = 12;
 
 /// Битрейты librespot, кбит/с.
 pub const BITRATES: [i64; 3] = [96, 160, 320];
@@ -890,7 +908,7 @@ mod tests {
 
     #[test]
     fn schema() {
-        assert_eq!(SettingKey::ALL.len(), 45);
+        assert_eq!(SettingKey::ALL.len(), 47);
         for key in SettingKey::ALL {
             assert_eq!(SettingKey::from_name(key.name()), Some(key));
             assert_eq!(key.default_value().value_type(), key.value_type());
@@ -898,6 +916,16 @@ mod tests {
         assert_eq!(SettingKey::from_name("nope"), None);
         assert_eq!(SettingKey::Volume.default_value(), SettingValue::Float(0.7));
         assert_eq!(SettingKey::WheelStep.value_type(), SettingType::Int);
+    }
+
+    #[test]
+    fn speed_and_crossfade_stay_in_range() {
+        use SettingValue::*;
+        assert_eq!(SettingKey::PlaybackSpeed.normalize(Float(1.23)), Float(1.25));
+        assert_eq!(SettingKey::PlaybackSpeed.normalize(Float(9.0)), Float(2.0));
+        assert_eq!(SettingKey::PlaybackSpeed.normalize(Float(f64::NAN)), Float(1.0));
+        assert_eq!(SettingKey::Crossfade.normalize(Int(-3)), Int(0));
+        assert_eq!(SettingKey::Crossfade.normalize(Int(40)), Int(CROSSFADE_MAX_S));
     }
 
     #[test]
