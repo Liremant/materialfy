@@ -3,7 +3,8 @@ import QtQuick.Layouts
 import Md3
 import Materialfy.Core
 
-// Строка трека: номер · обложка · название/исполнители · альбом · (добавил/добавлено) · лайк · длительность.
+// Строка трека: номер · обложка · название/исполнители · альбом · (добавил/добавлено) · (прослушивания) · лайк ·
+// длительность.
 // editable — режим правки плейлиста: ручка перетаскивания слева, «убрать» вместо сердца и ⋯.
 Item {
     id: root
@@ -24,13 +25,21 @@ Item {
     property int durationMs: 0
     property bool explicit: false
     property bool available: true
+    // прослушивания на Spotify (0 — неизвестно); колонка — только где showPlays (альбом, исполнитель)
+    // и строка достаточно широкая
+    property real playCount: 0
+    property bool showPlays: false
+    property bool _playsRoom: width > 600
     property bool liked: false
     property bool current: false       // играет сейчас
     property bool showAlbum: true
     property bool wide: showAlbum && _wideAuto
     // колонка альбома появляется с запасом ±20 px, чтобы не мигать у самой границы при растягивании
     property bool _wideAuto: width > 720
-    onWidthChanged: _wideAuto = _wideAuto ? width > 700 : width > 740
+    onWidthChanged: {
+        _wideAuto = _wideAuto ? width > 700 : width > 740
+        _playsRoom = _playsRoom ? width > 580 : width > 620
+    }
     property real _albumT: wide ? 1 : 0
     Behavior on _albumT { NumberAnimation { duration: Theme.motion.spatialDefault; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.motion.emphasized } }
     property var track: null           // полный словарь трека для меню; без него — собирается из полей
@@ -59,7 +68,7 @@ Item {
             trackId: trackId, albumId: albumId, title: title, version: version, artists: artists,
             artistRefs: artistRefs ?? [], album: album, cover: cover, coverLarge: coverLarge, durationMs: durationMs,
             explicit: explicit, available: available, uri: uri, isEpisode: isEpisode, showId: showId,
-            addedAt: addedAt, addedBy: addedBy
+            addedAt: addedAt, addedBy: addedBy, playCount: playCount
         }
     }
 
@@ -181,7 +190,7 @@ Item {
                 Layout.fillWidth: true
                 spacing: 6
                 Label {
-                    Layout.fillWidth: implicitWidth > width
+                    Layout.fillWidth: true
                     Layout.maximumWidth: implicitWidth
                     text: root.title
                     type: "bodyLarge"
@@ -190,7 +199,7 @@ Item {
                 }
                 Label {
                     visible: root.version !== ""
-                    Layout.fillWidth: implicitWidth > width
+                    Layout.fillWidth: true
                     Layout.maximumWidth: implicitWidth
                     text: root.version
                     type: "bodyLarge"
@@ -247,6 +256,17 @@ Item {
                 type: "bodyMedium"
                 color: Theme.fgSurfaceVariant
             }
+        }
+
+        // Прослушивания: полное число с разделителями разрядов
+        Label {
+            visible: root.showPlays && root._playsRoom
+            Layout.preferredWidth: 112
+            text: root.playCount > 0 ? I18n.grouped(root.playCount) : ""
+            type: "bodyMedium"
+            color: Theme.fgSurfaceVariant
+            horizontalAlignment: Text.AlignRight
+            font.features: ({ "tnum": 1 })
         }
 
         // Сердце и ⋯ — в просмотре; «убрать» — в правке (перекрёстное растворение)

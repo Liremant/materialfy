@@ -1,0 +1,20 @@
+{
+  "{0}, {1}": "{0}, {1}",
+  "Label: {0}": "Лейбл: {0}",
+  "Track info": "О треке",
+  "Duration": "Длительность",
+  "Plays": "Прослушивания",
+  "Release date": "Дата выхода",
+  "Label": "Лейбл",
+  "Release type": "Тип релиза",
+  "Track": "Трек",
+  "Disc": "Диск",
+  "Explicit": "Ненормативная лексика",
+  "Yes": "Да",
+  "Popularity": "Популярность",
+  "{0} / 100": "{0} / 100",
+  "Spotify URI": "Spotify URI",
+  "Loading details…": "Загружаем сведения…",
+  "Close": "Закрыть",
+  "Open in Spotify": "Открыть в Spotify"
+}

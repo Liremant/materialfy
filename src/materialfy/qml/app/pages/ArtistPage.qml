@@ -243,6 +243,8 @@ Page {
                 durationMs: model.durationMs
                 explicit: model.explicit
                 available: model.available
+                playCount: model.playCount ?? 0
+                showPlays: true
                 liked: Library.likesRevision >= 0 && Library.isLiked(model.trackId)
                 current: model.trackId === Player.trackId
                 onActivated: Player.playFrom(page.artist.popular, index)

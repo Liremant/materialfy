@@ -2,7 +2,8 @@
 //! сессии: то, чего нет в метаданных librespot, — подписчики, ежемесячные слушатели, подписка аккаунта,
 //! похожие исполнители, биография и широкая шапка. Без квоты Web API. Проверено вживую (2026-10):
 //! data.artistUnion { stats { followers, monthlyListeners }, saved, relatedContent.relatedArtists,
-//! profile.biography.text, headerImage.data.sources[{url, maxWidth}], visuals.avatarImage }.
+//! profile.biography.text, headerImage.data.sources[{url, maxWidth}], visuals.avatarImage,
+//! discography.topTracks.items[{ track { uri, playcount ("984913127") } }] }.
 use anyhow::{anyhow, bail};
 use serde_json::{Value, json};
 use sf_api::models::{Artist, Image};
@@ -28,6 +29,8 @@ pub struct ArtistOverview {
     pub related: Vec<Artist>,
     pub biography: String,
     pub header_image: Option<String>,
+    /// популярные треки: URI → прослушивания (> 0)
+    pub top_plays: Vec<(String, i64)>,
 }
 
 pub async fn artist(http: &Http, session: &sf_player::Session, artist_id: &str) -> anyhow::Result<ArtistOverview> {
@@ -61,7 +64,26 @@ fn parse(body: &Value) -> anyhow::Result<ArtistOverview> {
             .collect(),
         biography: util::strip_html(&text(artist, "/profile/biography/text")).trim().to_owned(),
         header_image: header(artist),
+        top_plays: top_plays(artist),
     })
+}
+
+fn top_plays(artist: &Value) -> Vec<(String, i64)> {
+    let items = artist.pointer("/discography/topTracks/items").and_then(Value::as_array);
+    items
+        .into_iter()
+        .flatten()
+        .filter_map(|item| {
+            let track = item.get("track")?;
+            let uri = track.get("uri").and_then(Value::as_str).filter(|uri| !uri.is_empty())?;
+            let plays = match track.get("playcount")? {
+                Value::String(text) => text.trim().parse().ok()?,
+                Value::Number(number) => number.as_i64()?,
+                _ => return None,
+            };
+            (plays > 0).then(|| (uri.to_owned(), plays))
+        })
+        .collect()
 }
 
 fn related(data: &Value) -> Option<Artist> {
@@ -118,12 +140,18 @@ pub fn apply(page: &mut ArtistPage, overview: &ArtistOverview) {
     if page.similar.is_empty() {
         page.similar = overview.related.iter().map(map::artist_item).collect();
     }
+    for track in &mut page.popular {
+        let uri = track.play_uri();
+        if let Some((_, plays)) = overview.top_plays.iter().find(|(known, _)| *known == uri) {
+            track.play_count = *plays;
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use md3_model::{ArtistInfo, ArtistItem};
+    use md3_model::{ArtistInfo, ArtistItem, TrackItem};
 
     fn body() -> Value {
         json!({ "data": { "artistUnion": {
@@ -137,6 +165,16 @@ mod tests {
             ] } },
             "visuals": { "avatarImage": { "sources": [
                 { "height": 640, "width": 640, "url": "face640" }, { "height": 160, "width": 160, "url": "face160" }
+            ] } },
+            "discography": { "topTracks": { "items": [
+                { "track": { "id": "0DiWol3AO6WpXZgp0goxAV", "uri": "spotify:track:0DiWol3AO6WpXZgp0goxAV", "name": "One More Time",
+                             "playcount": "984913127", "discNumber": 1, "duration": { "totalMilliseconds": 320357 } },
+                  "uid": "5d99bb101e828b296cc3" },
+                { "track": { "id": "2Foc5Q5nqNiosCNqttzHof", "uri": "spotify:track:2Foc5Q5nqNiosCNqttzHof",
+                             "name": "Get Lucky (Radio Edit) [feat. Pharrell Williams and Nile Rodgers]",
+                             "playcount": "1456452451", "discNumber": 1, "duration": { "totalMilliseconds": 247632 } },
+                  "uid": "7e2bde934c60abb38dd2" },
+                { "track": { "uri": "spotify:track:unknown", "playcount": null } }
             ] } },
             "relatedContent": { "relatedArtists": { "totalCount": 40, "items": [
                 { "id": "r1", "uri": "spotify:artist:r1", "profile": { "name": "Franz Ferdinand" },
@@ -158,6 +196,14 @@ mod tests {
         assert_eq!(overview.biography, "The Wow! Signal. Out & now.");
         assert_eq!(overview.header_image.as_deref(), Some("wide"));
         assert_eq!(overview.avatar.len(), 2);
+        assert_eq!(
+            overview.top_plays,
+            [
+                ("spotify:track:0DiWol3AO6WpXZgp0goxAV".to_owned(), 984_913_127),
+                ("spotify:track:2Foc5Q5nqNiosCNqttzHof".to_owned(), 1_456_452_451)
+            ],
+            "a track without plays is passed over"
+        );
     }
 
     #[test]
@@ -176,6 +222,10 @@ mod tests {
                 item: ArtistItem { artist_id: "a1".into(), name: "Muse".into(), cover: "own".into(), ..Default::default() },
                 ..Default::default()
             },
+            popular: vec![
+                TrackItem { track_id: "2Foc5Q5nqNiosCNqttzHof".into(), ..Default::default() },
+                TrackItem { track_id: "other".into(), ..Default::default() },
+            ],
             ..Default::default()
         };
         apply(&mut page, &parse(&body()).unwrap());
@@ -185,6 +235,8 @@ mod tests {
         assert!(page.info.followed);
         assert_eq!(page.info.header_image, "wide");
         assert_eq!(page.similar[0].artist_id, "r1");
+        assert_eq!(page.popular[0].play_count, 1_456_452_451, "plays follow the URI, not the place");
+        assert_eq!(page.popular[1].play_count, 0);
 
         let mut empty = ArtistPage::default();
         apply(&mut empty, &parse(&body()).unwrap());

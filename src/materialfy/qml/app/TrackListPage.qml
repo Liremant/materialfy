@@ -37,6 +37,7 @@ Item {
     property bool editing: false
     property Component editHero: null
     property string addedColumn                // "" / "by" / "at" — колонка «Добавил»/«Добавлено»
+    property bool showPlays: false             // колонка прослушиваний (альбом)
     property real contentRightInset: 0         // место справа под боковую панель (AddTracksPanel)
     Behavior on contentRightInset { enabled: Theme.reducedMotion !== true; NumberAnimation { duration: Theme.motion.spatialDefault; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.motion.emphasizedDecelerate } }
     readonly property alias listView: list
@@ -208,6 +209,8 @@ Item {
             addedAt: model.addedAt ?? ""
             addedBy: model.addedBy ?? ""
             addedColumn: page.addedColumn
+            playCount: model.playCount ?? 0
+            showPlays: page.showPlays
             editable: list.reorderable || (page.editing && !filter.active)
             dragging: list.dragFrom === index
             liked: Library.likesRevision >= 0 && Library.isLiked(model.trackId)

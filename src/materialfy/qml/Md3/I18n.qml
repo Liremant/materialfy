@@ -207,6 +207,22 @@ QtObject {
         return format(_cur().dayMonth, [d.getDate(), _cur().monthsShort[d.getMonth()]])
     }
 
+    // Release date with the precision Spotify knows it to ("2001-03-12" | "2001-03" | "2001"):
+    // "March 12, 2001" / "12 марта 2001", "March 2001" / "март 2001", "2001". Parsed by hand, so the time zone
+    // never moves the day.
+    function releaseDate(text) {
+        const m = /^(\d{4})(?:-(\d{2})(?:-(\d{2}))?)?/.exec(String(text ?? ""))
+        if (!m)
+            return ""
+        const year = Number(m[1])
+        if (!m[2])
+            return String(year)
+        const month = Math.min(11, Math.max(0, Number(m[2]) - 1))
+        if (!m[3])
+            return monthYear(new Date(year, month, 1))
+        return format(_cur().date, [Number(m[3]), _cur().monthsLong[month], year])
+    }
+
     // "October 2024" / "октябрь 2024"
     function monthYear(dateLike) {
         const d = _date(dateLike)

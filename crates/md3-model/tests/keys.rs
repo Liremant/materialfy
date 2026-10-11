@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 
 const TRACK_KEYS: &[&str] = &[
     "trackId", "albumId", "title", "version", "artists", "artistRefs", "album", "cover", "coverLarge", "durationMs",
-    "explicit", "available", "uri", "isEpisode", "showId", "addedAt", "addedBy",
+    "explicit", "available", "uri", "isEpisode", "showId", "addedAt", "addedBy", "playCount",
 ];
 const ALBUM_KEYS: &[&str] = &[
     "albumId", "uri", "title", "version", "artists", "artistRefs", "year", "kind", "trackCount", "cover", "coverLarge",
@@ -107,7 +107,7 @@ fn album_artist_playlist_keys() {
 fn info_types_are_flat() {
     assert_eq!(
         keys(&AlbumInfo::default()),
-        expected(&[ALBUM_KEYS, &["label", "genre", "durationMs", "releaseDate", "copyright"]])
+        expected(&[ALBUM_KEYS, &["label", "genre", "durationMs", "releaseDate", "copyright", "copyrights", "courtesyLine"]])
     );
     assert_eq!(keys(&ArtistInfo::default()), expected(&[ARTIST_KEYS, &["listeners", "followed", "biography", "headerImage"]]));
     let info = AlbumInfo {

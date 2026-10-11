@@ -10,7 +10,7 @@ pub struct ArtistRef {
 }
 
 /// Трек или выпуск подкаста. Ключи QML (TRACK_KEYS): trackId, albumId, title, version, artists, artistRefs, album,
-/// cover, coverLarge, durationMs, explicit, available, uri, isEpisode, showId, addedAt, addedBy.
+/// cover, coverLarge, durationMs, explicit, available, uri, isEpisode, showId, addedAt, addedBy, playCount.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct TrackItem {
@@ -40,6 +40,8 @@ pub struct TrackItem {
     pub added_at: String,
     /// строка совместного плейлиста: имя добавившего ("" — неизвестно/не нужно)
     pub added_by: String,
+    /// прослушивания на Spotify (GraphQL-шлюз: страницы альбома и исполнителя); 0 — неизвестно
+    pub play_count: i64,
 }
 
 impl TrackItem {
@@ -127,7 +129,7 @@ pub struct PlaylistItem {
     pub pinned: bool,
 }
 
-/// AlbumData.info: поля AlbumItem + label, genre, durationMs, releaseDate, copyright.
+/// AlbumData.info: поля AlbumItem + label, genre, durationMs, releaseDate, copyright, copyrights, courtesyLine.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct AlbumInfo {
@@ -137,8 +139,38 @@ pub struct AlbumInfo {
     /// часто пусто у Spotify
     pub genre: String,
     pub duration_ms: i64,
+    /// "2001-03-12" | "2001-03" | "2001" — с той точностью, что знает Spotify
     pub release_date: String,
     pub copyright: String,
+    /// все строки правообладателей с префиксом: "© 2001 …", "℗ 2001 …"
+    pub copyrights: Vec<String>,
+    /// строка «courtesy of …» (GraphQL-шлюз), часто пусто
+    pub courtesy_line: String,
+}
+
+/// Всё, что известно о треке (окно «О треке»): поля TrackItem + номер, диск, ISRC, популярность и сведения
+/// об альбоме (дата выпуска, лейбл, правообладатели).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct TrackDetails {
+    #[serde(flatten)]
+    pub track: TrackItem,
+    /// 0 — неизвестно
+    pub track_number: i64,
+    pub disc_number: i64,
+    /// дисков в альбоме (0 — неизвестно)
+    pub disc_count: i64,
+    /// треков в альбоме (0 — неизвестно)
+    pub album_track_count: i64,
+    pub isrc: String,
+    /// 0..100, -1 — неизвестно
+    pub popularity: i64,
+    /// album_kind_label альбома
+    pub album_kind: String,
+    pub release_date: String,
+    pub label: String,
+    pub copyrights: Vec<String>,
+    pub courtesy_line: String,
 }
 
 /// ArtistData.info: поля ArtistItem + listeners, followed, biography, headerImage.

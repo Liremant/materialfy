@@ -1,0 +1,134 @@
+{
+  "data": {
+    "albumUnion": {
+      "__typename": "Album",
+      "uri": "spotify:album:2noRn2Aes5aoNVsU6iWThc",
+      "name": "Discovery",
+      "type": "ALBUM",
+      "label": "Daft Life Ltd./ADA France",
+      "copyright": {
+        "items": [
+          {
+            "text": "© 2001 Daft Life Limited",
+            "type": "C"
+          },
+          {
+            "text": "℗ 2001 Daft Life Limited",
+            "type": "P"
+          }
+        ],
+        "totalCount": 2
+      },
+      "date": {
+        "isoString": "2001-03-12T00:00:00Z",
+        "precision": "DAY"
+      },
+      "courtesyLine": "",
+      "discs": {
+        "items": [
+          {
+            "number": 1,
+            "tracks": {
+              "totalCount": 14
+            }
+          }
+        ],
+        "totalCount": 1
+      },
+      "isPreRelease": false,
+      "tracksV2": {
+        "totalCount": 14,
+        "items": [
+          {
+            "track": {
+              "uri": "spotify:track:0DiWol3AO6WpXZgp0goxAV",
+              "name": "One More Time",
+              "trackNumber": 1,
+              "discNumber": 1,
+              "duration": {
+                "totalMilliseconds": 320357
+              },
+              "playcount": "984913127",
+              "playability": {
+                "playable": true
+              },
+              "contentRating": {
+                "label": "NONE"
+              },
+              "artists": {
+                "items": [
+                  {
+                    "profile": {
+                      "name": "Daft Punk"
+                    },
+                    "uri": "spotify:artist:4tZwfgrHOc3mvqYlEYSvVi"
+                  }
+                ]
+              }
+            },
+            "uid": "dfa1496435df51db7a50"
+          },
+          {
+            "track": {
+              "uri": "spotify:track:3H3cOQ6LBLSvmcaV7QkZEu",
+              "name": "Aerodynamic",
+              "trackNumber": 2,
+              "discNumber": 1,
+              "duration": {
+                "totalMilliseconds": 212546
+              },
+              "playcount": "111687708",
+              "playability": {
+                "playable": true
+              },
+              "contentRating": {
+                "label": "NONE"
+              },
+              "artists": {
+                "items": [
+                  {
+                    "profile": {
+                      "name": "Daft Punk"
+                    },
+                    "uri": "spotify:artist:4tZwfgrHOc3mvqYlEYSvVi"
+                  }
+                ]
+              }
+            },
+            "uid": "488787eb8ff1792e028e"
+          },
+          {
+            "track": {
+              "uri": "spotify:track:2VEZx7NWsZ1D0eJ4uv5Fym",
+              "name": "Digital Love",
+              "trackNumber": 3,
+              "discNumber": 1,
+              "duration": {
+                "totalMilliseconds": 301373
+              },
+              "playcount": "222793383",
+              "playability": {
+                "playable": true
+              },
+              "contentRating": {
+                "label": "NONE"
+              },
+              "artists": {
+                "items": [
+                  {
+                    "profile": {
+                      "name": "Daft Punk"
+                    },
+                    "uri": "spotify:artist:4tZwfgrHOc3mvqYlEYSvVi"
+                  }
+                ]
+              }
+            },
+            "uid": "15f99cbe1978416bed21"
+          }
+        ]
+      }
+    }
+  },
+  "extensions": {}
+}

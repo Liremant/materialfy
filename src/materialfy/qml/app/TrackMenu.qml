@@ -6,7 +6,7 @@ import Materialfy.Core
 // Один экземпляр на окно: show(track, point); действия разбирает владелец через triggered(id, track, item).
 // playlistId — свой плейлист, открытый на странице (пункт «Убрать из этого плейлиста», нужен track.pos).
 // В мини-плеере сверху — то, чего в нём нет (перемешивание, повтор, поверх окон, развернуть);
-// эти пункты меню выполняет само.
+// эти пункты меню выполняет само, как и «О треке» (окно TrackInfoDialog живёт здесь же).
 Item {
     id: root
 
@@ -130,7 +130,10 @@ Item {
             const saved = Library.savedRevision >= 0 && Library.isSaved(track.uri ?? "")
             items.push({ id: "save", text: saved ? I18n.t("Remove episode from library") : I18n.t("Save episode"), icon: saved ? "library_add_check" : "library_add" })
         }
-        items.push({ id: "share", text: I18n.t("Share"), icon: "share", submenu: _shareItems() }, { separator: true })
+        items.push({ id: "share", text: I18n.t("Share"), icon: "share", submenu: _shareItems() })
+        if (!_episode && _id !== "" && !_mini)
+            items.push({ id: "info", text: I18n.t("Track info"), icon: "info" })
+        items.push({ separator: true })
         if (_episode)
             items.push({ id: "goto:show", text: I18n.t("Go to podcast"), icon: "podcasts", enabled: (track.showId ?? "") !== "" })
         else
@@ -149,8 +152,15 @@ Item {
         onTriggered: (id, item) => {
             if (id.startsWith("mini:"))
                 root._miniAction(id)
+            else if (id === "info")
+                infoDialog.open(root.track)
             else
                 root.triggered(id, root.track, item)
         }
+    }
+
+    TrackInfoDialog {
+        id: infoDialog
+        z: 1
     }
 }

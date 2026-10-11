@@ -75,6 +75,10 @@ pub mod qobject {
         #[qsignal]
         #[cxx_name = "trackMenuRequested"]
         fn track_menu_requested(self: Pin<&mut Catalog>, track: QMap_QString_QVariant, x: f64, y: f64);
+        /// ответ на requestTrackDetails: id трека и словарь TrackDetails (пустой — не загрузилось)
+        #[qsignal]
+        #[cxx_name = "trackDetailsReady"]
+        fn track_details_ready(self: Pin<&mut Catalog>, track_id: QString, details: QMap_QString_QVariant);
 
         #[qinvokable]
         #[cxx_name = "openArtist"]
@@ -145,6 +149,10 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "requestTrackMenu"]
         fn request_track_menu(self: Pin<&mut Catalog>, track: &QMap_QString_QVariant, x: f64, y: f64);
+        /// Окно «О треке»: всё, что известно о треке {trackId, albumId} → trackDetailsReady.
+        #[qinvokable]
+        #[cxx_name = "requestTrackDetails"]
+        fn request_track_details(self: Pin<&mut Catalog>, track: &QMap_QString_QVariant);
     }
 
     impl cxx_qt::Threading for Catalog {}
@@ -715,6 +723,34 @@ impl qobject::Catalog {
 
     fn uri_url(&self, uri: &QString) -> QString {
         QString::from(sf_api::util::open_spotify_url(&uri.to_string()).unwrap_or_default().as_str())
+    }
+
+    fn request_track_details(self: Pin<&mut Self>, track: &QVariantMap) {
+        let track = map_to_json(track);
+        let track_id = json_str(&track, "trackId");
+        let album_id = json_str(&track, "albumId");
+        if track_id.is_empty() || track.get("isEpisode").and_then(Value::as_bool).unwrap_or(false) {
+            return;
+        }
+        let thread = self.qt_thread();
+        if !signed_in() {
+            let _ = thread.queue(move |catalog| catalog.track_details_ready(QString::from(track_id.as_str()), QVariantMap::default()));
+            return;
+        }
+        let catalog = ctx().services.catalog.clone();
+        ctx().rt.spawn(async move {
+            let details = catalog.track_details(&track_id, &album_id).await;
+            let _ = thread.queue(move |catalog| {
+                let details = match details {
+                    Ok(details) => to_map(&details),
+                    Err(error) => {
+                        tracing::debug!("track details {track_id}: {error}");
+                        QVariantMap::default()
+                    }
+                };
+                catalog.track_details_ready(QString::from(track_id.as_str()), details);
+            });
+        });
     }
 
     fn request_track_menu(self: Pin<&mut Self>, track: &QVariantMap, x: f64, y: f64) {

@@ -72,6 +72,7 @@ pub fn track_item(track: &models::Track) -> m::TrackItem {
         show_id: String::new(),
         added_at: String::new(),
         added_by: String::new(),
+        play_count: 0,
     }
 }
 
@@ -99,6 +100,7 @@ pub fn episode_track(episode: &models::Episode) -> m::TrackItem {
         show_id: show.map(|show| id_or_uri(Some(&show.id), &show.uri, "show")).unwrap_or_default(),
         added_at: String::new(),
         added_by: String::new(),
+        play_count: 0,
     }
 }
 
@@ -192,7 +194,49 @@ pub fn album_info(album: &models::Album, tracks: &[models::Track]) -> m::AlbumIn
         duration_ms: tracks.iter().map(|track| i64::from(track.duration_ms)).sum(),
         release_date: album.release_date.clone().unwrap_or_default(),
         copyright,
+        copyrights: copyright_lines(album.copyrights.iter().map(|copyright| (copyright.kind.as_str(), copyright.text.as_str()))),
+        courtesy_line: String::new(),
     }
+}
+
+/// Строка правообладателя с префиксом по типу: C → «© …», P → «℗ …». Свои префиксы текста («(P) 2013 …»,
+/// «℗ 2013 …», «© …») снимаются, чтобы знак не повторялся; пустой текст — пустая строка.
+pub fn copyright_line(kind: &str, text: &str) -> String {
+    let mut rest = text.trim();
+    loop {
+        let stripped = ["©", "℗", "(C)", "(c)", "(P)", "(p)"].iter().find_map(|mark| rest.strip_prefix(mark));
+        match stripped {
+            Some(after) => rest = after.trim_start(),
+            None => break,
+        }
+    }
+    if rest.is_empty() {
+        return String::new();
+    }
+    let mark = match kind {
+        "C" | "c" => "©",
+        "P" | "p" => "℗",
+        _ => return rest.to_owned(),
+    };
+    format!("{mark} {rest}")
+}
+
+/// Строки правообладателей (тип, текст) — без пустых и повторов, © перед ℗.
+pub fn copyright_lines<'a>(items: impl IntoIterator<Item = (&'a str, &'a str)>) -> Vec<String> {
+    let mut lines: Vec<(u8, String)> = Vec::new();
+    for (kind, text) in items {
+        let line = copyright_line(kind, text);
+        if !line.is_empty() && !lines.iter().any(|(_, known)| *known == line) {
+            let order = match kind {
+                "C" | "c" => 0,
+                "P" | "p" => 1,
+                _ => 2,
+            };
+            lines.push((order, line));
+        }
+    }
+    lines.sort_by_key(|(order, _)| *order);
+    lines.into_iter().map(|(_, line)| line).collect()
 }
 
 pub fn artist_item(artist: &models::Artist) -> m::ArtistItem {
@@ -309,6 +353,16 @@ pub fn account(user: &models::User) -> m::Account {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn copyright_lines_get_one_mark_each() {
+        assert_eq!(super::copyright_line("C", "© 2001 Daft Life Limited"), "© 2001 Daft Life Limited");
+        assert_eq!(super::copyright_line("P", "(P) 2013 Daft Life Limited"), "℗ 2013 Daft Life Limited");
+        assert_eq!(super::copyright_line("P", "2013 Columbia"), "℗ 2013 Columbia");
+        assert_eq!(super::copyright_line("C", "  "), "");
+        let lines = super::copyright_lines([("P", "℗ 2001 Daft Life"), ("C", "2001 Daft Life"), ("P", "(P) 2001 Daft Life")]);
+        assert_eq!(lines, ["© 2001 Daft Life", "℗ 2001 Daft Life"]);
+    }
+
     use super::*;
 
     fn images() -> Vec<models::Image> {

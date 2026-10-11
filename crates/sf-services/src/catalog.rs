@@ -6,7 +6,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use md3_model::{
-    AlbumInfo, AlbumItem, ArtistInfo, ArtistItem, EpisodeItem, PlaylistItem, SearchBest, SearchTotals, ShowItem, TrackItem,
+    AlbumInfo, AlbumItem, ArtistInfo, ArtistItem, EpisodeItem, PlaylistItem, SearchBest, SearchTotals, ShowItem, TrackDetails,
+    TrackItem,
 };
 use sf_api::map;
 use sf_api::models::{self, Album, Artist, Track};
@@ -16,7 +17,7 @@ use sf_player::engine::session_reads;
 use tokio::sync::Semaphore;
 
 use crate::auth::AuthService;
-use crate::data::{artist_overview, known, pathfinder, podcast_session, route};
+use crate::data::{album_overview, artist_overview, known, pathfinder, podcast_session, route};
 use crate::{ServiceError, lock};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -159,6 +160,10 @@ pub struct CatalogService {
 /// Сколько необязательные запросы страницы (подписка, похожие) могут отстать от основного чтения:
 /// под 429 общее приложение отвечает минутами, а страница без них всё равно полезна.
 const EXTRAS_GRACE: Duration = Duration::from_millis(1500);
+/// Сколько страница альбома вообще ждёт GraphQL-шлюз (прослушивания необязательны).
+const GATEWAY_DEADLINE: Duration = Duration::from_secs(2);
+/// Окно «О треке»: срок каждого из запросов (сессия, шлюз, альбом) — что не успело, то не показано.
+const DETAILS_DEADLINE: Duration = Duration::from_secs(5);
 
 /// Ответ `main`; ответ `extras` — если успел вместе с ним или не позже `grace` после.
 async fn with_extras<M: Future, E: Future>(main: M, extras: E, grace: Duration) -> (M::Output, Option<E::Output>) {
@@ -251,6 +256,73 @@ pub fn artist_page(
         also_albums: also.iter().map(map::album_item).collect(),
         similar: similar.iter().map(map::artist_item).collect(),
     }
+}
+
+/// Окно «О треке» из того, что успело прийти: метаданные сессии, ответ getTrack, страница альбома.
+pub fn track_details(
+    track_id: &str,
+    track: Option<&Track>,
+    overview: Option<&album_overview::TrackOverview>,
+    album: Option<&AlbumPage>,
+) -> TrackDetails {
+    let mut details = TrackDetails { popularity: -1, ..Default::default() };
+    if let Some(track) = track {
+        details.track = map::track_item(track);
+        details.track_number = track.track_number.map_or(0, i64::from);
+        details.disc_number = track.disc_number.map_or(0, i64::from);
+        details.isrc = track.external_ids.isrc.clone().unwrap_or_default();
+        details.popularity = track.popularity.map_or(-1, i64::from);
+        if let Some(album) = &track.album {
+            details.release_date = album.release_date.clone().unwrap_or_default();
+            details.label = album.label.clone().unwrap_or_default();
+        }
+    } else if let Some(row) = album.and_then(|page| page.tracks.iter().find(|row| row.track_id == track_id)) {
+        details.track = row.clone();
+    }
+    if details.track.track_id.is_empty() {
+        details.track.track_id = track_id.to_owned();
+        details.track.uri = format!("spotify:track:{track_id}");
+    }
+    if let Some(page) = album {
+        let info = &page.info;
+        details.track.play_count = album_overview::plays_on(page, track_id);
+        details.album_kind = info.item.kind.clone();
+        details.album_track_count = info.item.track_count;
+        if !info.label.is_empty() {
+            details.label = info.label.clone();
+        }
+        if info.release_date.len() > details.release_date.len() {
+            details.release_date = info.release_date.clone();
+        }
+        details.copyrights = info.copyrights.clone();
+        details.courtesy_line = info.courtesy_line.clone();
+        if details.track.album.is_empty() {
+            details.track.album = info.item.title.clone();
+            details.track.album_id = info.item.album_id.clone();
+        }
+        if details.track.cover.is_empty() {
+            details.track.cover = info.item.cover.clone();
+            details.track.cover_large = info.item.cover_large.clone();
+        }
+    }
+    if let Some(overview) = overview {
+        if overview.play_count > 0 {
+            details.track.play_count = overview.play_count;
+        }
+        if details.track_number == 0 {
+            details.track_number = overview.track_number;
+        }
+        if overview.release_date.len() > details.release_date.len() {
+            details.release_date = overview.release_date.clone();
+        }
+        if details.copyrights.is_empty() {
+            details.copyrights = overview.copyrights.clone();
+        }
+        if details.courtesy_line.is_empty() {
+            details.courtesy_line = overview.courtesy_line.clone();
+        }
+    }
+    details
 }
 
 /// Лучший результат: исполнитель, чьё имя совпало с запросом (или треков нет), иначе первый трек, альбом,
@@ -362,23 +434,48 @@ impl CatalogService {
             return Ok(page);
         }
         // Альбом и все его треки — из сессии librespot (без квоты Web API); Web API — запасной путь.
-        let (album, tracks, complete) = match self.session_album(album_id).await {
+        // Параллельно — GraphQL-шлюз (getAlbum: прослушивания треков, лейбл, правообладатели), который не
+        // держит страницу дольше GATEWAY_DEADLINE и EXTRAS_GRACE после чтения сессии.
+        let api = self.auth.api();
+        let http = api.http();
+        let session = route::account_session(&api, &self.player);
+        let read = async {
+            match &session {
+                Some(session) => route::session_read(session_reads::album_with_tracks(session, album_id)).await,
+                None => None,
+            }
+        };
+        let overview = async {
+            let asked = album_overview::album(&http, session.as_ref()?, album_id);
+            match tokio::time::timeout(GATEWAY_DEADLINE, asked).await {
+                Ok(Ok(overview)) => Some(overview),
+                Ok(Err(error)) => {
+                    tracing::debug!("album {album_id} via gateway: {error:#}");
+                    None
+                }
+                Err(_) => {
+                    tracing::debug!("album {album_id} via gateway: no answer in {GATEWAY_DEADLINE:?}");
+                    None
+                }
+            }
+        };
+        let (read, overview) = with_extras(read, overview, EXTRAS_GRACE).await;
+        let overview = overview.flatten();
+        let (album, tracks, complete) = match read {
             Some(Ok((album, tracks))) => (album, tracks, true),
             Some(Err(error)) => return Err(self.fail(error)),
             None => self.api_album(album_id).await?,
         };
-        let page = album_page(&album, tracks);
-        // оборванный список не кэшируется: следующее открытие дочитает
-        if complete {
+        let mut page = album_page(&album, tracks);
+        if let Some(overview) = &overview {
+            album_overview::apply(&mut page, overview);
+        }
+        // оборванный список не кэшируется: следующее открытие дочитает; без ответа шлюза — тоже
+        // (прослушивания появятся при следующем открытии)
+        if complete && (overview.is_some() || session.is_none()) {
             self.store(key, Cached::Album(page.clone()));
         }
         Ok(page)
-    }
-
-    /// Альбом через сессию; None — сессии нет или она не смогла.
-    async fn session_album(&self, album_id: &str) -> Option<Result<(Album, Vec<Track>), ApiError>> {
-        let session = route::account_session(&self.auth.api(), &self.player)?;
-        route::session_read(session_reads::album_with_tracks(&session, album_id)).await
     }
 
     /// Альбом через Web API. Обязателен только сам альбом с первой страницей треков: следующая страница,
@@ -717,6 +814,56 @@ impl CatalogService {
         known::remember([&item]);
         self.store(key, Cached::Track(item.clone()));
         Ok(item)
+    }
+
+    /// Всё, что известно о треке (окно «О треке»): метаданные сессии (номер, диск, ISRC, популярность),
+    /// GraphQL-шлюз (getTrack: прослушивания, дата, правообладатели) и страница альбома (лейбл; из кэша, если
+    /// альбом недавно открывали) — разом, каждый не дольше DETAILS_DEADLINE. `album_id` — подсказка из строки
+    /// трека (без неё альбом узнаётся из метаданных). Ошибка — только если не ответил никто.
+    pub async fn track_details(&self, track_id: &str, album_id: &str) -> Result<TrackDetails, ServiceError> {
+        let api = self.auth.api();
+        let http = api.http();
+        let session = route::account_session(&api, &self.player);
+        let read = async {
+            let session = session.as_ref()?;
+            let read = route::session_read(session_reads::track_by_id(session, track_id));
+            match tokio::time::timeout(DETAILS_DEADLINE, read).await {
+                Ok(Some(Ok(track))) => Some(track),
+                Ok(Some(Err(error))) => {
+                    tracing::debug!("track {track_id}: {error:#}");
+                    None
+                }
+                _ => None,
+            }
+        };
+        let gateway = async {
+            let asked = album_overview::track(&http, session.as_ref()?, track_id);
+            match tokio::time::timeout(DETAILS_DEADLINE, asked).await {
+                Ok(Ok(overview)) => Some(overview),
+                Ok(Err(error)) => {
+                    tracing::debug!("track {track_id} via gateway: {error:#}");
+                    None
+                }
+                Err(_) => None,
+            }
+        };
+        let album = |album_id: String| async move {
+            if album_id.is_empty() {
+                return None;
+            }
+            tokio::time::timeout(DETAILS_DEADLINE, self.album(&album_id)).await.ok()?.ok()
+        };
+        let (track, overview, mut page) = tokio::join!(read, gateway, album(album_id.to_owned()));
+        if page.is_none()
+            && album_id.is_empty()
+            && let Some(id) = track.as_ref().and_then(|track| track.album.as_ref()).map(|album| album.id.clone())
+        {
+            page = album(id).await;
+        }
+        if track.is_none() && overview.is_none() && page.is_none() {
+            return Err(ServiceError::Other(mf_i18n::t("Couldn't load")));
+        }
+        Ok(track_details(track_id, track.as_ref(), overview.as_ref(), page.as_ref()))
     }
 
     /// Плеер, с которым создан каталог.
