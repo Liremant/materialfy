@@ -362,9 +362,18 @@ async fn with_deadline<F: std::future::Future>(
     tokio::time::timeout(limit, work).await
 }
 
+/// Pushes of the account's Connect cluster (`hm://connect-state/v1/cluster`).
+pub type ClusterPushes = librespot_core::dealer::manager::BoxedStreamResult<
+    librespot_protocol::connect::ClusterUpdate,
+>;
+
 pub struct Engine {
     player: Arc<Player>,
     spirc: Arc<Spirc>,
+    /// Cluster pushes subscribed before Spirc started the dealer, until the
+    /// app takes them: once the dealer is launching, a new subscription
+    /// fails with "Builder wasn't available".
+    cluster_pushes: Arc<Mutex<Option<ClusterPushes>>>,
     session: Session,
     mixer: Arc<dyn Mixer>,
     device_id: String,
@@ -481,6 +490,19 @@ impl Engine {
             volume_steps: 64,
             ..ConnectConfig::default()
         };
+        // Spirc starts the dealer; subscribing first is what never misses it.
+        let cluster_pushes = match session.dealer().listen_for(
+            "hm://connect-state/v1/cluster",
+            librespot_core::dealer::protocol::Message::from_raw::<
+                librespot_protocol::connect::ClusterUpdate,
+            >,
+        ) {
+            Ok(pushes) => Some(pushes),
+            Err(error) => {
+                tracing::debug!("cluster pushes unavailable: {error}");
+                None
+            }
+        };
         let (spirc, spirc_task) = Spirc::new(
             connect_config,
             session.clone(),
@@ -526,6 +548,7 @@ impl Engine {
         Ok(Self {
             player,
             spirc: Arc::new(spirc),
+            cluster_pushes: Arc::new(Mutex::new(cluster_pushes)),
             session,
             mixer,
             device_id,
@@ -553,6 +576,11 @@ impl Engine {
 
     pub fn device_id(&self) -> &str {
         &self.device_id
+    }
+
+    /// The cluster pushes subscribed at connect, for the first to take them.
+    pub fn cluster_pushes(&self) -> Arc<Mutex<Option<ClusterPushes>>> {
+        Arc::clone(&self.cluster_pushes)
     }
 
     /// The local Connect player's state (track, context, next tracks,

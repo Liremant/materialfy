@@ -31,6 +31,7 @@ use super::core::{ApiCall, ApiReply, FetchedQueue, RemoteAction, RemoteState};
 use super::host::EngineHost;
 use super::map;
 use crate::engine::RepeatMode;
+use crate::engine::player::ClusterPushes;
 use crate::{PlayerHandle, Session};
 
 /// Кластер из пуша считается верным столько; дольше — перечитываем (дилер мог тихо отвалиться).
@@ -50,6 +51,8 @@ pub(crate) struct Link {
     pub device_id: String,
     /// состояние плеера этого устройства из Spirc; None — устройство не активно
     pub local: watch::Receiver<Option<Arc<PlayerState>>>,
+    /// пуши кластера, на которые движок подписался до запуска дилера (забирает первый)
+    pub pushes: Arc<Mutex<Option<ClusterPushes>>>,
 }
 
 /// Текущая сессия движка; None — движок не запущен.
@@ -196,7 +199,13 @@ impl ConnectBackend {
             }
             state.listening = Some(session_id.to_owned());
         }
-        let updates = match link.session.dealer().listen_for(CLUSTER_URI, Message::from_raw::<ClusterUpdate>) {
+        // подписка движка до запуска дилера; позже (её уже забрали) — новая у запущенного дилера
+        let early = link.pushes.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).take();
+        let subscribed = match early {
+            Some(updates) => Ok(updates),
+            None => link.session.dealer().listen_for(CLUSTER_URI, Message::from_raw::<ClusterUpdate>),
+        };
+        let updates = match subscribed {
             Ok(updates) => updates,
             Err(error) => {
                 tracing::debug!("cluster pushes unavailable: {error}");
@@ -230,6 +239,11 @@ impl ConnectBackend {
     }
 
     fn adopt(&self, cluster: Cluster, session_id: &str) {
+        tracing::debug!(
+            "cluster push: active device {:?}, playing {}",
+            cluster.active_device_id,
+            is_playing(&cluster.player_state)
+        );
         let queue = {
             let mut state = self.lock();
             let queue = state.cluster.as_ref().is_none_or(|old| queue_key(&old.cluster) != queue_key(&cluster));
@@ -483,6 +497,7 @@ pub(crate) fn wrap(
                 session: engine.engine.session().clone(),
                 device_id: engine.engine.device_id().to_owned(),
                 local: engine.engine.playback_state(),
+                pushes: engine.engine.cluster_pushes(),
             })
         })
     };
