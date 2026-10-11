@@ -66,7 +66,9 @@ jobs:
   windows:
     name: Windows x86_64
     needs: meta
-    runs-on: windows-latest
+    # Own runner for pushes and tags; pull requests (possibly from forks) never reach it.
+    # Set the repository variable USE_SELF_HOSTED=false to build in the cloud while that machine is off.
+    runs-on: ${{ (github.event_name != 'pull_request' && vars.USE_SELF_HOSTED != 'false') && fromJSON('["self-hosted","Windows","materialfy"]') || 'windows-latest' }}
     timeout-minutes: 120
     env:
       VERSION: ${{ needs.meta.outputs.version }}
@@ -138,7 +140,8 @@ jobs:
   linux:
     name: Linux ${{ matrix.arch }}
     needs: meta
-    runs-on: ${{ matrix.runner }}
+    # x86_64 on the own runner (WSL) for pushes and tags, like Windows above; aarch64 stays in the cloud
+    runs-on: ${{ (matrix.arch == 'x86_64' && github.event_name != 'pull_request' && vars.USE_SELF_HOSTED != 'false') && fromJSON('["self-hosted","Linux","materialfy"]') || matrix.runner }}
     timeout-minutes: 120
     strategy:
       fail-fast: false
