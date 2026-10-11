@@ -19,6 +19,8 @@ pub mod history;
 pub mod home;
 pub mod library;
 pub mod lyrics;
+/// «Новинки»: «Радар новинок» и свежие релизы исполнителей
+pub mod releases;
 pub mod wave;
 
 use std::sync::{Arc, Mutex};
@@ -39,6 +41,7 @@ pub use home::{HomeService, HomeSnapshot};
 pub use library::{FeedbackKind, LibraryEvent, LibraryKind, LibraryService, PlaylistInfo};
 pub use lyrics::{LyricsService, LyricsSnapshot, LyricsStatus};
 pub use md3_model::{ListChange, PlaylistId};
+pub use releases::{NewRelease, ReleasesService, ReleasesSnapshot};
 pub use wave::{WaveService, WaveSnapshot};
 
 #[derive(Debug, thiserror::Error)]
@@ -77,6 +80,8 @@ pub struct Services {
     /// Радио Spotify (бывшая «Моя волна»)
     pub wave: Arc<WaveService>,
     pub home: Arc<HomeService>,
+    /// «Новинки»
+    pub releases: Arc<ReleasesService>,
     pub lyrics: Arc<LyricsService>,
     pub history: Arc<HistoryService>,
     pub devices: Arc<DevicesService>,
@@ -87,7 +92,7 @@ pub struct Services {
 
 impl Services {
     /// Порядок: HTTP (прокси из настроек) → ApiGateway → PlayerHandle → Auth → History → Library → Catalog →
-    /// Wave → Home → Lyrics → Devices → glue (настройки → плеер) → медиаклавиши.
+    /// Wave → Releases → Home → Lyrics → Devices → glue (настройки → плеер) → медиаклавиши.
     pub fn start(rt: &Handle, settings: Arc<SettingsStore>, options: ServicesOptions) -> anyhow::Result<Services> {
         // применённый прокси из настроек; пароль из хранилища подставит auth.start()
         let proxy = auth::settings_proxy(&settings, None);
@@ -117,7 +122,16 @@ impl Services {
             history.clone(),
             settings.clone(),
         );
-        let home = HomeService::new(rt.clone(), auth.clone(), library.clone(), history.clone(), settings.clone());
+        let releases =
+            ReleasesService::new(rt.clone(), auth.clone(), library.clone(), history.clone(), player.clone(), http.clone());
+        let home = HomeService::new(
+            rt.clone(),
+            auth.clone(),
+            library.clone(),
+            history.clone(),
+            releases.clone(),
+            settings.clone(),
+        );
         // тексты — через общий клиент: тот же прокси, что у Web API, смена применяется сразу
         let fetcher = {
             let http = http.clone();
@@ -142,6 +156,7 @@ impl Services {
             catalog,
             wave,
             home,
+            releases,
             lyrics,
             history,
             devices,

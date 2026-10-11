@@ -9,6 +9,7 @@ pub mod library;
 pub mod lyrics;
 pub mod player;
 pub mod radio;
+pub mod releases;
 pub mod settings;
 pub mod theme;
 

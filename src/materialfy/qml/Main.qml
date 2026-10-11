@@ -300,6 +300,7 @@ Window {
                             show: Qt.resolvedUrl("app/pages/ShowPage.qml"),
                             episode: Qt.resolvedUrl("app/pages/EpisodePage.qml"),
                             radio: Qt.resolvedUrl("app/pages/RadioPage.qml"),
+                            releases: Qt.resolvedUrl("app/pages/ReleasesPage.qml"),
                             settings: Qt.resolvedUrl("app/pages/SettingsPage.qml"),
                             account: Qt.resolvedUrl("app/pages/AccountPage.qml"),
                             playback: Qt.resolvedUrl("app/pages/PlaybackSetupPage.qml")

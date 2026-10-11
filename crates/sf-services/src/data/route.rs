@@ -29,9 +29,21 @@ fn session_for(api: &ApiGateway, player: &PlayerHandle, operation: Operation) ->
     if !api.session_serves(operation) {
         return None;
     }
+    account_session(api, player)
+}
+
+/// Сессия librespot того же аккаунта, что и Web API (иначе её ответ — про чужую библиотеку).
+pub fn account_session(api: &ApiGateway, player: &PlayerHandle) -> Option<sf_player::Session> {
     let session = player.session()?;
     let account = api.account()?;
     (session.username() == account.as_str()).then_some(session)
+}
+
+/// Чтение через сессию с ожиданием SESSION_READ_TIMEOUT; None — сессия не смогла, спросить Web API.
+pub async fn session_read<T>(
+    read: impl std::future::Future<Output = Result<T, Failure>>,
+) -> Option<Result<T, ApiError>> {
+    settle(tokio::time::timeout(SESSION_READ_TIMEOUT, read).await)
 }
 
 /// Ответ сессии как ответ Web API; None — сессия не смогла, спросить Web API.

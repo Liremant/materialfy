@@ -576,6 +576,8 @@ impl AuthService {
 
     /// Проверить грант через GET /me; только после этого он пишется в хранилище.
     async fn verify(self: Arc<Self>, source: ApiSource, token: StoredToken, lease: sf_auth::Lease, generation: u64) {
+        let client_id = token.client_id.clone();
+        let mut remembered = load_profile(source, &client_id);
         let tokens = WebTokens::new(self.http.clone(), token, lease, source, self.storage_notice());
         lock(&self.inner).web_tokens[source_index(source)] = Some(tokens.clone());
         self.api.begin_verification(source, TokenProvider::Web(tokens.clone()));
@@ -586,8 +588,25 @@ impl AuthService {
                 return;
             }
             match client.me().await {
-                Ok(user) => break Ok(user),
+                Ok(user) => {
+                    save_profile(source, &client_id, &user);
+                    break Ok(user);
+                }
                 Err(error @ ApiError::SignInExpired { .. }) => break Err(error),
+                // Общий ключ упирается в лимит частоты: вход не ждёт /me, а берёт профиль прошлой проверки
+                // того же приложения. Истёкший токен всё равно всплывёт на первом же запросе (SignInExpired).
+                Err(ApiError::RateLimited) if remembered.is_some() => {
+                    tracing::info!("проверка входа: Spotify ограничил частоту, профиль — из прошлой проверки");
+                    break Ok(remembered.take().unwrap_or_default());
+                }
+                // Прошлой проверки ещё не было (первый запуск этой версии): аккаунт известен из сохранённого
+                // входа воспроизведения, имя и тип аккаунта подтянет следующая удачная проверка.
+                Err(ApiError::RateLimited) if source == ApiSource::Shared && self.playback_account().is_some() => {
+                    tracing::info!("проверка входа: Spotify ограничил частоту, аккаунт — из входа воспроизведения");
+                    let id = self.playback_account().unwrap_or_default();
+                    // Вход воспроизведения librespot выдаёт только Premium.
+                    break Ok(sf_api::models::User { id, product: Some("premium".into()), ..Default::default() });
+                }
                 Err(error) if error.status().is_some_and(|status| status < 500) => break Err(error),
                 Err(error) => {
                     tracing::warn!("проверка входа повторится: {error:#}");
@@ -612,6 +631,10 @@ impl AuthService {
     }
 
     fn on_verified(&self, source: ApiSource, tokens: Arc<WebTokens>, user: sf_api::models::User) {
+        if user.id.is_empty() {
+            self.on_verification_failed(source, ApiError::NotSignedIn);
+            return;
+        }
         if !matches!(self.api.state(source), SessionState::Authorizing) {
             return;
         }
@@ -700,6 +723,7 @@ impl AuthService {
             tracing::warn!("отзыв гранта: {error:#}");
         }
         self.delete_slot(slot);
+        let _ = std::fs::remove_file(profile_file(source));
         lock(&self.inner).web_tokens[source_index(source)] = None;
         self.api.clear(source);
     }
@@ -1024,6 +1048,15 @@ impl AuthService {
     }
 
     /// Поднять движок с сохранёнными кредами, если воспроизведение разрешено.
+    /// Аккаунт сохранённого входа воспроизведения (Credentials.username), если он есть.
+    fn playback_account(&self) -> Option<String> {
+        lock(&self.inner)
+            .playback_grant
+            .as_ref()
+            .and_then(|credentials| credentials.username.clone())
+            .filter(|name| !name.is_empty())
+    }
+
     fn resume_engine(&self) {
         if self.api.account().is_none() || !self.settings.get_bool(SettingKey::PlaybackAuthorized) {
             return;
@@ -1637,6 +1670,44 @@ async fn token_owner(http: &reqwest::Client, token: &str) -> Option<String> {
 fn owner_id(body: &str) -> Option<String> {
     let value: serde_json::Value = serde_json::from_str(body).ok()?;
     value.get("id")?.as_str().filter(|id| !id.is_empty()).map(str::to_owned)
+}
+
+
+/// Профиль последней удачной проверки входа (state/profile-<источник>.json), привязан к Client ID.
+#[derive(serde::Deserialize, serde::Serialize)]
+struct RememberedProfile {
+    client_id: String,
+    user: sf_api::models::User,
+}
+
+fn profile_file(source: ApiSource) -> PathBuf {
+    let name = match source {
+        ApiSource::Shared => "profile-shared.json",
+        ApiSource::Personal => "profile-personal.json",
+    };
+    mf_platform::dirs::state_dir().join(name)
+}
+
+fn load_profile(source: ApiSource, client_id: &str) -> Option<sf_api::models::User> {
+    let text = std::fs::read_to_string(profile_file(source)).ok()?;
+    let remembered: RememberedProfile = serde_json::from_str(&text).ok()?;
+    (remembered.client_id == client_id && !remembered.user.id.is_empty()).then_some(remembered.user)
+}
+
+fn save_profile(source: ApiSource, client_id: &str, user: &sf_api::models::User) {
+    let remembered = RememberedProfile { client_id: client_id.to_owned(), user: user.clone() };
+    let path = profile_file(source);
+    let written = serde_json::to_string(&remembered)
+        .map_err(std::io::Error::other)
+        .and_then(|text| {
+            if let Some(dir) = path.parent() {
+                std::fs::create_dir_all(dir)?;
+            }
+            std::fs::write(&path, text)
+        });
+    if let Err(error) = written {
+        tracing::warn!("профиль для входа не сохранён: {error}");
+    }
 }
 
 #[cfg(test)]

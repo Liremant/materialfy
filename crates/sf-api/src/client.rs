@@ -1,4 +1,5 @@
-//! Клиент Web API (https://api.spotify.com/v1): ≤6 запросов в полёте, Retry-After (≤30 с, 3 повтора), квота Dev Mode.
+//! Клиент Web API (https://api.spotify.com/v1): ≤6 запросов в полёте, Retry-After (≤30 с, 3 повтора, не дольше 8 с
+//! ожидания на запрос, кроме очереди), квота Dev Mode.
 //! Перенос spotifast/src/api/client.rs. Все вызовы идут через один `send`: bearer-токен, семафор,
 //! охлаждение после 429, тексты ошибок. Различия общего/личного приложения решает gateway до вызова.
 
@@ -24,6 +25,10 @@ const BASE_URL: &str = "https://api.spotify.com/v1";
 const MAX_IN_FLIGHT: usize = 6;
 const RATE_LIMIT_RETRIES: u32 = 3;
 const MAX_RETRY_AFTER: Duration = Duration::from_secs(30);
+/// Сколько запрос (кроме добавления в очередь) вообще ждёт охлаждения после 429: Retry-After соблюдается,
+/// но если он не укладывается в этот срок, запрос сразу отдаёт RateLimited — страница показывает то, что
+/// загрузилось, или понятную ошибку, а не висит минутами (три повтора по 30 с).
+const RATE_LIMIT_BUDGET: Duration = Duration::from_secs(8);
 /// Добавление в очередь повторяется дольше обычного, но не бесконечно.
 const QUEUE_RATE_LIMIT_RETRIES: u32 = 10;
 
@@ -396,12 +401,16 @@ impl ApiClient {
         self.tokens.lock().unwrap_or_else(|p| p.into_inner()).clone().ok_or(ApiError::NotSignedIn)
     }
 
-    async fn wait_for_cooldown(&self) {
+    /// Ждёт конца охлаждения; false — оно кончится позже `deadline` (тогда не ждём вовсе).
+    async fn wait_for_cooldown(&self, deadline: Option<Instant>) -> bool {
         loop {
             let until = *self.cooldown_until.lock().await;
             let Some(wait) = until.checked_duration_since(Instant::now()) else {
-                return;
+                return true;
             };
+            if deadline.is_some_and(|deadline| until > deadline) {
+                return false;
+            }
             tokio::time::sleep(wait).await;
         }
     }
@@ -442,9 +451,13 @@ impl ApiClient {
 
         let mut attempt = 0;
         let queue_write = method == Method::POST && path == "/me/player/queue";
+        let deadline = (!queue_write).then(|| started + RATE_LIMIT_BUDGET);
         loop {
             attempt = u32::saturating_add(attempt, 1);
-            self.wait_for_cooldown().await;
+            if !self.wait_for_cooldown(deadline).await {
+                tracing::debug!("Spotify source={}: охлаждение 429 дольше бюджета запроса {path}", self.source);
+                return Err(ApiError::RateLimited);
+            }
             let permit = self.limiter.acquire().await.map_err(|_| ApiError::NotSignedIn)?;
             let token = provider.access_token().await?;
             let mut request = self
@@ -487,7 +500,8 @@ impl ApiClient {
                 drop(permit);
                 self.extend_cooldown(wait.min(MAX_RETRY_AFTER)).await;
                 let retries = if queue_write { QUEUE_RATE_LIMIT_RETRIES } else { RATE_LIMIT_RETRIES };
-                if attempt > retries || (queue_write && wait > MAX_RETRY_AFTER) {
+                let over_budget = deadline.is_some_and(|deadline| Instant::now() + wait > deadline);
+                if attempt > retries || over_budget || (queue_write && wait > MAX_RETRY_AFTER) {
                     return Err(ApiError::RateLimited);
                 }
                 continue;
@@ -895,6 +909,13 @@ impl ApiClient {
         .await
     }
 
+    /// Плейлисты категории browse (личные — для «Made For You»). Приложениям в режиме разработки — 404.
+    pub async fn category_playlists(&self, category_id: &str, offset: u32, limit: u32) -> Result<Page<Playlist>> {
+        let query = [("limit", limit.to_string()), ("offset", offset.to_string())];
+        let category: CategoryPlaylists = self.get(&format!("/browse/categories/{category_id}/playlists"), &query).await?;
+        Ok(category.playlists)
+    }
+
     pub async fn artist(&self, id: &str) -> Result<Artist> {
         self.get(&format!("/artists/{id}"), &[]).await
     }
@@ -1232,6 +1253,60 @@ mod tests {
     fn quota_exhaustion_is_distinct_from_an_ordinary_rate_limit() {
         assert!(is_quota_exhausted(r#"{"error":{"status":429,"reason":"QUOTA_EXCEEDED"}}"#));
         assert!(!is_quota_exhausted(r#"{"error":{"status":429,"message":"Too many requests"}}"#));
+    }
+
+    /// Сервер, отвечающий по очереди заданными ответами; возвращает число принятых запросов.
+    async fn serve_in_turn(answers: Vec<&'static str>) -> (std::net::SocketAddr, tokio::task::JoinHandle<usize>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let mut served = 0;
+            for answer in answers {
+                let Ok(Ok((mut socket, _))) = tokio::time::timeout(Duration::from_secs(3), listener.accept()).await
+                else {
+                    break;
+                };
+                let mut request = Vec::new();
+                while !request.ends_with(b"\r\n\r\n") {
+                    request.push(socket.read_u8().await.unwrap());
+                }
+                socket.write_all(answer.as_bytes()).await.unwrap();
+                served += 1;
+            }
+            served
+        });
+        (address, server)
+    }
+
+    #[tokio::test]
+    async fn a_read_honours_a_short_retry_after_but_not_a_long_one() {
+        const LIMITED_1S: &str =
+            "HTTP/1.1 429 Too Many Requests\r\nRetry-After: 1\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+        const LIMITED_HOUR: &str =
+            "HTTP/1.1 429 Too Many Requests\r\nRetry-After: 3600\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+        const OK: &str = "HTTP/1.1 200 OK\r\nContent-Length: 12\r\nConnection: close\r\n\r\n{\"name\":\"M\"}";
+        let http = reqwest::Client::builder().no_proxy().build().unwrap();
+
+        // короткий Retry-After — переждать и повторить
+        let (address, server) = serve_in_turn(vec![LIMITED_1S, OK]).await;
+        let client = test_client(format!("http://{address}"), http.clone());
+        let artist = client.artist("a").await.unwrap();
+        assert_eq!(artist.name, "M");
+        assert_eq!(server.await.unwrap(), 2);
+
+        // Retry-After за пределами бюджета — сразу RateLimited, без повтора
+        let (address, server) = serve_in_turn(vec![LIMITED_HOUR, OK]).await;
+        let client = test_client(format!("http://{address}"), http.clone());
+        let started = Instant::now();
+        assert!(matches!(client.artist("a").await, Err(ApiError::RateLimited)));
+        assert!(started.elapsed() < Duration::from_secs(2), "не ждёт час и не висит 3×30 с");
+        // охлаждение источника (≤30 с) дольше бюджета — следующие чтения тоже отвечают сразу
+        let started = Instant::now();
+        assert!(matches!(client.album("b").await, Err(ApiError::RateLimited)));
+        assert!(started.elapsed() < Duration::from_secs(1));
+        drop(client);
+        assert_eq!(server.await.unwrap(), 1, "в охлаждение запросы не уходят");
     }
 
     #[tokio::test]

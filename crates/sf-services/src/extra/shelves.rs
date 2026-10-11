@@ -6,6 +6,7 @@ use serde::Serialize;
 use sf_api::util::{station_seed, uri_id, uri_kind};
 
 use crate::extra::seeds::station_title;
+use crate::releases::NewRelease;
 
 /// Поисковые термины «Сделано для вас» (reference model.rs DISCOVER_TERMS).
 pub const DISCOVER_TERMS: &[&str] = &["Discover Weekly", "Release Radar", "Daily Mix", "daylist"];
@@ -19,22 +20,27 @@ pub const PODCAST_CARDS: usize = 16;
 /// сколько дней невыслушанный выпуск считается новым
 pub const NEW_EPISODE_DAYS: i64 = 30;
 pub const TOP_LIMIT: u32 = 20;
+/// плиток в полке «Новинки» (вместе с «Радаром»)
+pub const NEW_RELEASE_TILES: usize = 16;
 
 pub const QUICK: &str = "quick";
 pub const RECENT: &str = "recent";
 pub const MADE_FOR_YOU: &str = "madeForYou";
+/// «Новинки»: «Радар новинок» + свежие релизы исполнителей (ReleasesService)
+pub const NEW_RELEASES: &str = "newReleases";
 pub const PODCASTS: &str = "podcasts";
 pub const TOP_ARTISTS: &str = "topArtists";
 pub const TOP_TRACKS: &str = "topTracks";
 
 /// Порядок полок на главной.
-pub const ORDER: &[&str] = &[QUICK, RECENT, MADE_FOR_YOU, PODCASTS, TOP_ARTISTS, TOP_TRACKS];
+pub const ORDER: &[&str] = &[QUICK, RECENT, MADE_FOR_YOU, NEW_RELEASES, PODCASTS, TOP_ARTISTS, TOP_TRACKS];
 
 pub fn title(key: &str) -> &'static str {
     match key {
         QUICK => "Быстрый доступ",
         RECENT => "Недавно прослушанное",
         MADE_FOR_YOU => "Сделано для вас",
+        NEW_RELEASES => "Новинки",
         PODCASTS => "Продолжить подкасты",
         TOP_ARTISTS => "Топ-исполнители",
         TOP_TRACKS => "Топ-треки",
@@ -129,6 +135,32 @@ pub fn playlist_entry(p: &PlaylistItem) -> LibraryEntry {
         track_count: p.track_count,
         ..Default::default()
     }
+}
+
+/// «Новинки»: «Радар новинок» первой плиткой, потом свежие релизы (плитки альбомов открывают их страницу).
+pub fn new_release_tiles(radar: Option<&PlaylistItem>, releases: &[NewRelease]) -> Vec<LibraryEntry> {
+    let radar = radar.map(|p| LibraryEntry { subtitle: "Плейлист · Spotify".into(), ..playlist_entry(p) });
+    radar
+        .into_iter()
+        .chain(releases.iter().map(|r| {
+            let album = &r.album;
+            let details: Vec<&str> =
+                [album.artists.as_str(), r.date_label.as_str()].into_iter().filter(|s| !s.is_empty()).collect();
+            LibraryEntry {
+                kind: "album".into(),
+                id: album.album_id.clone(),
+                uri: album.uri.clone(),
+                title: album.title.clone(),
+                subtitle: details.join(" · "),
+                cover: album.cover.clone(),
+                covers: if album.cover.is_empty() { Vec::new() } else { vec![album.cover.clone()] },
+                read_only: true,
+                track_count: album.track_count,
+                ..Default::default()
+            }
+        }))
+        .take(NEW_RELEASE_TILES)
+        .collect()
 }
 
 pub fn liked_entry(liked_uri: &str, count: i64) -> LibraryEntry {
@@ -446,5 +478,34 @@ mod tests {
         assert_eq!((s.kind.as_str(), s.title.as_str()), ("tracks", "Топ-треки"));
         assert_eq!(s.items[0]["trackId"], "1");
         assert_eq!(hidden_keys(" quick, podcasts ,"), HashSet::from(["quick".to_owned(), "podcasts".to_owned()]));
+    }
+
+    #[test]
+    fn new_releases_shelf_starts_with_the_radar() {
+        let radar = playlist("37i9dQZEVXbsGPw6v9FjFR", "Радар новинок", "spotify");
+        let release = NewRelease {
+            album: md3_model::AlbumItem {
+                album_id: "a1".into(),
+                uri: "spotify:album:a1".into(),
+                title: "Fresh".into(),
+                artists: "Artist".into(),
+                cover: "c".into(),
+                ..Default::default()
+            },
+            release_date: "2026-10-09".into(),
+            date_label: "9 октября".into(),
+            group: "single".into(),
+        };
+        let tiles = new_release_tiles(Some(&radar), std::slice::from_ref(&release));
+        assert_eq!(tiles.len(), 2);
+        assert_eq!((tiles[0].kind.as_str(), tiles[0].id.as_str()), ("playlist", "37i9dQZEVXbsGPw6v9FjFR"));
+        assert_eq!(tiles[1].kind, "album");
+        assert_eq!(tiles[1].uri, "spotify:album:a1");
+        assert_eq!(tiles[1].subtitle, "Artist · 9 октября");
+        let many = vec![release; 40];
+        assert_eq!(new_release_tiles(None, &many).len(), NEW_RELEASE_TILES);
+        let s = shelf(NEW_RELEASES, &new_release_tiles(None, &many[..1]));
+        assert_eq!((s.kind.as_str(), s.title.as_str()), ("tiles", "Новинки"));
+        assert!(ORDER.contains(&NEW_RELEASES));
     }
 }

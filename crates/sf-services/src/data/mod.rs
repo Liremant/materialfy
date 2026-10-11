@@ -11,6 +11,8 @@ pub mod known;
 pub mod liked;
 /// постраничный список (перенос PagedList из model.rs)
 pub mod paged;
+/// поиск через GraphQL-шлюз клиентов Spotify (pathfinder) с токеном сессии
+pub mod pathfinder;
 /// кэш строк плейлистов по аккаунту
 pub mod playlist_cache;
 /// маршрутизация Web API / сессии и тексты ошибок

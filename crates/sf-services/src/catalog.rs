@@ -1,6 +1,7 @@
 //! Каталог (исполнитель «services-core»): альбом, исполнитель, поиск (эвристика «лучшего»), шоу и выпуски.
 //! Без состояния, кроме кэша на 10 минут; маршрутизация общего/личного приложения — ApiGateway::client_for(Operation).
 use std::collections::HashMap;
+use std::future::Future;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -11,10 +12,11 @@ use sf_api::map;
 use sf_api::models::{self, Album, Artist, Track};
 use sf_api::{ApiError, Operation};
 use sf_player::PlayerHandle;
+use sf_player::engine::session_reads;
 use tokio::sync::Semaphore;
 
 use crate::auth::AuthService;
-use crate::data::known;
+use crate::data::{known, pathfinder, route};
 use crate::{ServiceError, lock};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -152,6 +154,53 @@ pub struct CatalogService {
     cache: Mutex<HashMap<String, (Instant, Cached)>>,
     /// превью исполнителя по наведению — не больше двух загрузок сразу
     artists: Semaphore,
+}
+
+/// Сколько необязательные запросы страницы (подписка, похожие) могут отстать от основного чтения:
+/// под 429 общее приложение отвечает минутами, а страница без них всё равно полезна.
+const EXTRAS_GRACE: Duration = Duration::from_millis(1500);
+
+/// Ответ `main`; ответ `extras` — если успел вместе с ним или не позже `grace` после.
+async fn with_extras<M: Future, E: Future>(main: M, extras: E, grace: Duration) -> (M::Output, Option<E::Output>) {
+    tokio::pin!(main, extras);
+    tokio::select! {
+        biased;
+        out = &mut main => (out, tokio::time::timeout(grace, extras).await.ok()),
+        found = &mut extras => (main.await, Some(found)),
+    }
+}
+
+/// Только разделы вида поиска `kind` (шлюз отвечает всеми сразу).
+fn only(kind: SearchKind, mut results: models::SearchResults) -> models::SearchResults {
+    let (types, playlists) = kind.api_types();
+    let wanted = |name: &str| types.contains(&name);
+    if !wanted("track") {
+        results.tracks = None;
+    }
+    if !wanted("artist") {
+        results.artists = None;
+    }
+    if !wanted("album") {
+        results.albums = None;
+    }
+    if !wanted("show") {
+        results.shows = None;
+    }
+    if !wanted("episode") {
+        results.episodes = None;
+    }
+    if !playlists {
+        results.playlists = None;
+    }
+    results
+}
+
+/// Раздел страницы, который не загрузился, остаётся пустым, а не роняет страницу.
+fn or_empty<T>(section: Result<Vec<T>, ApiError>, name: &str, id: &str) -> Vec<T> {
+    section.unwrap_or_else(|error| {
+        tracing::debug!("{name} ({id}): {error:#}");
+        Vec::new()
+    })
 }
 
 /// Перевод ошибки Web API в ошибку сервиса; NotSignedIn — отдельно.
@@ -312,6 +361,29 @@ impl CatalogService {
         if let Some(Cached::Album(page)) = self.cached(&key) {
             return Ok(page);
         }
+        // Альбом и все его треки — из сессии librespot (без квоты Web API); Web API — запасной путь.
+        let (album, tracks, complete) = match self.session_album(album_id).await {
+            Some(Ok((album, tracks))) => (album, tracks, true),
+            Some(Err(error)) => return Err(self.fail(error)),
+            None => self.api_album(album_id).await?,
+        };
+        let page = album_page(&album, tracks);
+        // оборванный список не кэшируется: следующее открытие дочитает
+        if complete {
+            self.store(key, Cached::Album(page.clone()));
+        }
+        Ok(page)
+    }
+
+    /// Альбом через сессию; None — сессии нет или она не смогла.
+    async fn session_album(&self, album_id: &str) -> Option<Result<(Album, Vec<Track>), ApiError>> {
+        let session = route::account_session(&self.auth.api(), &self.player)?;
+        route::session_read(session_reads::album_with_tracks(&session, album_id)).await
+    }
+
+    /// Альбом через Web API. Обязателен только сам альбом с первой страницей треков: следующая страница,
+    /// которая не загрузилась (429, сеть), обрывает список, а не страницу; третье поле — список полон.
+    async fn api_album(&self, album_id: &str) -> Result<(Album, Vec<Track>, bool), ServiceError> {
         let client = self.client(Operation::Catalog).await?;
         let album = client.album(album_id).await.map_err(|e| self.fail(e))?;
         let first = album.tracks.clone().unwrap_or_default();
@@ -319,13 +391,18 @@ impl CatalogService {
         let mut tracks = first.items;
         for _ in 0..MAX_ALBUM_PAGES {
             let Some(offset) = next else { break };
-            let page = client.album_tracks(album_id, offset, 50).await.map_err(|e| self.fail(e))?;
-            next = page.next_offset().filter(|n| *n > offset);
-            tracks.extend(page.items);
+            match client.album_tracks(album_id, offset, 50).await {
+                Ok(page) => {
+                    next = page.next_offset().filter(|n| *n > offset);
+                    tracks.extend(page.items);
+                }
+                Err(error) => {
+                    tracing::debug!("треки альбома {album_id} с {offset}: {error:#}");
+                    return Ok((album, tracks, false));
+                }
+            }
         }
-        let page = album_page(&album, tracks);
-        self.store(key, Cached::Album(page.clone()));
-        Ok(page)
+        Ok((album, tracks, true))
     }
 
     pub async fn artist(&self, artist_id: &str) -> Result<ArtistPage, ServiceError> {
@@ -337,26 +414,63 @@ impl CatalogService {
         if let Some(Cached::Artist(page)) = self.cached(&key) {
             return Ok(page);
         }
-        let catalog = self.client(Operation::Catalog).await?;
-        let artist = catalog.artist(artist_id).await.map_err(|e| self.fail(e))?;
-        let restricted = self.client(Operation::UnsupportedDevelopmentMode).await?;
-        let (popular, albums, also, similar, followed) = tokio::join!(
-            restricted.artist_top_tracks(artist_id),
-            catalog.artist_albums(artist_id, "album,single", 0, 50),
-            catalog.artist_albums(artist_id, "appears_on,compilation", 0, 50),
-            restricted.related_artists(artist_id),
-            self.followed(&artist.uri),
-        );
-        let popular = popular.unwrap_or_else(|error| {
-            tracing::debug!("популярное исполнителя: {error:#}");
-            Vec::new()
-        });
-        let albums = albums.map_err(|e| self.fail(e))?.items;
-        let also = also.map(|page| page.items).unwrap_or_default();
-        let similar = similar.unwrap_or_default();
-        let page = artist_page(&artist, followed, &popular, &albums, &also, &similar);
+        // Страница целиком — из сессии librespot (без квоты Web API: общее приложение подолгу отвечает 429,
+        // а исполнителю нужно пять запросов); Web API — запасной путь. Подписка и похожие — только Web API,
+        // поэтому идут параллельно и не задерживают страницу дольше EXTRAS_GRACE.
+        let uri = format!("spotify:artist:{artist_id}");
+        let extras = async { tokio::join!(self.followed(&uri), self.related(artist_id)) };
+        let (session, extras) = with_extras(self.session_artist(artist_id), extras, EXTRAS_GRACE).await;
+        let (followed, related) = extras.unwrap_or_default();
+        let page = match session {
+            Some(Ok(overview)) => {
+                let similar = if overview.related.is_empty() { related } else { overview.related };
+                artist_page(&overview.artist, followed, &overview.top_tracks, &overview.albums, &overview.appears_on, &similar)
+            }
+            Some(Err(error)) => return Err(self.fail(error)),
+            None => {
+                let (artist, popular, albums, also) = self.api_artist(artist_id).await?;
+                artist_page(&artist, followed, &popular, &albums, &also, &related)
+            }
+        };
         self.store(key, Cached::Artist(page.clone()));
         Ok(page)
+    }
+
+    /// Исполнитель через сессию; None — сессии нет или она не смогла.
+    async fn session_artist(&self, artist_id: &str) -> Option<Result<session_reads::ArtistOverview, ApiError>> {
+        let session = route::account_session(&self.auth.api(), &self.player)?;
+        route::session_read(session_reads::artist(&session, artist_id)).await
+    }
+
+    /// Исполнитель через Web API. Обязателен только сам исполнитель: раздел, который не загрузился
+    /// (популярное закрыто для приложений в режиме разработки, 429, лимиты), остаётся пустым.
+    async fn api_artist(&self, artist_id: &str) -> Result<(Artist, Vec<Track>, Vec<Album>, Vec<Album>), ServiceError> {
+        let catalog = self.client(Operation::Catalog).await?;
+        let artist = catalog.artist(artist_id).await.map_err(|e| self.fail(e))?;
+        let popular = async {
+            let restricted = self.auth.api().client_for(Operation::UnsupportedDevelopmentMode).await?;
+            restricted.artist_top_tracks(artist_id).await
+        };
+        let (popular, albums, also) = tokio::join!(
+            popular,
+            catalog.artist_albums(artist_id, "album,single", 0, 50),
+            catalog.artist_albums(artist_id, "appears_on,compilation", 0, 50),
+        );
+        let popular = or_empty(popular, "популярное", artist_id);
+        let albums = or_empty(albums.map(|page| page.items), "альбомы", artist_id);
+        let also = or_empty(also.map(|page| page.items), "релизы с участием", artist_id);
+        Ok((artist, popular, albums, also))
+    }
+
+    /// Похожие исполнители (закрыто для новых приложений — тогда пусто).
+    async fn related(&self, artist_id: &str) -> Vec<Artist> {
+        let Ok(client) = self.auth.api().client_for(Operation::UnsupportedDevelopmentMode).await else {
+            return Vec::new();
+        };
+        client.related_artists(artist_id).await.unwrap_or_else(|error| {
+            tracing::debug!("похожие исполнители {artist_id}: {error:#}");
+            Vec::new()
+        })
     }
 
     /// Подписка на исполнителя (ошибка — «не подписан»).
@@ -374,6 +488,13 @@ impl CatalogService {
             return Ok(SearchResults::default());
         }
         let api = self.auth.api();
+        // Сначала — шлюз клиентов Spotify через сессию (все разделы одним запросом, без квоты Web API)
+        if let Some(session) = route::account_session(&api, &self.player) {
+            match pathfinder::search(&api.http(), &session, query).await {
+                Ok(results) => return Ok(self.searched(query, kind, only(kind, results))),
+                Err(error) => tracing::debug!("поиск через сессию не удался: {error:#}; спрашиваю Web API"),
+            }
+        }
         let (catalog_types, playlists) = kind.api_types();
         let split = api.personal_ready();
         let mut types = catalog_types.clone();
@@ -411,6 +532,12 @@ impl CatalogService {
             }
             (Err(error), _) => return Err(self.fail(error)),
         };
+        Ok(self.searched(query, kind, results))
+    }
+
+    /// Ответ поиска → результаты для QML; «лучший» — только во «Всём».
+    fn searched(&self, query: &str, kind: SearchKind, results: models::SearchResults) -> SearchResults {
+        let api = self.auth.api();
         if let Some(page) = &results.playlists {
             api.observe_playlists(page.items.iter());
         }
@@ -419,7 +546,7 @@ impl CatalogService {
         if kind != SearchKind::All {
             mapped.best = None;
         }
-        Ok(mapped)
+        mapped
     }
 
     pub async fn show(&self, show_id: &str) -> Result<ShowPage, ServiceError> {
@@ -547,6 +674,24 @@ mod tests {
     }
 
     #[test]
+    fn a_search_through_the_session_keeps_only_the_asked_shelves() {
+        let all = models::SearchResults {
+            tracks: page(vec![track("t1")]),
+            artists: page(vec![artist("Muse")]),
+            albums: page(vec![Album::default()]),
+            playlists: page(vec![models::Playlist::default()]),
+            shows: page(vec![models::Show::default()]),
+            episodes: page(vec![models::Episode::default()]),
+        };
+        assert_eq!(only(SearchKind::All, all.clone()), all);
+        let tracks = only(SearchKind::Tracks, all.clone());
+        assert!(tracks.tracks.is_some());
+        assert!(tracks.artists.is_none() && tracks.albums.is_none() && tracks.playlists.is_none());
+        let playlists = only(SearchKind::Playlists, all);
+        assert!(playlists.playlists.is_some() && playlists.tracks.is_none() && playlists.shows.is_none());
+    }
+
+    #[test]
     fn nothing_found_has_no_best_result() {
         assert!(best_result("x", &models::SearchResults::default()).is_none());
     }
@@ -628,5 +773,38 @@ mod tests {
         assert!(page.info.followed);
         assert_eq!(page.popular.len(), 1);
         assert!(page.similar.is_empty());
+    }
+
+    #[test]
+    fn a_failed_section_leaves_the_artist_page_standing() {
+        // 403 у популярного (режим разработки), 429 у альбомов: страница всё равно собирается
+        let refused = ApiError::Status { status: 403, message: "Forbidden".into() };
+        let popular: Vec<Track> = or_empty(Err(refused), "популярное", "muse");
+        let albums: Vec<Album> = or_empty(Err(ApiError::RateLimited), "альбомы", "muse");
+        let also = or_empty(Ok(vec![Album { id: "a1".into(), name: "Live".into(), ..Default::default() }]), "", "muse");
+        let page = artist_page(&artist("Muse"), false, &popular, &albums, &also, &[]);
+        assert_eq!(page.info.item.name, "Muse");
+        assert!(page.popular.is_empty() && page.albums.is_empty());
+        assert_eq!(page.also_albums.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn slow_extras_do_not_hold_the_page() {
+        let grace = Duration::from_millis(20);
+        // подписка/похожие висят (429 у общего приложения) — страница не ждёт их дольше grace
+        let (page, extras) = with_extras(async { "page" }, std::future::pending::<bool>(), grace).await;
+        assert_eq!((page, extras), ("page", None));
+        // успевшие — попадают на страницу, даже если ответили позже основного чтения
+        let late = async {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+            true
+        };
+        assert_eq!(with_extras(async { "page" }, late, grace).await, ("page", Some(true)));
+        // основное чтение дольше — его ждём целиком
+        let slow = async {
+            tokio::time::sleep(Duration::from_millis(40)).await;
+            "page"
+        };
+        assert_eq!(with_extras(slow, async { true }, grace).await, ("page", Some(true)));
     }
 }

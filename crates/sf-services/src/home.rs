@@ -1,6 +1,6 @@
 //! Главная (исполнитель «services-extra»): полки как spotifast/src/ui/home.rs + App::load_home —
 //! «Быстрый доступ» (Любимые + 5 плейлистов), «Недавно прослушанное» (история: Web API + локальная),
-//! «Сделано для вас» (Discover-термины, только общий ключ), «Продолжить подкасты», «Топ-исполнители», «Топ-треки».
+//! «Сделано для вас» (Discover-термины, только общий ключ), «Новинки» (ReleasesService), «Продолжить подкасты», «Топ-исполнители», «Топ-треки».
 //! Не чаще раза в 10 мин без force; видимость — SettingKey::HomeHidden. Ответы старого обновления отбрасываются.
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -18,6 +18,7 @@ use crate::auth::{AuthEvent, AuthService};
 use crate::extra::shelves::{self, Play};
 use crate::history::{HistoryEvent, HistoryService};
 use crate::library::{LibraryEvent, LibraryService};
+use crate::releases::ReleasesService;
 use crate::lock;
 
 /// Не чаще раза в 10 минут без force.
@@ -46,6 +47,7 @@ pub struct HomeService {
     auth: Arc<AuthService>,
     library: Arc<LibraryService>,
     history: Arc<HistoryService>,
+    releases: Arc<ReleasesService>,
     settings: Arc<SettingsStore>,
     snapshot: watch::Sender<HomeSnapshot>,
     data: Mutex<HomeData>,
@@ -59,6 +61,7 @@ impl HomeService {
         auth: Arc<AuthService>,
         library: Arc<LibraryService>,
         history: Arc<HistoryService>,
+        releases: Arc<ReleasesService>,
         settings: Arc<SettingsStore>,
     ) -> Arc<Self> {
         let service = Arc::new_cyclic(|me| Self {
@@ -66,6 +69,7 @@ impl HomeService {
             auth,
             library,
             history,
+            releases,
             settings,
             snapshot: watch::channel(HomeSnapshot::default()).0,
             data: Mutex::new(HomeData::default()),
@@ -129,6 +133,7 @@ impl HomeService {
         let hidden = shelves::hidden_keys(&self.settings.get_str(SettingKey::HomeHidden));
         let liked_uri = self.auth.account_id().map(|a| contexts::liked_uri(a.as_str())).unwrap_or_default();
         let playlists = self.library.playlists();
+        let fresh = self.releases.snapshot();
         let built: Vec<HomeShelf> = {
             let data = lock(&self.data);
             shelves::ORDER
@@ -143,6 +148,9 @@ impl HomeService {
                     shelves::MADE_FOR_YOU => {
                         let tiles: Vec<_> = data.made_for_you.iter().map(shelves::playlist_entry).collect();
                         shelves::shelf(key, &tiles)
+                    }
+                    shelves::NEW_RELEASES => {
+                        shelves::shelf(key, &shelves::new_release_tiles(fresh.radar.as_ref(), &fresh.releases))
                     }
                     shelves::PODCASTS => shelves::shelf(key, &data.podcasts),
                     shelves::TOP_ARTISTS => shelves::shelf(key, &data.top_artists),
@@ -280,6 +288,7 @@ async fn listen(weak: Weak<HomeService>) {
     let mut library = me.library.subscribe();
     let mut history = me.history.subscribe();
     let mut settings = me.settings.subscribe();
+    let mut releases = me.releases.watch();
     drop(me);
     loop {
         tokio::select! {
@@ -308,6 +317,13 @@ async fn listen(weak: Weak<HomeService>) {
                     me.publish();
                 }
                 Err(broadcast::error::RecvError::Closed) => break,
+            },
+            changed = releases.changed() => {
+                if changed.is_err() {
+                    break;
+                }
+                let Some(me) = weak.upgrade() else { break };
+                me.publish();
             },
             key = settings.recv() => match key {
                 Ok(SettingKey::HomeHidden) | Err(broadcast::error::RecvError::Lagged(_)) => {

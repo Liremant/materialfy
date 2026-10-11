@@ -51,6 +51,7 @@ Item {
     readonly property var sections: [
         { name: "home", icon: "home", text: "Главная" },
         { name: "search", icon: "search", text: "Поиск" },
+        { name: "releases", icon: "new_releases", text: "Новинки" },
         { name: "library", icon: "library_music", text: "Библиотека" },
         { name: "liked", icon: "favorite", text: "Любимые треки" }
     ]

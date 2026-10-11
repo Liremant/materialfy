@@ -24,8 +24,8 @@ use protobuf::{EnumOrUnknown, Message as _};
 
 use sf_api::ApiError;
 use sf_api::models::{
-    Album, Artist, ArtistRef, Episode, Image, Owner, Page, PlayableItem, Playlist, PlaylistItem, Show,
-    Track, TrackCount, UserRef,
+    Album, Artist, ArtistRef, Copyright, Episode, Image, Owner, Page, PlayableItem, Playlist,
+    PlaylistItem, Show, Track, TrackCount, UserRef,
 };
 
 const IMAGE_HOST: &str = "https://i.scdn.co/image/";
@@ -654,12 +654,7 @@ pub struct ArtistOverview {
 pub async fn artist(session: &Session, id: &str) -> Result<ArtistOverview, Failure> {
     let uri = SpotifyId::from_base62(id)
         .map(|id| SpotifyUri::Artist { id })
-        .map_err(|_| {
-            Failure::Definitive(ApiError::Status {
-                status: 400,
-                message: "Invalid base62 id".into(),
-            })
-        })?;
+        .map_err(|_| invalid_id())?;
     let bytes = session
         .spclient()
         .get_artist_metadata(&uri)
@@ -747,12 +742,17 @@ fn top_track_uris(artist: &SessionArtist, country: &str) -> Vec<SpotifyUri> {
 async fn releases(session: &Session, groups: &[(&AlbumGroups, &str)]) -> Vec<Album> {
     let mut grouped = Vec::new();
     for (albums, group) in groups {
-        let uris: Vec<&SpotifyUri> = albums.current_releases().take(ARTIST_RELEASES_READ).collect();
+        let uris: Vec<&SpotifyUri> = albums
+            .current_releases()
+            .take(ARTIST_RELEASES_READ)
+            .collect();
         let mut found = Vec::new();
         for chunk in uris.chunks(RELEASE_BATCH) {
             match release_details(session, chunk, group).await {
                 Ok(albums) => found.extend(albums),
-                Err(error) => tracing::debug!("релизы исполнителя ({group}) через сессию: {error:#}"),
+                Err(error) => {
+                    tracing::debug!("релизы исполнителя ({group}) через сессию: {error:#}")
+                }
             }
         }
         grouped.push(found);
@@ -805,7 +805,8 @@ async fn release_details(
                 continue;
             }
             let album = data.extension_data.as_ref().and_then(|any| {
-                let message = librespot_protocol::metadata::Album::parse_from_bytes(&any.value).ok()?;
+                let message =
+                    librespot_protocol::metadata::Album::parse_from_bytes(&any.value).ok()?;
                 release(&message, group)
             });
             if let Some(album) = album {
@@ -850,6 +851,91 @@ fn release_date(date: &librespot_protocol::metadata::Date) -> Option<String> {
         (true, false) => format!("{:04}-{:02}", date.year(), date.month()),
         _ => format!("{:04}", date.year()),
     })
+}
+
+// --- альбом ---
+
+/// Треков альбома в одном пакетном запросе extended-metadata.
+const ALBUM_TRACK_BATCH: usize = 100;
+
+/// An album and its tracks, as /albums/{id} and its track pages give them,
+/// in disc and track order. A song Spotify no longer has is left out, as
+/// the Web API leaves it; any other gap fails the read rather than pass for
+/// an album without songs.
+pub async fn album_with_tracks(
+    session: &Session,
+    id: &str,
+) -> Result<(Album, Vec<Track>), Failure> {
+    let uri = SpotifyId::from_base62(id)
+        .map(|id| SpotifyUri::Album { id })
+        .map_err(|_| invalid_id())?;
+    let bytes = session
+        .spclient()
+        .get_album_metadata(&uri)
+        .await
+        .map_err(refused)?;
+    let message = librespot_protocol::metadata::Album::parse_from_bytes(&bytes)
+        .map_err(|error| Failure::Retry(error.into()))?;
+    let album = album_header(&message)
+        .ok_or_else(|| Failure::Retry(anyhow::anyhow!("unreadable album {id}")))?;
+    let uris = album_track_uris(&message);
+    let mut tracks = Vec::with_capacity(uris.len());
+    for chunk in uris.chunks(ALBUM_TRACK_BATCH) {
+        let found = metadata(session, chunk.iter()).await?;
+        tracks.extend(
+            chunk
+                .iter()
+                .filter_map(|uri| match found.get(&uri.to_uri()) {
+                    Some(PlayableItem::Track(track)) => Some(track.clone()),
+                    _ => None,
+                }),
+        );
+    }
+    Ok((album, tracks))
+}
+
+fn invalid_id() -> Failure {
+    Failure::Definitive(ApiError::Status {
+        status: 400,
+        message: "Invalid base62 id".into(),
+    })
+}
+
+/// The album as /albums/{id} describes it, without its track pages.
+fn album_header(message: &librespot_protocol::metadata::Album) -> Option<Album> {
+    use librespot_protocol::metadata::copyright::Type;
+    let mut album = release(message, "album")?;
+    album.album_group = None;
+    album.popularity = u8::try_from(message.popularity().clamp(0, 100))
+        .ok()
+        .filter(|popularity| *popularity > 0);
+    album.copyrights = message
+        .copyright
+        .iter()
+        .filter(|copyright| !copyright.text().is_empty())
+        .map(|copyright| Copyright {
+            text: copyright.text().to_owned(),
+            kind: match copyright.type_() {
+                Type::P => "P",
+                Type::C => "C",
+            }
+            .to_owned(),
+        })
+        .collect();
+    Some(album)
+}
+
+/// Every track of the album, disc by disc, each once.
+fn album_track_uris(message: &librespot_protocol::metadata::Album) -> Vec<SpotifyUri> {
+    let mut seen = BTreeSet::new();
+    message
+        .disc
+        .iter()
+        .flat_map(|disc| &disc.track)
+        .filter_map(|track| SpotifyId::from_raw(track.gid()).ok())
+        .map(|id| SpotifyUri::Track { id })
+        .filter(|uri| seen.insert(uri.to_uri()))
+        .collect()
 }
 
 #[cfg(test)]
@@ -1556,5 +1642,201 @@ mod tests {
                 "spotify:track:4uLU6hMCjMI75M1A2tKUQC",
             ]
         );
+    }
+    fn gid(n: u8) -> Vec<u8> {
+        vec![n; 16]
+    }
+
+    fn artist_record(top: &[(&str, u8)]) -> SessionArtist {
+        use librespot_protocol::metadata::{
+            AlbumGroup, Artist as ArtistMessage, ImageGroup, TopTracks, Track as TrackMessage,
+        };
+        let mut message = ArtistMessage::new();
+        message.set_gid(gid(1));
+        message.set_name("Radiohead".into());
+        message.set_popularity(87);
+        for (country, n) in top {
+            let mut list = TopTracks::new();
+            list.set_country((*country).into());
+            let mut track = TrackMessage::new();
+            track.set_gid(gid(*n));
+            list.track.push(track);
+            message.top_track.push(list);
+        }
+        // свежая запись: фото только в portrait_group
+        let mut portraits = ImageGroup::new();
+        portraits.image.push(cover(0xaa, 640));
+        message.portrait_group = Some(portraits).into();
+        let mut group = AlbumGroup::new();
+        let mut album = librespot_protocol::metadata::Album::new();
+        album.set_gid(gid(9));
+        group.album.push(album);
+        message.album_group.push(group);
+        SessionArtist::try_from(&message).unwrap()
+    }
+
+    #[test]
+    fn an_artist_record_reads_as_a_web_api_artist() {
+        let record = artist_record(&[("SE", 2), ("", 3)]);
+        let artist = web_artist(&record);
+        assert_eq!(artist.id, id_of(&gid(1)));
+        assert_eq!(artist.uri, format!("spotify:artist:{}", id_of(&gid(1))));
+        assert_eq!(artist.name, "Radiohead");
+        assert_eq!(artist.popularity, Some(87));
+        assert_eq!(artist.images.len(), 1, "photos from portrait_group");
+        assert!(artist.images[0].url.starts_with(IMAGE_HOST));
+        assert_eq!(artist.followers, None, "not in the record; not made up");
+        assert_eq!(
+            record.albums.current_releases().count(),
+            1,
+            "albums are listed by uri"
+        );
+
+        let id = |uris: Vec<SpotifyUri>| uris.iter().map(SpotifyUri::to_id).collect::<Vec<_>>();
+        assert_eq!(id(top_track_uris(&record, "SE")), [id_of(&gid(2))]);
+        assert_eq!(
+            id(top_track_uris(&record, "DE")),
+            [id_of(&gid(3))],
+            "global list"
+        );
+        // ни страны, ни общего списка — первый, какой дал Spotify
+        let only = artist_record(&[("IN", 4)]);
+        assert_eq!(id(top_track_uris(&only, "")), [id_of(&gid(4))]);
+        assert!(top_track_uris(&artist_record(&[]), "SE").is_empty());
+    }
+
+    #[test]
+    fn a_release_reads_as_the_web_api_lists_it() {
+        use librespot_protocol::metadata::{
+            Album as AlbumMessage, Date, Disc, Track as TrackMessage, album::Type,
+        };
+        let mut message = AlbumMessage::new();
+        message.set_gid(gid(5));
+        message.set_name("Spreadin' the Love".into());
+        message.set_type(Type::SINGLE);
+        let mut date = Date::new();
+        date.set_year(2021);
+        date.set_month(11);
+        message.date = Some(date).into();
+        let mut disc = Disc::new();
+        for n in 0..3 {
+            let mut track = TrackMessage::new();
+            track.set_gid(gid(20 + n));
+            disc.track.push(track);
+        }
+        message.disc.push(disc);
+        message
+            .cover_group
+            .mut_or_insert_default()
+            .image
+            .push(cover(0xbb, 300));
+
+        let album = release(&message, "single").unwrap();
+        assert_eq!(album.id, id_of(&gid(5)));
+        assert_eq!(album.name, "Spreadin' the Love");
+        assert_eq!(album.album_type.as_deref(), Some("single"));
+        assert_eq!(album.album_group.as_deref(), Some("single"));
+        assert_eq!(album.total_tracks, Some(3), "a three-track single is an EP");
+        assert_eq!(
+            album.release_date.as_deref(),
+            Some("2021-11"),
+            "only as precise as known"
+        );
+        assert_eq!(album.images.len(), 1);
+
+        message.date.clear();
+        assert_eq!(release(&message, "single").unwrap().release_date, None);
+    }
+
+    #[test]
+    fn releases_are_newest_first_within_their_group() {
+        let release = |name: &str, date: Option<&str>| Album {
+            name: name.into(),
+            release_date: date.map(Into::into),
+            ..Default::default()
+        };
+        let page = arrange(vec![
+            vec![
+                release("OK Computer OKNOTOK", Some("2017-06-23")),
+                release("Hail to the Thief Live", Some("2025-08-13")),
+                release("Undated", None),
+                release("KID A MNESIA", Some("2021-11-05")),
+            ],
+            vec![release("Single", Some("2026-01-01"))],
+        ]);
+        let names: Vec<&str> = page.iter().map(|album| album.name.as_str()).collect();
+        assert_eq!(
+            names,
+            [
+                "Hail to the Thief Live",
+                "KID A MNESIA",
+                "OK Computer OKNOTOK",
+                "Undated",
+                "Single"
+            ],
+            "albums before singles, as include_groups=album,single"
+        );
+        let many = arrange(vec![vec![Album::default(); ARTIST_RELEASES + 5]]);
+        assert_eq!(many.len(), ARTIST_RELEASES, "one Web API page");
+    }
+    #[test]
+    fn an_album_reads_as_the_web_api_describes_it() {
+        use librespot_protocol::metadata::{
+            Album as AlbumMessage, Copyright as CopyrightMessage, Date, Disc,
+            Track as TrackMessage, album::Type, copyright::Type as CopyrightType,
+        };
+        let mut message = AlbumMessage::new();
+        message.set_gid(gid(6));
+        message.set_name("OK Computer".into());
+        message.set_type(Type::ALBUM);
+        message.set_label("XL Recordings".into());
+        message.set_popularity(90);
+        let mut date = Date::new();
+        date.set_year(1997);
+        date.set_month(5);
+        date.set_day(28);
+        message.date = Some(date).into();
+        for (kind, text) in [
+            (CopyrightType::P, "1997 XL"),
+            (CopyrightType::C, ""),
+            (CopyrightType::C, "1997 XL Ltd"),
+        ] {
+            let mut copyright = CopyrightMessage::new();
+            copyright.set_type(kind);
+            copyright.set_text(text.into());
+            message.copyright.push(copyright);
+        }
+        // два диска; трек, указанный дважды, — один раз
+        for tracks in [[30u8, 31], [32, 30]] {
+            let mut disc = Disc::new();
+            for n in tracks {
+                let mut track = TrackMessage::new();
+                track.set_gid(gid(n));
+                disc.track.push(track);
+            }
+            message.disc.push(disc);
+        }
+
+        let album = album_header(&message).unwrap();
+        assert_eq!(album.id, id_of(&gid(6)));
+        assert_eq!(album.name, "OK Computer");
+        assert_eq!(album.album_type.as_deref(), Some("album"));
+        assert_eq!(album.album_group, None, "not listed under an artist");
+        assert_eq!(album.label.as_deref(), Some("XL Recordings"));
+        assert_eq!(album.release_date.as_deref(), Some("1997-05-28"));
+        assert_eq!(album.total_tracks, Some(4));
+        assert_eq!(album.popularity, Some(90));
+        let copyrights: Vec<(&str, &str)> = album
+            .copyrights
+            .iter()
+            .map(|c| (c.kind.as_str(), c.text.as_str()))
+            .collect();
+        assert_eq!(copyrights, [("P", "1997 XL"), ("C", "1997 XL Ltd")]);
+
+        let ids: Vec<String> = album_track_uris(&message)
+            .iter()
+            .map(SpotifyUri::to_id)
+            .collect();
+        assert_eq!(ids, [id_of(&gid(30)), id_of(&gid(31)), id_of(&gid(32))]);
     }
 }

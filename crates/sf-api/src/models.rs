@@ -649,6 +649,13 @@ pub struct FollowedArtists {
     pub artists: CursorPage<Artist>,
 }
 
+/// /browse/categories/{id}/playlists: страница плейлистов под ключом `playlists` (пустые места — null).
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+pub struct CategoryPlaylists {
+    #[serde(default)]
+    pub playlists: Page<Playlist>,
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
 pub struct PlayHistory {
     pub track: Track,
