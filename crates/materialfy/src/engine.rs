@@ -56,7 +56,10 @@ fn setup_env(cli: &Cli) {
         }
         if cli.screenshot.is_some() {
             // Снимок без окна на экране; RHI нужен для Shape/MultiEffect — software-бэкенд их не рисует
-            std::env::set_var("QT_QPA_PLATFORM", "offscreen");
+            // QT_QPA_PLATFORM set by the caller wins (e.g. a bundle without the offscreen plugin)
+            if std::env::var_os("QT_QPA_PLATFORM").is_none() {
+                std::env::set_var("QT_QPA_PLATFORM", "offscreen");
+            }
             std::env::set_var("QT_QUICK_BACKEND", "rhi");
             // Windows: D3D11 работает в offscreen; OpenGL может дать белый экран
             if std::env::var_os("QSG_RHI_BACKEND").is_none() {

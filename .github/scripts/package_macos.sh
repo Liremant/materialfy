@@ -65,6 +65,12 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 PLIST
 
 "$QTBIN/macdeployqt" "$APP" -qmldir="$ROOT/src/materialfy/qml" -always-overwrite
+# --screenshot renders with the offscreen platform; macdeployqt only ships cocoa
+QTPLUGINS="$("$QTBIN/qmake6" -query QT_INSTALL_PLUGINS 2>/dev/null || "$QTBIN/qmake" -query QT_INSTALL_PLUGINS)"
+if [ -f "$QTPLUGINS/platforms/libqoffscreen.dylib" ]; then
+    cp "$QTPLUGINS/platforms/libqoffscreen.dylib" "$APP/Contents/PlugIns/platforms/"
+    install_name_tool -add_rpath "@loader_path/../../Frameworks" "$APP/Contents/PlugIns/platforms/libqoffscreen.dylib" 2>/dev/null || true
+fi
 # macdeployqt rewrites the binaries - ad hoc signature, otherwise arm64 refuses to launch it
 codesign --force --deep --sign - "$APP"
 

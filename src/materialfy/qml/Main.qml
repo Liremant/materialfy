@@ -477,6 +477,11 @@ Window {
 
     // «Радио по треку / исполнителю»: сид на орбите главной, переход к сцене, «Слушать» в Snackbar
     function radioFrom(seedUri, title) {
+        // мини-режим остаётся мини: волна сразу играет, без перехода к сцене на главной
+        if (win.mini) {
+            Radio.playStation(seedUri, title)
+            return
+        }
         Radio.select(seedUri)
         if (nowPlaying.open)
             nowPlaying.hide()
@@ -489,7 +494,7 @@ Window {
 
     function trackMenuAction(id, track, item) {
         // очередь, настройки и переходы живут в обычной раскладке
-        if (win.mini && (id === "queue" || id === "sound" || id.startsWith("radio:") || id === "removefromplaylist"))
+        if (win.mini && (id === "queue" || id === "sound" || id === "removefromplaylist"))
             win.expandFromMini()
         if (id === "radio:track") {
             win.radioFrom("spotify:track:" + track.trackId, track.title ?? "")
