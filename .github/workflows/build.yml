@@ -90,7 +90,7 @@ jobs:
       - name: Install Inno Setup
         shell: pwsh
         run: |
-          $paths = @("C:\Program Files (x86)\Inno Setup 6", "C:\Program Files\Inno Setup 6")
+          $paths = @("C:\Program Files (x86)\Inno Setup 6", "C:\Program Files\Inno Setup 6", "$env:LOCALAPPDATA\Programs\Inno Setup 6")
           if (-not ($paths | Where-Object { Test-Path "$_\ISCC.exe" })) {
             choco install innosetup -y --no-progress
           }
