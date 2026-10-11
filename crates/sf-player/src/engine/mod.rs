@@ -9,6 +9,12 @@ pub mod limiter;
 pub mod new_releases;
 pub mod player;
 pub mod resample;
+/// коллекция аккаунта через сессию: любимые треки, альбомы, подписки (collection v2)
+pub mod session_collection;
+/// плейлисты через сессию: список из rootlist, правки (playlist4 changes), создание, подписка, обложка
+pub mod session_playlists;
+/// подкасты через сессию: шоу и выпуски (metadata), сохранённые шоу и «Ваши выпуски»
+pub mod session_podcasts;
 pub mod session_reads;
 pub mod sink;
 pub mod stretch;

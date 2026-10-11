@@ -19,6 +19,7 @@ use sf_auth::oauth::{self, StoredToken, TokenEndpointError};
 
 use crate::ApiSource;
 use crate::http::Http;
+use crate::limits::{self, Limits};
 use crate::models::*;
 
 const BASE_URL: &str = "https://api.spotify.com/v1";
@@ -334,6 +335,15 @@ impl NetActivity {
     }
 }
 
+/// Сбрасывает кэш GET после записи, даже если future запроса бросили.
+struct WroteGuard<'a>(&'a Limits);
+
+impl Drop for WroteGuard<'_> {
+    fn drop(&mut self) {
+        self.0.wrote();
+    }
+}
+
 /// Снимает счётчик, даже если future запроса бросили.
 struct ActivityGuard<'a>(&'a NetActivity);
 
@@ -355,6 +365,8 @@ pub struct ApiClient {
     artist_albums_limit: u32,
     source: ApiSource,
     activity: Arc<NetActivity>,
+    /// Бюджет, склейка и кэш GET, охлаждение источника — общие для клиентов одного ApiGateway.
+    limits: Arc<Limits>,
 }
 
 impl ApiClient {
@@ -377,7 +389,14 @@ impl ApiClient {
             artist_albums_limit,
             source,
             activity,
+            limits: Limits::new(),
         }
+    }
+
+    /// Общие с другими клиентами лимиты (ApiGateway даёт один набор на оба источника).
+    pub fn with_limits(mut self, limits: Arc<Limits>) -> Self {
+        self.limits = limits;
+        self
     }
 
     pub fn set_token_provider(&self, provider: Option<TokenProvider>) {
@@ -388,7 +407,8 @@ impl ApiClient {
     /// сменившегося аккаунта.
     pub fn for_authorization(&self, provider: TokenProvider) -> Self {
         let client =
-            Self::new(self.http.clone(), self.activity.clone(), self.search_limit, self.artist_albums_limit, self.source);
+            Self::new(self.http.clone(), self.activity.clone(), self.search_limit, self.artist_albums_limit, self.source)
+                .with_limits(self.limits.clone());
         client.set_token_provider(Some(provider));
         client
     }
@@ -423,6 +443,10 @@ impl ApiClient {
     // ---- транспорт ----
 
     async fn send(&self, method: Method, path: &str, query: &[(&str, String)], body: Option<&Value>) -> Result<String> {
+        if method == Method::GET && body.is_none() {
+            // одинаковые GET в полёте — один запрос, ответ живёт в кэше limits несколько секунд
+            return self.limits.get(self.source, path, query, self.send_body(method, path, query, None, None)).await;
+        }
         self.send_body(method, path, query, body, None).await
     }
 
@@ -444,6 +468,9 @@ impl ApiClient {
             format!("{base}{path}")
         };
         let provider = self.provider()?;
+        // запись сбрасывает кэш GET, чем бы ни кончилась
+        let _wrote = (method != Method::GET).then(|| WroteGuard(&self.limits));
+        self.limits.admit(self.source, limits::priority_of(method == Method::GET, path)).await?;
         let started = Instant::now();
         // Один логический запрос, даже если он ждёт семафор или охлаждение: признак активности живёт всё это время.
         self.activity.begin();
@@ -454,6 +481,9 @@ impl ApiClient {
         let deadline = (!queue_write).then(|| started + RATE_LIMIT_BUDGET);
         loop {
             attempt = u32::saturating_add(attempt, 1);
+            if attempt > 1 {
+                self.limits.count_retry(self.source);
+            }
             if !self.wait_for_cooldown(deadline).await {
                 tracing::debug!("Spotify source={}: охлаждение 429 дольше бюджета запроса {path}", self.source);
                 return Err(ApiError::RateLimited);
@@ -474,6 +504,7 @@ impl ApiClient {
             } else if matches!(method, Method::PUT | Method::POST | Method::DELETE) {
                 request = request.header(reqwest::header::CONTENT_LENGTH, "0");
             }
+            let sent_at = Instant::now();
             let response = request.send().await?;
             let status = response.status();
 
@@ -490,7 +521,9 @@ impl ApiClient {
                     .and_then(|value| value.trim().parse::<u64>().ok())
                     .map_or(Duration::from_secs(1), Duration::from_secs);
                 let text = response.text().await.unwrap_or_default();
-                if is_quota_exhausted(&text) {
+                let quota = is_quota_exhausted(&text);
+                self.limits.note_limited(self.source, wait, quota);
+                if quota {
                     return Err(ApiError::QuotaExhausted);
                 }
                 // Отклонённое добавление в очередь безопасно повторить: оно держит место в замке записи и повторяется
@@ -520,6 +553,7 @@ impl ApiClient {
                 started.elapsed().as_millis()
             );
             if status.is_success() {
+                self.limits.note_success(self.source, sent_at);
                 return Ok(text);
             }
             let message = serde_json::from_str::<ApiErrorBody>(&text)

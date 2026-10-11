@@ -28,7 +28,7 @@ use sf_api::models::{
     PlaylistItem, Show, Track, TrackCount, UserRef,
 };
 
-const IMAGE_HOST: &str = "https://i.scdn.co/image/";
+pub(crate) const IMAGE_HOST: &str = "https://i.scdn.co/image/";
 
 /// Why the session could not answer a read.
 #[derive(Debug)]
@@ -316,13 +316,13 @@ fn header(id: &str, list: &SessionPlaylist) -> Playlist {
 
 /// The Web API's snapshot id is the playlist revision in base64, so a
 /// header read here matches one read there, and the disk cache with both.
-fn snapshot(revision: &[u8]) -> String {
+pub(crate) fn snapshot(revision: &[u8]) -> String {
     base64::engine::general_purpose::STANDARD_NO_PAD.encode(revision)
 }
 
 /// The cover, from the sized pictures when the list carries them, else the
 /// one picture every list has.
-fn playlist_images(attributes: &PlaylistAttributes) -> Vec<Image> {
+pub(crate) fn playlist_images(attributes: &PlaylistAttributes) -> Vec<Image> {
     let sized: Vec<Image> = attributes
         .picture_sizes
         .iter()
@@ -431,7 +431,7 @@ fn local_track(id: &SpotifyUri, uri: String) -> Option<PlayableItem> {
 /// A URI Spotify says it has no item for is absent, as the Web API leaves
 /// such a row's item empty. An answer Spotify could not give, or one this
 /// cannot read, fails the page rather than pass for rows without songs.
-async fn metadata(
+pub(crate) async fn metadata(
     session: &Session,
     uris: impl Iterator<Item = &SpotifyUri>,
 ) -> Result<HashMap<String, PlayableItem>, Failure> {
@@ -554,6 +554,14 @@ fn track(track: SessionTrack) -> Track {
         track_number: Some(u32::try_from(track.number).unwrap_or_default()),
         disc_number: Some(u32::try_from(track.disc_number).unwrap_or_default()),
         popularity: Some(track.popularity.clamp(0, 100) as u8),
+        // ISRC — ключ записи: рыночные дубли одного трека считаются одним лайком
+        external_ids: sf_api::models::ExternalIds {
+            isrc: track
+                .external_ids
+                .iter()
+                .find(|id| id.external_type.eq_ignore_ascii_case("isrc"))
+                .map(|id| id.id.clone()),
+        },
         ..Default::default()
     }
 }
@@ -702,7 +710,7 @@ pub async fn artist(session: &Session, id: &str) -> Result<ArtistOverview, Failu
 
 /// The artist as the Web API describes one. Followers and genres are not in
 /// the record; the page shows none rather than wait on the Web API for them.
-fn web_artist(artist: &SessionArtist) -> Artist {
+pub(crate) fn web_artist(artist: &SessionArtist) -> Artist {
     // Свежие записи кладут фото в portrait_group, старые — в portrait.
     let portraits = if artist.portrait_group.is_empty() {
         &artist.portraits
@@ -936,6 +944,26 @@ fn album_track_uris(message: &librespot_protocol::metadata::Album) -> Vec<Spotif
         .map(|id| SpotifyUri::Track { id })
         .filter(|uri| seen.insert(uri.to_uri()))
         .collect()
+}
+
+// --- трек ---
+
+/// One track, as /tracks/{id} gives it. A song the metadata does not
+/// describe (gone, withheld) is a retry: the Web API may still list it.
+pub async fn track_by_id(session: &Session, id: &str) -> Result<Track, Failure> {
+    let uri = SpotifyId::from_base62(id)
+        .map(|id| SpotifyUri::Track { id })
+        .map_err(|_| invalid_id())?;
+    match metadata(session, std::iter::once(&uri))
+        .await?
+        .remove(&uri.to_uri())
+    {
+        Some(PlayableItem::Track(track)) => Ok(track),
+        _ => Err(Failure::Retry(anyhow::anyhow!(
+            "no metadata for {}",
+            uri.to_uri()
+        ))),
+    }
 }
 
 #[cfg(test)]

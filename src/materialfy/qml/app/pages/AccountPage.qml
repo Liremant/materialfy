@@ -4,9 +4,10 @@ import Md3
 import Materialfy.Core
 import ".."
 
-// Аккаунт. До входа — «Войти через Spotify» по шагам (PKCE в браузере, ответ на 127.0.0.1:8989):
-// ждём браузер → подключаемся → «Готово, {имя}» с переходом ко второму шагу (воспроизведение здесь).
-// После входа — сводка аккаунта. Смена состояния — сквозное затухание.
+// Аккаунт. До входа — «Войти через Spotify» (Premium): один вход через сессию Spotify (PKCE в браузере,
+// ответ на 127.0.0.1:8898) открывает и медиатеку, и музыку на этом компьютере. «Без Premium» — вход
+// Web API (127.0.0.1:8989): медиатека, поиск и пульт, без звука здесь. Ждём браузер → подключаемся →
+// «Готово, {имя}». После входа — сводка аккаунта. Смена состояния — сквозное затухание.
 Page {
     id: page
 
@@ -15,6 +16,9 @@ Page {
     readonly property bool premium: Auth.premium === true
     readonly property string displayName: account.displayName ?? ""
     readonly property bool _instant: Theme.reducedMotion === true
+    // вход через сессию отказал: аккаунт Free — предложить вход без Premium
+    readonly property bool freeRefused: Auth.errorText.indexOf("Free") >= 0
+    readonly property bool playbackHere: Auth.playbackState === "ready"
 
     // «Готово, {имя}» — только если вход прошёл через браузер, пока страница открыта (а не восстановилась сессия)
     property bool _sawBrowser: st === "awaitingBrowser"
@@ -56,6 +60,8 @@ Page {
 
     // Пояснения к ошибкам входа (тексты ошибок — из Auth.errorText)
     function _errorHint(text) {
+        if (text.indexOf("Free") >= 0)
+            return "Без Premium можно войти иначе — через Web API: будут медиатека, поиск и пульт для телефона и колонок, но не музыка на этом компьютере. Spotify иногда ограничивает такие запросы."
         if (text.indexOf("отменён") >= 0)
             return "На странице Spotify нажата «Отмена». Попробуйте ещё раз — разрешение можно отозвать в настройках аккаунта Spotify."
         if (text.indexOf("занят") >= 0)
@@ -175,12 +181,14 @@ Page {
                     horizontalAlignment: Text.AlignHCenter
                     text: ({
                         checking: "Проверяем сохранённую сессию",
-                        connecting: "Проверяем аккаунт и загружаем медиатеку",
+                        connecting: "Проверяем аккаунт и подключаемся к Spotify",
                         browser: page.compact ? "Нажмите «Принять» на accounts.spotify.com — окно вернётся само."
                                               : "Мы открыли страницу accounts.spotify.com. Нажмите там «Принять», и окно вернётся само.",
                         error: "",
-                        welcome: "Медиатека, поиск и пульт для ваших устройств уже работают. Осталось решить, будет ли музыка играть на этом компьютере."
-                    })[page.shown] ?? (page.compact ? "Пароль вводится только на сайте Spotify. Потом можно включить воспроизведение здесь (Premium)." : "Вход открывается в браузере. Пароль вводится только на сайте Spotify, Materialfy его не видит. "
+                        welcome: page.playbackHere
+                                 ? "Медиатека, поиск, пульт и музыка на этом компьютере уже работают."
+                                 : "Медиатека, поиск и пульт для ваших устройств уже работают. Слушать на этом компьютере можно со Spotify Premium."
+                    })[page.shown] ?? (page.compact ? "Один вход со Spotify Premium — и медиатека, и музыка здесь. Пароль вводится только на сайте Spotify." : "Один вход со Spotify Premium открывает медиатеку и музыку на этом компьютере. Вход — в браузере: пароль вводится только на сайте Spotify, Materialfy его не видит. "
                                        + (Qt.platform.os === "windows" ? "Ключи хранятся в диспетчере учётных данных Windows."
                                           : Qt.platform.os === "osx" ? "Ключи хранятся в связке ключей macOS."
                                           : "Ключи хранятся в связке ключей системы."))
@@ -239,6 +247,7 @@ Page {
                     // выделен шаг, который выполняется сейчас; до нажатия «Войти» — ни один
                     active: page.shown === "welcome" ? 2 : page.shown === "browser" || page.shown === "connecting" ? 1 : 0
                     done1: page.shown === "welcome"
+                    done2: page.shown === "welcome" && page.playbackHere
                     waitingText: page.shown === "browser" ? "Ждём подтверждения…" : page.shown === "connecting" ? "Входим…" : ""
                 }
 
@@ -263,7 +272,20 @@ Page {
                         onClicked: Auth.startLogin()
                     }
                     Button {
-                        visible: page.shown === "error"
+                        visible: page.shown === "signedOut"
+                        text: "Без Premium"
+                        style: "text"
+                        onClicked: Auth.startWebLogin()
+                    }
+                    Button {
+                        visible: page.shown === "error" && page.freeRefused
+                        text: "Войти без Premium"
+                        icon: "open_in_new"
+                        size: "m"
+                        onClicked: Auth.startWebLogin()
+                    }
+                    Button {
+                        visible: page.shown === "error" && !page.freeRefused
                         text: "Повторить"
                         icon: "refresh"
                         size: "m"
@@ -309,7 +331,7 @@ Page {
                                 Icon { anchors.verticalCenter: parent.verticalCenter; name: "lock"; size: 16; color: Theme.fgSurfaceVariant }
                                 Label {
                                     anchors.verticalCenter: parent.verticalCenter
-                                    text: "Ответ придёт на 127.0.0.1:" + (Auth.authPort > 0 ? Auth.authPort : 8989) + " · ваш компьютер"
+                                    text: "Ответ придёт на 127.0.0.1:" + (Auth.authPort > 0 ? Auth.authPort : 8898) + " · ваш компьютер"
                                     type: "labelMedium"
                                     color: Theme.fgSurfaceVariant
                                 }
@@ -323,15 +345,23 @@ Page {
                         onClicked: Auth.cancelLogin()
                     }
                     Button {
-                        visible: page.shown === "welcome"
+                        visible: page.shown === "welcome" && page.playbackHere
+                        text: "Начать"
+                        icon: "arrow_forward"
+                        size: "m"
+                        onClicked: page.router ? page.router.reset("home") : null
+                    }
+                    // вошли без Premium (Web API): звук здесь — отдельным входом через сессию, если Premium есть
+                    Button {
+                        visible: page.shown === "welcome" && !page.playbackHere && page.premium
                         text: "Дальше: слушать здесь"
                         icon: "speaker"
                         size: "m"
                         onClicked: page._go("playback")
                     }
                     Button {
-                        visible: page.shown === "welcome"
-                        text: "Позже, только пульт"
+                        visible: page.shown === "welcome" && !page.playbackHere
+                        text: page.premium ? "Позже, только пульт" : "Дальше"
                         style: "text"
                         onClicked: page.router ? page.router.reset("home") : null
                     }

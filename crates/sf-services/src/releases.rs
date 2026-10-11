@@ -2,8 +2,8 @@
 //! пользователь (и тех, кого он часто слушает в этом приложении).
 //!
 //! Всё читается через сессию librespot (sf_player::engine::new_releases): общий ключ Web API упирается в 429.
-//! «Радар» — категория «Made For You» токеном сессии → та же категория общим ключом (с таймаутом) →
-//! плейлист из библиотеки, если пользователь его сохранил. Его строки потом читает LibraryService, как у любого
+//! «Радар» — главная Spotify (homeview) и страница «Для тебя» (GraphQL) через сессию → категория «Made For You»
+//! общим ключом (фоном, с таймаутом) → плейлист из библиотеки, если пользователь его сохранил. Его строки потом читает LibraryService, как у любого
 //! плейлиста. Новинки — подписки из коллекции, запись каждого исполнителя (не больше CONCURRENCY сразу) и
 //! даты релизов пачками extended-metadata. Даты уже виденных релизов хранятся на диске, поэтому повторный обход
 //! спрашивает подробности только у новых. Без сессии — запасной обход Web API, ограниченный по времени: 429 и
@@ -24,12 +24,14 @@ use serde::{Deserialize, Serialize};
 use sf_api::models::{Album, Page};
 use sf_api::{ApiClient, ApiError, ApiGateway, Operation};
 use sf_player::engine::new_releases::{self, ReleaseRef};
+use sf_player::engine::session_reads;
 use sf_player::{PlayerHandle, Session};
 use tokio::runtime::Handle;
 use tokio::sync::{broadcast, watch};
 
 use crate::ServiceError;
 use crate::auth::{AuthEvent, AuthService};
+use crate::data::home_feed::{self, FeedCard};
 use crate::data::{fsio, route};
 use crate::history::HistoryService;
 use crate::library::{LibraryEvent, LibraryService};
@@ -105,6 +107,8 @@ struct State {
     known: HashMap<String, String>,
     /// последний обход шёл через сессию (иначе, когда она появится, обойти ещё раз)
     via_session: bool,
+    /// сессия встала во время обхода без неё — по его окончании обойти ещё раз
+    session_pending: bool,
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -118,6 +122,8 @@ struct Cached {
     radar_from_session: bool,
     releases: Vec<NewRelease>,
     known: HashMap<String, String>,
+    /// обход шёл через сессию: после входа его не повторять, когда она встанет
+    via_session: bool,
 }
 
 /// Итог обхода: релизы, даты виденных и шёл ли он через сессию.
@@ -183,6 +189,7 @@ impl ReleasesService {
                 return;
             }
             state.loaded_at = Some(Instant::now());
+            state.session_pending = false;
         }
         let generation = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
         self.snapshot.send_modify(|s| {
@@ -270,6 +277,14 @@ impl ReleasesService {
             // ошибка видна, только если показать нечего
             s.error_text = error.filter(|_| empty).unwrap_or_default();
         });
+        // сессия встала, пока шёл обход без неё, — обойти через неё (без квоты Web API)
+        let again = {
+            let mut state = lock(&self.state);
+            std::mem::take(&mut state.session_pending) && !state.via_session
+        };
+        if again && self.session().is_some() {
+            self.refresh(true);
+        }
     }
 
     fn session(&self) -> Option<Session> {
@@ -293,41 +308,48 @@ impl ReleasesService {
         }
     }
 
-    /// Сессия готова: обход без неё (Web API) повторить через неё, иначе — только «Радар».
+    /// Сессия готова: обход без неё (Web API) повторить через неё, иначе — только «Радар». Идущий обход
+    /// не дублируется: он повторится по окончании, если так и прошёл без сессии.
     fn session_ready(&self) {
+        let loading = self.snapshot.borrow().loading;
         let again = {
-            let state = lock(&self.state);
-            !state.account.is_empty() && state.loaded_at.is_some() && !state.via_session
+            let mut state = lock(&self.state);
+            let again = !state.account.is_empty() && state.loaded_at.is_some() && !state.via_session;
+            if again && loading {
+                state.session_pending = true;
+            }
+            again
         };
-        if again && !self.snapshot.borrow().loading {
+        if again && !loading {
             self.refresh(true);
         } else {
             self.recheck_radar();
         }
     }
 
-    /// «Радар» и ответила ли сессия: сессия → общий ключ → библиотека.
+    /// «Радар» и ответила ли сессия: главная Spotify (homeview) → страница «Для тебя» (GraphQL) через
+    /// сессию → общий ключ Web API (фоном) → библиотека.
     async fn discover_radar(&self) -> (Option<PlaylistItem>, bool) {
         let api = self.auth.api();
         let me = self.auth.account_id();
         let map = |p: &sf_api::models::Playlist| sf_api::map::playlist_item(p, me.as_ref());
         let mut session_answered = false;
         if let Some(session) = self.session() {
-            match self.http.client() {
-                Ok(http) => {
-                    let read = new_releases::release_radar(&session, &http);
-                    match tokio::time::timeout(RADAR_TIMEOUT, read).await {
-                        Ok(Ok(Some(radar))) => return (Some(map(&radar)), true),
-                        Ok(Ok(None)) => session_answered = true,
-                        Ok(Err(error)) => tracing::debug!("«Радар новинок» через сессию: {error:#}"),
-                        Err(_) => tracing::debug!("«Радар новинок» через сессию: не успела"),
-                    }
-                }
-                Err(error) => tracing::debug!("«Радар новинок»: нет HTTP-клиента: {error}"),
+            match tokio::time::timeout(RADAR_TIMEOUT, new_releases::release_radar(&session)).await {
+                Ok(Ok(Some(radar))) => return (Some(map(&radar)), true),
+                Ok(Ok(None)) => session_answered = true,
+                Ok(Err(error)) => tracing::debug!("«Радар новинок» на главной Spotify: {error:#}"),
+                Err(_) => tracing::debug!("«Радар новинок» на главной Spotify: не успела"),
+            }
+            match tokio::time::timeout(RADAR_TIMEOUT, browse_radar(&self.http, &session)).await {
+                Ok(Ok(Some(radar))) => return (Some(map(&radar)), true),
+                Ok(Ok(None)) => session_answered = true,
+                Ok(Err(error)) => tracing::debug!("«Радар новинок» на странице «Для тебя»: {error:#}"),
+                Err(_) => tracing::debug!("«Радар новинок» на странице «Для тебя»: не успела"),
             }
         }
         if !session_answered {
-            match within(WEB_TIMEOUT, shared_radar(&api)).await {
+            match sf_api::limits::background(within(WEB_TIMEOUT, shared_radar(&api))).await {
                 Ok(Some(radar)) => return (Some(map(&radar)), false),
                 Ok(None) => {}
                 Err(error) => tracing::debug!("«Радар новинок» общим ключом: {error}"),
@@ -385,7 +407,7 @@ impl ReleasesService {
             followed = self.library.artists().into_iter().map(|a| a.artist_id).collect();
         }
         if followed.is_empty() {
-            match within(WEB_TIMEOUT, followed_artists(&self.auth.api())).await {
+            match sf_api::limits::background(within(WEB_TIMEOUT, followed_artists(&self.auth.api()))).await {
                 Ok(ids) => {
                     answered = true;
                     followed = ids;
@@ -425,7 +447,9 @@ impl ReleasesService {
             Some(session) => session_crawl(&session, &pool, known, &previous, today).await,
             None => {
                 let api = self.auth.api();
-                match tokio::time::timeout(WEB_CRAWL_TIMEOUT, web_crawl(&api, &pool, today)).await {
+                // фоновый обход: уступает страницам и не идёт в сеть, пока Web API ограничен
+                let crawl = sf_api::limits::background(web_crawl(&api, &pool, today));
+                match tokio::time::timeout(WEB_CRAWL_TIMEOUT, crawl).await {
                     Ok(result) => result
                         .map(|releases| Crawl {
                             releases,
@@ -463,6 +487,7 @@ impl ReleasesService {
                 radar_from_session: state.radar_from_session,
                 releases: state.releases.clone(),
                 known: state.known.clone(),
+                via_session: state.via_session,
             }
         };
         let path = Self::cache_file(&cache.account);
@@ -503,6 +528,7 @@ impl ReleasesService {
                 state.radar_checked = true;
                 state.releases = cached.releases;
                 state.known = cached.known;
+                state.via_session = cached.via_session;
             }
         }
         self.publish();
@@ -686,6 +712,48 @@ async fn within<T>(limit: Duration, request: impl Future<Output = Result<T, ApiE
     tokio::time::timeout(limit, request)
         .await
         .unwrap_or_else(|_| Err(ApiError::Network("Spotify не ответил вовремя".into())))
+}
+
+/// Личные плейлисты Spotify («Радар», Discover Weekly) — у них подпись дочитывается, если её нет.
+const PERSONAL_PLAYLIST: &str = "37i9dQZEVXb";
+
+/// «Радар» на странице «Для тебя» (GraphQL browsePage через сессию, без квоты Web API). Подписи миксов
+/// приходят не всегда — дочитываются только личные плейлисты без названия. Ok(None) — страница ответила,
+/// а «Радара» на ней нет.
+async fn browse_radar(http: &sf_api::Http, session: &Session) -> anyhow::Result<Option<sf_api::models::Playlist>> {
+    let cards: Vec<FeedCard> = home_feed::made_for_you(http, session)
+        .await?
+        .into_iter()
+        .flat_map(|section| section.cards)
+        .filter(|card| card.kind() == "playlist")
+        .collect();
+    let (unnamed, mut named): (Vec<FeedCard>, Vec<FeedCard>) =
+        cards.into_iter().partition(|card| card.title.is_empty() && card.id().starts_with(PERSONAL_PLAYLIST));
+    named.extend(home_feed::resolve_playlists(session, unnamed).await);
+    let playlists: Vec<sf_api::models::Playlist> = named.iter().map(card_playlist).collect();
+    let Some(radar) = new_releases::pick_release_radar(&playlists) else { return Ok(None) };
+    // полная шапка (обложка, описание, число треков) — через сессию; не вышло — хватит карточки
+    match session_reads::playlist(session, &radar.id).await {
+        Ok(playlist) => Ok(Some(playlist)),
+        Err(_) => Ok(Some(radar.clone())),
+    }
+}
+
+/// Карточка страницы «Для тебя» как шапка плейлиста.
+fn card_playlist(card: &FeedCard) -> sf_api::models::Playlist {
+    let mut playlist = sf_api::models::Playlist {
+        id: card.id().to_owned(),
+        name: card.title.clone(),
+        uri: card.uri.clone(),
+        description: (!card.subtitle.is_empty()).then(|| card.subtitle.clone()),
+        ..Default::default()
+    };
+    if !card.cover.is_empty() {
+        playlist.images.push(sf_api::models::Image { url: card.cover.clone(), width: None, height: None });
+    }
+    playlist.owner.id = (!card.owner_id.is_empty()).then(|| card.owner_id.clone());
+    playlist.owner.display_name = (!card.owner.is_empty()).then(|| card.owner.clone());
+    playlist
 }
 
 async fn shared_radar(api: &ApiGateway) -> Result<Option<sf_api::models::Playlist>, ApiError> {

@@ -109,7 +109,7 @@ fn info_types_are_flat() {
         keys(&AlbumInfo::default()),
         expected(&[ALBUM_KEYS, &["label", "genre", "durationMs", "releaseDate", "copyright"]])
     );
-    assert_eq!(keys(&ArtistInfo::default()), expected(&[ARTIST_KEYS, &["listeners", "followed"]]));
+    assert_eq!(keys(&ArtistInfo::default()), expected(&[ARTIST_KEYS, &["listeners", "followed", "biography", "headerImage"]]));
     let info = AlbumInfo {
         item: AlbumItem { album_id: "a1".into(), title: "Альбом".into(), track_count: 12, ..Default::default() },
         label: "RCA".into(),
@@ -122,7 +122,7 @@ fn info_types_are_flat() {
     assert_eq!(value["trackCount"], json!(12));
     assert_eq!(value["label"], json!("RCA"));
     roundtrip(&info);
-    roundtrip(&ArtistInfo { item: ArtistItem { artist_id: "r".into(), ..Default::default() }, followed: true, listeners: 0 });
+    roundtrip(&ArtistInfo { item: ArtistItem { artist_id: "r".into(), ..Default::default() }, followed: true, listeners: 0, ..Default::default() });
 }
 
 #[test]

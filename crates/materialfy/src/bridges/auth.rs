@@ -1,5 +1,6 @@
 // Auth — зеркало AuthService: свойства из снимка (watch), сигналы-факты — из событий.
-// Вход через браузер (PKCE, :8989), второй шаг — воспроизведение на этом ПК (:8898), Premium.
+// Основной вход — сессия librespot (браузер, :8898, Premium): с ним и медиатека, и звук здесь.
+// Вход Web API (:8989) необязателен: «ускорить медиатеку» и вход без Premium.
 use std::pin::Pin;
 
 use cxx_qt::{CxxQtType, Threading};
@@ -32,6 +33,8 @@ pub mod qobject {
         #[qproperty(bool, premium, READ, NOTIFY = account_changed)]
         #[qproperty(QString, personal_client_id, cxx_name = "personalClientId", READ, NOTIFY = personal_changed)]
         #[qproperty(QString, personal_state, cxx_name = "personalState", READ, NOTIFY = personal_changed)]
+        /// токен общего Web API: "none" | "authorizing" | "ready" | "error"
+        #[qproperty(QString, web_state, cxx_name = "webState", READ, NOTIFY = web_changed)]
         type Auth = super::AuthRust;
 
         #[qsignal]
@@ -56,6 +59,9 @@ pub mod qobject {
         #[cxx_name = "personalChanged"]
         fn personal_changed(self: Pin<&mut Auth>);
         #[qsignal]
+        #[cxx_name = "webChanged"]
+        fn web_changed(self: Pin<&mut Auth>);
+        #[qsignal]
         #[cxx_name = "signedIn"]
         fn signed_in(self: Pin<&mut Auth>);
         #[qsignal]
@@ -70,10 +76,14 @@ pub mod qobject {
         #[cxx_name = "premiumRequired"]
         fn premium_required(self: Pin<&mut Auth>);
 
-        /// «Войти через Spotify»: браузер + ожидание на 127.0.0.1:8989.
+        /// «Войти через Spotify» (Premium): браузер + 127.0.0.1:8898, вход через сессию librespot.
         #[qinvokable]
         #[cxx_name = "startLogin"]
         fn start_login(self: &Auth);
+        /// «Войти без Premium» / «Ускорить медиатеку»: вход Web API, браузер + 127.0.0.1:8989.
+        #[qinvokable]
+        #[cxx_name = "startWebLogin"]
+        fn start_web_login(self: &Auth);
         /// «Открыть снова» (authUrl в браузере).
         #[qinvokable]
         #[cxx_name = "reopenBrowser"]
@@ -128,6 +138,7 @@ pub struct AuthRust {
     premium: bool,
     personal_client_id: QString,
     personal_state: QString,
+    web_state: QString,
 }
 
 impl Default for AuthRust {
@@ -145,6 +156,7 @@ impl Default for AuthRust {
             premium: false,
             personal_client_id: QString::default(),
             personal_state: QString::default(),
+            web_state: QString::default(),
             snapshot,
         }
     }
@@ -153,6 +165,10 @@ impl Default for AuthRust {
 impl qobject::Auth {
     fn start_login(&self) {
         ctx().services.auth.start_login();
+    }
+
+    fn start_web_login(&self) {
+        ctx().services.auth.start_web_login();
     }
 
     fn reopen_browser(&self) {
@@ -237,6 +253,10 @@ impl qobject::Auth {
             this.personal_client_id = QString::from(next.personal_client_id.as_str());
             this.personal_state = QString::from(next.personal_state.as_str());
             self.as_mut().personal_changed();
+        }
+        if prev.web_state != next.web_state {
+            self.as_mut().rust_mut().web_state = QString::from(next.web_state.as_str());
+            self.as_mut().web_changed();
         }
     }
 

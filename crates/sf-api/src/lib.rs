@@ -6,6 +6,7 @@ use std::fmt;
 pub mod client;
 pub mod gateway;
 pub mod http;
+pub mod limits;
 pub mod link;
 pub mod map;
 pub mod models;
@@ -30,3 +31,4 @@ impl fmt::Display for ApiSource {
 pub use client::{ApiClient, ApiError, NetActivity, PlayRequest, TokenProvider, WebTokens};
 pub use gateway::{AccountId, ApiGateway, Operation, PlaylistAccess, PlaylistId, SessionState};
 pub use http::Http;
+pub use limits::{LimitKind, Priority, WebApiLimits};

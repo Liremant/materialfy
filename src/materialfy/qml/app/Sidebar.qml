@@ -356,7 +356,7 @@ Item {
                 }
                 Label {
                     width: parent.width
-                    text: root.signedIn ? (Auth.playbackState === "authorizing" ? "Шаг 2 из 2"
+                    text: root.signedIn ? (Auth.playbackState === "authorizing" ? "Ждём браузер…"
                                           : Auth.premium ? "Premium" : "Spotify Free")
                         : Auth.state === "awaitingBrowser" ? "Ждём браузер…"
                         : Auth.state === "checking" || Auth.state === "connecting" ? "Входим…"

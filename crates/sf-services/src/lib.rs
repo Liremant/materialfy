@@ -127,6 +127,7 @@ impl Services {
         let home = HomeService::new(
             rt.clone(),
             auth.clone(),
+            player.clone(),
             library.clone(),
             history.clone(),
             releases.clone(),

@@ -10,7 +10,7 @@ import "app"
 Window {
     id: win
 
-    property string startPage: "home"     // --set startPage=settings (для разработки)
+    property string startPage: "home"     // --set startPage=settings | artist:<id> (для разработки)
 
     // размер и положение — последние сохранённые (см. _restoreGeometry); окно показывается уже на месте
     width: 1280
@@ -306,7 +306,24 @@ Window {
                             playback: Qt.resolvedUrl("app/pages/PlaybackSetupPage.qml")
                         })
                         anchors.fill: parent
-                        Component.onCompleted: reset(win.startPage)
+                        // startPage=artist:<id> (album:, playlist:, show:, episode:) — страница с параметром. Каталог
+                        // читается через сессию librespot, поэтому такая страница открывается, когда сессия поднялась
+                        Component.onCompleted: {
+                            const [name, id] = win.startPage.split(":")
+                            if (!id) {
+                                reset(name)
+                                return
+                            }
+                            reset("home")
+                            const open = () => {
+                                if (["ready", "error", "premiumRequired"].indexOf(Auth.playbackState) < 0)
+                                    return
+                                Auth.playbackChanged.disconnect(open)
+                                reset(name, ({ [name + "Id"]: id }))
+                            }
+                            Auth.playbackChanged.connect(open)
+                            open()
+                        }
                     }
                 }
 

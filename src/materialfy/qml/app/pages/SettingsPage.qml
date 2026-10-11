@@ -220,32 +220,65 @@ Page {
             kind: "info"
             shown: page.signedIn && Auth.premium && Auth.playbackState === "none"
             title: "Воспроизведение на этом компьютере не разрешено"
-            text: "Spotify выдаёт ключ для звука отдельным разрешением — откроется ещё одно окно браузера."
+            text: "Вход через сессию Spotify даёт звук здесь, а медиатеке — путь без лимитов Web API. Откроется окно браузера."
             actionText: "Разрешить"
             actionIcon: "open_in_new"
             onAction: Auth.authorizePlayback()
         }
 
+        // До входа — вход (Premium — через сессию); после — необязательный вход Web API общего ключа:
+        // запасной путь для разделов, которых нет в сессии, и единственный вход без Premium.
         SettingRow {
-            title: "Доступ к библиотеке"
-            description: page.signedIn ? "Плейлисты, любимые треки, поиск и управление устройствами"
-                         : Auth.state === "awaitingBrowser" ? "Подтвердите вход в браузере"
-                         : Auth.state === "connecting" || Auth.state === "checking" ? "Входим…"
-                         : Auth.state === "error" ? (Auth.errorText || "Вход не удался")
-                         : "Вход через браузер на сайте Spotify"
+            id: webRow
+            readonly property string ws: Auth.webState
+            title: page.signedIn ? "Web API · необязательно" : "Вход в Spotify"
+            description: !page.signedIn
+                         ? (Auth.state === "awaitingBrowser" ? "Подтвердите вход в браузере"
+                            : Auth.state === "connecting" || Auth.state === "checking" ? "Входим…"
+                            : Auth.state === "error" ? (Auth.errorText || "Вход не удался")
+                            : "Один вход со Spotify Premium: медиатека и музыка здесь. Без Premium — вход через Web API")
+                         : ws === "ready" ? "Подключён: запасной путь для разделов, которых нет в сессии Spotify"
+                         : ws === "authorizing" ? "Подтвердите вход в браузере"
+                         : ws === "error" ? (Auth.errorText || "Не удалось подключить Web API")
+                         : "Не нужен с Premium: почти всё идёт через сессию. Spotify ограничивает общий ключ"
             Row {
+                spacing: 8
                 StatusChip {
-                    visible: page.signedIn
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: page.signedIn && webRow.ws === "ready"
                     kind: "ok"
                     text: "Подключено"
                 }
+                LoadingIndicator {
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: page.signedIn && webRow.ws === "authorizing"
+                    size: 28
+                }
                 Button {
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: page.signedIn && (webRow.ws === "none" || webRow.ws === "error")
+                    text: "Подключить"
+                    icon: "open_in_new"
+                    style: "outlined"
+                    size: "xs"
+                    onClicked: Auth.startWebLogin()
+                }
+                Button {
+                    anchors.verticalCenter: parent.verticalCenter
                     visible: !page.signedIn
                     text: Auth.state === "error" ? "Повторить" : "Войти"
                     icon: "open_in_new"
                     style: "filled"
                     size: "xs"
                     onClicked: Auth.state === "error" ? Auth.retry() : Auth.startLogin()
+                }
+                Button {
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: !page.signedIn && Auth.state !== "awaitingBrowser" && Auth.state !== "connecting"
+                    text: "Без Premium"
+                    style: "text"
+                    size: "xs"
+                    onClicked: Auth.startWebLogin()
                 }
             }
         }
@@ -255,14 +288,14 @@ Page {
             readonly property string st: Auth.playbackState
             enabled: page.signedIn
             opacity: enabled ? 1 : 0.5
-            title: "Воспроизведение на этом компьютере"
-            description: !page.signedIn ? "Сначала войдите в аккаунт"
-                         : st === "ready" ? "Звук идёт через этот компьютер; он виден в Spotify Connect"
+            title: "Сессия Spotify и звук здесь"
+            description: !page.signedIn ? "Включается входом со Spotify Premium"
+                         : st === "ready" ? "Звук идёт через этот компьютер, медиатека — через сессию; он виден в Spotify Connect"
                          : st === "authorizing" ? "Подтвердите разрешение в браузере"
                          : st === "connecting" ? "Подключаемся к Spotify…"
                          : st === "error" ? (Auth.playbackError || "Не удалось подключить воспроизведение")
-                         : st === "premiumRequired" || !Auth.premium ? "Нужен Spotify Premium"
-                         : "Отдельное разрешение Spotify; нужен Premium"
+                         : st === "premiumRequired" || !Auth.premium ? "Нужен Spotify Premium: без него — только медиатека и пульт через Web API"
+                         : "Вход через сессию Spotify: звук здесь и медиатека без лимитов Web API"
             Row {
                 spacing: 8
                 StatusChip {
@@ -285,7 +318,8 @@ Page {
                 Button {
                     anchors.verticalCenter: parent.verticalCenter
                     visible: playbackRow.st === "ready"
-                    text: "Отключить"
+                    // без Web API сессия — единственный вход: отключить её = выйти
+                    text: Auth.webState !== "ready" && Auth.personalState !== "ready" ? "Выйти" : "Отключить"
                     style: "text"
                     size: "xs"
                     onClicked: Auth.disablePlayback()
@@ -306,6 +340,21 @@ Page {
                     size: "xs"
                     onClicked: Auth.authorizePlayback()
                 }
+            }
+        }
+
+        // общий Client ID упёрся в 429/квоту: что через сессию — работает, остальное ждёт
+        SettingsBanner {
+            kind: "info"
+            shown: page.signedIn && Settings.webApiLimit !== ""
+            title: "Web API ограничен"
+            text: Settings.webApiLimit
+            actionText: Auth.personalState === "ready" ? "" : "Свой Client ID"
+            actionIcon: "key"
+            onAction: {
+                clientIdField.text = Auth.personalClientId
+                personalRow.editing = true
+                clientIdField.forceActiveFocus()
             }
         }
 

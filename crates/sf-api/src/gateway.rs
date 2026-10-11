@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex, RwLock};
 
 use crate::ApiSource;
 use crate::client::{ApiClient, ApiError, NetActivity, TokenProvider};
+use crate::limits::{LimitKind, Limits, WebApiLimits};
 use crate::models::Playlist;
 
 pub use md3_model::{AccountId, PlaylistId};
@@ -122,16 +123,24 @@ struct Session {
 }
 
 impl Session {
-    fn new(http: crate::http::Http, activity: Arc<NetActivity>, profile: ApiProfile) -> Self {
+    fn new(
+        http: crate::http::Http,
+        activity: Arc<NetActivity>,
+        profile: ApiProfile,
+        limits: Arc<Limits>,
+    ) -> Self {
         Self {
             state: tokio::sync::watch::channel((0, SessionState::Unavailable)).0,
-            client: RwLock::new(Arc::new(ApiClient::new(
-                http,
-                activity,
-                profile.search_limit,
-                profile.artist_albums_limit,
-                profile.source,
-            ))),
+            client: RwLock::new(Arc::new(
+                ApiClient::new(
+                    http,
+                    activity,
+                    profile.search_limit,
+                    profile.artist_albums_limit,
+                    profile.source,
+                )
+                .with_limits(limits),
+            )),
         }
     }
 
@@ -152,16 +161,23 @@ pub struct ApiGateway {
     http: crate::http::Http,
     shared: Session,
     personal: Session,
+    /// Аккаунт сессии librespot (вход воспроизведения): известен и без токена Web API.
+    session_account: RwLock<Option<AccountId>>,
     playlist_access: Mutex<HashMap<PlaylistId, PlaylistAccess>>,
+    /// Бюджет запросов, склейка и кэш GET, охлаждение после 429/квоты (см. limits.rs).
+    limits: Arc<Limits>,
 }
 
 impl ApiGateway {
     pub fn new(http: impl Into<crate::http::Http>, activity: Arc<NetActivity>) -> Self {
         let http = http.into();
+        let limits = Limits::new();
         Self {
             http: http.clone(),
-            shared: Session::new(http.clone(), activity.clone(), ApiProfile::SHARED),
-            personal: Session::new(http, activity, ApiProfile::PERSONAL),
+            shared: Session::new(http.clone(), activity.clone(), ApiProfile::SHARED, limits.clone()),
+            personal: Session::new(http, activity, ApiProfile::PERSONAL, limits.clone()),
+            limits,
+            session_account: RwLock::new(None),
             playlist_access: Mutex::new(HashMap::new()),
         }
     }
@@ -169,6 +185,21 @@ impl ApiGateway {
     /// Общий HTTP-клиент (с прокси) — для запросов мимо Web API, например картинок.
     pub fn http(&self) -> crate::http::Http {
         self.http.clone()
+    }
+
+    /// «Web API ограничен»: охлаждение общего/личного приложения после 429 или QUOTA_EXCEEDED.
+    pub fn web_api_limits(&self) -> tokio::sync::watch::Receiver<WebApiLimits> {
+        self.limits.watch()
+    }
+
+    /// Охлаждается ли источник, которому досталась бы операция: фоновой работе лучше не начинать.
+    pub fn web_api_blocked(&self, operation: Operation) -> Option<LimitKind> {
+        self.limits.blocked(plan(operation, self.personal_ready()))
+    }
+
+    /// Забыть кэш ответов GET (после записи мимо Web API, например через сессию librespot).
+    pub fn forget_cached(&self) {
+        self.limits.forget();
     }
 
     fn session(&self, source: ApiSource) -> &Session {
@@ -197,6 +228,7 @@ impl ApiGateway {
             .state(other)
             .account()
             .is_some_and(|active| active != &account)
+            || self.session_account().is_some_and(|active| active != account)
         {
             return Err(ApiError::Status {
                 status: 403,
@@ -234,6 +266,8 @@ impl ApiGateway {
     pub fn clear_all(&self) {
         self.clear(ApiSource::Shared);
         self.clear(ApiSource::Personal);
+        self.set_session_account(None);
+        self.limits.forget();
         self.playlist_access
             .lock()
             .unwrap_or_else(|lock| lock.into_inner())
@@ -241,10 +275,32 @@ impl ApiGateway {
     }
 
     pub fn account(&self) -> Option<AccountId> {
+        self.web_account().or_else(|| self.session_account())
+    }
+
+    /// Аккаунт, в который вошёл Web API (общее или личное приложение).
+    pub fn web_account(&self) -> Option<AccountId> {
         self.state(ApiSource::Shared)
             .account()
             .cloned()
             .or_else(|| self.state(ApiSource::Personal).account().cloned())
+    }
+
+    /// Аккаунт сессии librespot (None — входа воспроизведения нет).
+    pub fn session_account(&self) -> Option<AccountId> {
+        self.session_account
+            .read()
+            .unwrap_or_else(|lock| lock.into_inner())
+            .clone()
+    }
+
+    /// Вход воспроизведения задаёт аккаунт приложения и без Web API; Web API другого аккаунта
+    /// после этого не устанавливается (`install`).
+    pub fn set_session_account(&self, account: Option<AccountId>) {
+        *self
+            .session_account
+            .write()
+            .unwrap_or_else(|lock| lock.into_inner()) = account;
     }
 
     pub fn personal_ready(&self) -> bool {
@@ -527,5 +583,22 @@ mod tests {
             gateway.state(ApiSource::Personal),
             SessionState::Ready { .. }
         ));
+    }
+
+    #[test]
+    fn a_session_sign_in_names_the_account_without_the_web_api() {
+        let gateway = ApiGateway::new(reqwest::Client::new(), Arc::new(NetActivity::default()));
+        assert_eq!(gateway.account(), None);
+        gateway.set_session_account(Some(AccountId::new("listener")));
+        assert_eq!(gateway.account(), Some(AccountId::new("listener")));
+        assert_eq!(gateway.web_account(), None);
+        // Web API другого аккаунта не встаёт рядом с сессией
+        gateway.begin_verification(ApiSource::Shared, provider("stranger", ApiSource::Shared));
+        assert!(gateway.install(ApiSource::Shared, AccountId::new("stranger")).is_err());
+        gateway.begin_verification(ApiSource::Shared, provider("same", ApiSource::Shared));
+        gateway.install(ApiSource::Shared, AccountId::new("listener")).unwrap();
+        assert_eq!(gateway.web_account(), Some(AccountId::new("listener")));
+        gateway.clear_all();
+        assert_eq!(gateway.account(), None);
     }
 }

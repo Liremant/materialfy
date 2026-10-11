@@ -4,8 +4,8 @@ import Md3
 import Materialfy.Core
 import ".."
 
-// Исполнитель: шапка (фото в фигуре, подписчики, Слушать / Радио / Подписаться), популярные треки,
-// альбомы и синглы, релизы с участием, похожие исполнители.
+// Исполнитель: шапка (широкое фото фоном, если есть; фото в фигуре, слушатели в месяц, подписчики, Слушать / Радио / Подписаться), популярные треки,
+// альбомы и синглы, релизы с участием, «Об исполнителе», похожие исполнители.
 Page {
     id: page
 
@@ -17,42 +17,120 @@ Page {
 
     title: info.name ?? ""
     showHeader: false
+    readonly property bool heroTitle: true     // имя — в шапке; в верхней панели — после прокрутки
 
     readonly property bool followed: Library.savedRevision >= 0 && (info.uri ?? "") !== "" ? Library.isSaved(info.uri) : info.followed === true
 
-    function followersText(n) {
-        if (!(n > 0))
-            return ""
-        const num = n >= 1e6 ? (n / 1e6).toFixed(n >= 1e7 ? 0 : 1).replace(".", ",") + " млн"
-                  : n >= 1e4 ? Math.round(n / 1e3) + " тыс." : String(n)
+    // 12,3 млн / 450 тыс. / 8 765 (тонкий пробел между разрядами) — как подписчики в поиске и превью
+    function compactNumber(n) {
+        return n >= 1e6 ? (n / 1e6).toFixed(n >= 1e7 ? 0 : 1).replace(".", ",") + "\u00a0млн"
+             : n >= 1e4 ? Math.round(n / 1e3) + "\u00a0тыс."
+             : String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, "\u2009")
+    }
+    // после «млн»/«тыс.» — всегда родительный множественного
+    function plural(n, one, few, many) {
         const m10 = n % 10, m100 = n % 100
-        const word = n >= 1e4 || (m10 >= 5 || m10 === 0 || (m100 >= 11 && m100 <= 14)) ? "подписчиков"
-                   : m10 === 1 ? "подписчик" : "подписчика"
-        return num + " " + word
+        return n >= 1e4 || m10 >= 5 || m10 === 0 || (m100 >= 11 && m100 <= 14) ? many : m10 === 1 ? one : few
+    }
+    function followersText(n) {
+        return n > 0 ? compactNumber(n) + " " + plural(n, "подписчик", "подписчика", "подписчиков") : ""
+    }
+    function listenersText(n) {
+        return n > 0 ? compactNumber(n) + " " + plural(n, "слушатель", "слушателя", "слушателей") + " в месяц" : ""
     }
 
-    underlay: HeroShapes {
-        width: page.width
-        active: page.visible
-        headerHeight: hero.height + 24
-        scroll: page.flickable.contentY
-        contentX: page.sideMargin - 16
-        contentWidth: page.width - 2 * contentX
-        seed: page.info.name ?? ""
-        shapesOpacity: 0.6
-    }
+    // Биография приходит без HTML (sf-services), но на всякий случай теги срезаем и здесь
+    readonly property string biography: (info.biography ?? "").replace(/<[^>]*>/g, "").trim()
+    property bool bioOpen: false
+    readonly property int bioLines: 4
+
+    // Широкая шапка исполнителя — фон шапки страницы; пока не загрузилась или её нет — фигуры, как раньше
+    readonly property string headerImage: info.headerImage ?? ""
+    readonly property bool hasBanner: headerImage !== "" && bannerImage.status !== Image.Error
+    readonly property bool bannerShown: bannerImage.status === Image.Ready
+
+    underlay: [
+        HeroShapes {
+            width: page.width
+            active: page.visible && !page.bannerShown
+            headerHeight: hero.height + 24
+            scroll: page.flickable.contentY
+            contentX: page.sideMargin - 16
+            contentWidth: page.width - 2 * contentX
+            seed: page.info.name ?? ""
+            shapesOpacity: 0.6
+        },
+        // Фото во всю ширину: уходит под прозрачную верхнюю панель, внизу растворяется в поверхности.
+        // Поверх — скрим цвета поверхности: текст шапки читается и в светлой, и в тёмной теме.
+        Item {
+            id: banner
+            readonly property real above: 64      // верхняя панель над страницей
+            readonly property real below: 120     // запас под шапкой на растворение
+            readonly property color tone: Theme.surfaceContainer
+            width: page.width
+            height: above + 8 + hero.height + below
+            y: -above - page.flickable.contentY
+            visible: page.hasBanner && page.visible && page.flickable.contentY < height
+            opacity: page.bannerShown ? 1 : 0
+            Behavior on opacity { NumberAnimation { duration: Theme.motion.effectsSlow } }
+            clip: true
+
+            layer.enabled: visible
+            layer.effect: ShaderEffect {
+                property real fadeTop: 24 / Math.max(1, banner.height)
+                property real fadeBottom: banner.below * 1.3 / Math.max(1, banner.height)
+                fragmentShader: Qt.resolvedUrl("../shaders/edgefade.frag.qsb")
+            }
+
+            Image {
+                id: bannerImage
+                width: parent.width
+                height: parent.height
+                y: page.flickable.contentY * 0.35   // лёгкий параллакс
+                source: page.headerImage
+                sourceSize.width: 2400
+                fillMode: Image.PreserveAspectCrop
+                asynchronous: true
+            }
+            // сверху — чуть приглушить под кнопками панели, к низу шапки — почти поверхность
+            Rectangle {
+                anchors.fill: parent
+                gradient: Gradient {
+                    GradientStop { position: 0.0; color: Qt.alpha(banner.tone, 0.7) }
+                    GradientStop { position: 0.12; color: Qt.alpha(banner.tone, 0.5) }
+                    GradientStop { position: 0.28; color: Qt.alpha(banner.tone, 0.3) }
+                    GradientStop { position: 0.5; color: Qt.alpha(banner.tone, 0.7) }
+                    GradientStop { position: 0.8; color: Qt.alpha(banner.tone, 0.9) }
+                    GradientStop { position: 1.0; color: Qt.alpha(banner.tone, 0.95) }
+                }
+            }
+            // слева, под текстом шапки, плотнее; справа фото остаётся ярким
+            Rectangle {
+                anchors.fill: parent
+                gradient: Gradient {
+                    orientation: Gradient.Horizontal
+                    GradientStop { position: 0.0; color: Qt.alpha(banner.tone, 0.65) }
+                    GradientStop { position: 0.6; color: Qt.alpha(banner.tone, 0.3) }
+                    GradientStop { position: 1.0; color: Qt.alpha(banner.tone, 0.0) }
+                }
+            }
+        }
+    ]
 
     // ---- Шапка ----
     Item {
         id: hero
         Layout.fillWidth: true
-        Layout.preferredHeight: heroRow.implicitHeight + 32
+        // с фото шапка выше: имя и кнопки опускаются к низу картинки
+        Layout.preferredHeight: page.hasBanner ? Math.max(heroRow.implicitHeight + 32, Math.round(Math.min(440, Math.max(260, page.width * 0.3))))
+                                               : heroRow.implicitHeight + 32
 
         RowLayout {
             id: heroRow
             anchors.left: parent.left
             anchors.right: parent.right
-            anchors.verticalCenter: parent.verticalCenter
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: 16
             spacing: page.width < 560 ? 20 : 32
             Behavior on spacing { NumberAnimation { duration: Theme.motion.spatialDefault; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.motion.emphasized } }
 
@@ -76,6 +154,12 @@ Page {
                     weight: 700
                     wrapMode: Text.WordWrap
                     maximumLineCount: 2
+                }
+                Label {
+                    visible: text !== ""
+                    Layout.fillWidth: true
+                    text: page.listenersText(page.info.listeners ?? 0)
+                    type: "titleMedium"
                 }
                 Label {
                     visible: text !== ""
@@ -226,6 +310,44 @@ Page {
                 explicit: model.explicit
                 onClicked: Catalog.openAlbum(model.albumId)
             }
+        }
+    }
+
+    // ---- Об исполнителе ----
+    SectionHeader {
+        visible: page.biography !== ""
+        text: "Об исполнителе"
+    }
+    ColumnLayout {
+        Layout.fillWidth: true
+        Layout.maximumWidth: 880
+        Layout.topMargin: -12
+        visible: page.biography !== ""
+        spacing: 4
+        Item {
+            readonly property real clamped: page.bioLines * Theme.type.bodyLarge.line
+            Layout.fillWidth: true
+            implicitHeight: page.bioOpen ? bioText.implicitHeight : Math.min(bioText.implicitHeight, clamped)
+            Behavior on implicitHeight { NumberAnimation { duration: Theme.motion.spatialDefault; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.motion.emphasized } }
+            clip: true
+            Label {
+                id: bioText
+                width: parent.width
+                text: page.biography
+                textFormat: Text.PlainText
+                type: "bodyLarge"
+                color: Theme.fgSurfaceVariant
+                wrapMode: Text.WordWrap
+                elide: Text.ElideNone
+                verticalAlignment: Text.AlignTop
+            }
+        }
+        Button {
+            visible: bioText.implicitHeight > page.bioLines * Theme.type.bodyLarge.line + 2
+            text: page.bioOpen ? "Свернуть" : "Ещё"
+            style: "text"
+            size: "xs"
+            onClicked: page.bioOpen = !page.bioOpen
         }
     }
 

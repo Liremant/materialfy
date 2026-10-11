@@ -209,7 +209,7 @@ pub fn artist_item(artist: &models::Artist) -> m::ArtistItem {
 }
 
 pub fn artist_info(artist: &models::Artist, followed: bool) -> m::ArtistInfo {
-    m::ArtistInfo { item: artist_item(artist), listeners: 0, followed }
+    m::ArtistInfo { item: artist_item(artist), listeners: 0, followed, ..Default::default() }
 }
 
 /// `me` — id аккаунта (для ownerId/canEdit; права из rootlist уточняет LibraryService).

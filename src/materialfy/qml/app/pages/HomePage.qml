@@ -336,7 +336,7 @@ Page {
                             x: 10
                             y: 8
                             width: parent.width - 20
-                            text: "Плейлисты Spotify видны через общий ключ приложения; личный ключ (с нояб. 2024) их не отдаёт"
+                            text: "Личные плейлисты и миксы со страницы Spotify «Для тебя» — читаются через сессию вашего аккаунта"
                             type: "bodySmall"
                             color: Theme.fgInverseSurface
                             wrapMode: Text.WordWrap

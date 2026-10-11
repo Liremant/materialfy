@@ -142,16 +142,20 @@ pub struct AlbumInfo {
     pub copyright: String,
 }
 
-/// ArtistData.info: поля ArtistItem + listeners (у Web API нет — 0), followed.
+/// ArtistData.info: поля ArtistItem + listeners, followed, biography, headerImage.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ArtistInfo {
     #[serde(flatten)]
     pub item: ArtistItem,
-    /// ежемесячных слушателей Web API не отдаёт — 0 (QML показывает followers)
+    /// ежемесячные слушатели (GraphQL-шлюз; Web API не отдаёт — 0)
     pub listeners: i64,
     /// пользователь подписан
     pub followed: bool,
+    /// биография без HTML (GraphQL-шлюз; иначе пусто)
+    pub biography: String,
+    /// широкая шапка исполнителя (GraphQL-шлюз; иначе пусто)
+    pub header_image: String,
 }
 
 /// SHOW_KEYS: showId, uri, name, publisher, description, cover, coverLarge, totalEpisodes, saved, explicit.

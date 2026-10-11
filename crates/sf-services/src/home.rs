@@ -1,20 +1,27 @@
 //! Главная (исполнитель «services-extra»): полки как spotifast/src/ui/home.rs + App::load_home —
-//! «Быстрый доступ» (Любимые + 5 плейлистов), «Недавно прослушанное» (история: Web API + локальная),
-//! «Сделано для вас» (Discover-термины, только общий ключ), «Новинки» (ReleasesService), «Продолжить подкасты», «Топ-исполнители», «Топ-треки».
+//! «Быстрый доступ» (Любимые + 5 плейлистов), «Недавно прослушанное» (история: сессия/Web API + локальная),
+//! «Сделано для вас» и личные разделы главной Spotify с их заголовками («Рекомендуемые станции»…),
+//! «Новинки» (ReleasesService), «Продолжить подкасты», «Топ-исполнители», «Топ-треки».
+//! Главная, «Для тебя» и топ читаются через сессию librespot (data::home_feed: GraphQL и spclient) — без квоты
+//! Web API. Web API — только запасной путь без сессии, с таймаутом: 429 не держит и не роняет главную. Пустой
+//! топ Spotify (новый аккаунт) заменяют «Любимые исполнители» главной и подсчёт по локальной истории.
 //! Не чаще раза в 10 мин без force; видимость — SettingKey::HomeHidden. Ответы старого обновления отбрасываются.
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
-use md3_model::{ArtistItem, EpisodeItem, HomeShelf, PlaylistItem, ShowItem, TrackItem, contexts};
+use md3_model::{ArtistItem, EpisodeItem, HomeShelf, LibraryEntry, ShowItem, TrackItem, contexts};
 use sf_api::Operation;
+use sf_player::{PlayerHandle, Session};
 use tokio::runtime::Handle;
 use tokio::sync::{broadcast, watch};
 use mf_platform::{SettingKey, SettingsStore};
 
 use crate::ServiceError;
 use crate::auth::{AuthEvent, AuthService};
+use crate::data::{home_feed, route};
+use crate::extra::feed;
 use crate::extra::shelves::{self, Play};
 use crate::history::{HistoryEvent, HistoryService};
 use crate::library::{LibraryEvent, LibraryService};
@@ -24,6 +31,14 @@ use crate::lock;
 /// Не чаще раза в 10 минут без force.
 pub const REFRESH_EVERY: Duration = Duration::from_secs(600);
 const HISTORY_FOR_HOME: usize = 50;
+/// Сколько истории считать для запасного топа.
+const HISTORY_FOR_TOP: usize = 500;
+/// Сколько ждать сессию, пока движок librespot подключается.
+const SESSION_WAIT: Duration = Duration::from_secs(20);
+/// Чтение через сессию (главная, «Для тебя», топ).
+const SESSION_TIMEOUT: Duration = Duration::from_secs(25);
+/// Запасной Web API: общий ключ может часами отвечать 429 — ждать его нельзя.
+const WEB_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct HomeSnapshot {
@@ -32,11 +47,19 @@ pub struct HomeSnapshot {
     pub error_text: String,
 }
 
-/// Ответы Web API последнего обновления.
+/// Ответы последнего обновления (сессия или Web API).
 #[derive(Default)]
 struct HomeData {
     loaded_at: Option<Instant>,
-    made_for_you: Vec<PlaylistItem>,
+    /// последнее обновление шло через сессию (иначе, когда она появится, обновить ещё раз)
+    via_session: bool,
+    /// сессия встала во время обновления без неё — по его окончании обновить ещё раз
+    session_pending: bool,
+    made_for_you: Vec<LibraryEntry>,
+    /// личные разделы главной Spotify — полками после «Сделано для вас»
+    feed: Vec<HomeShelf>,
+    /// «Любимые исполнители» главной Spotify — запасной топ
+    favorite_artists: Vec<ArtistItem>,
     podcasts: Vec<EpisodeItem>,
     top_artists: Vec<ArtistItem>,
     top_tracks: Vec<TrackItem>,
@@ -45,6 +68,7 @@ struct HomeData {
 pub struct HomeService {
     rt: Handle,
     auth: Arc<AuthService>,
+    player: PlayerHandle,
     library: Arc<LibraryService>,
     history: Arc<HistoryService>,
     releases: Arc<ReleasesService>,
@@ -59,6 +83,7 @@ impl HomeService {
     pub fn new(
         rt: Handle,
         auth: Arc<AuthService>,
+        player: PlayerHandle,
         library: Arc<LibraryService>,
         history: Arc<HistoryService>,
         releases: Arc<ReleasesService>,
@@ -67,6 +92,7 @@ impl HomeService {
         let service = Arc::new_cyclic(|me| Self {
             rt: rt.clone(),
             auth,
+            player,
             library,
             history,
             releases,
@@ -99,6 +125,7 @@ impl HomeService {
                 return;
             }
             data.loaded_at = Some(Instant::now());
+            data.session_pending = false;
         }
         let generation = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
         self.snapshot.send_modify(|s| {
@@ -136,25 +163,38 @@ impl HomeService {
         let fresh = self.releases.snapshot();
         let built: Vec<HomeShelf> = {
             let data = lock(&self.data);
+            // запасной топ — по локальной истории (считается, только если Spotify топ не дал)
+            let history_tracks = || -> Vec<TrackItem> {
+                self.history.recent(HISTORY_FOR_TOP).into_iter().map(|r| r.track).collect()
+            };
+            let top = shelves::TOP_LIMIT as usize;
             shelves::ORDER
                 .iter()
                 .filter(|key| !hidden.contains(**key))
-                .map(|key| match *key {
+                .flat_map(|key| match *key {
                     shelves::QUICK => {
                         let liked = self.library.liked().len() as i64;
-                        shelves::shelf(key, &shelves::quick_tiles(&liked_uri, liked, &playlists))
+                        vec![shelves::shelf(key, &shelves::quick_tiles(&liked_uri, liked, &playlists))]
                     }
-                    shelves::RECENT => shelves::shelf(key, &shelves::recent_tiles(self.plays(), &playlists)),
-                    shelves::MADE_FOR_YOU => {
-                        let tiles: Vec<_> = data.made_for_you.iter().map(shelves::playlist_entry).collect();
-                        shelves::shelf(key, &tiles)
-                    }
+                    shelves::RECENT => vec![shelves::shelf(key, &shelves::recent_tiles(self.plays(), &playlists))],
+                    // за «Сделано для вас» — личные разделы главной Spotify
+                    shelves::MADE_FOR_YOU => std::iter::once(shelves::shelf(key, &data.made_for_you))
+                        .chain(data.feed.iter().filter(|s| !hidden.contains(&s.key)).cloned())
+                        .collect(),
                     shelves::NEW_RELEASES => {
-                        shelves::shelf(key, &shelves::new_release_tiles(fresh.radar.as_ref(), &fresh.releases))
+                        vec![shelves::shelf(key, &shelves::new_release_tiles(fresh.radar.as_ref(), &fresh.releases))]
                     }
-                    shelves::PODCASTS => shelves::shelf(key, &data.podcasts),
-                    shelves::TOP_ARTISTS => shelves::shelf(key, &data.top_artists),
-                    _ => shelves::shelf(key, &data.top_tracks),
+                    shelves::PODCASTS => vec![shelves::shelf(key, &data.podcasts)],
+                    shelves::TOP_ARTISTS if !data.top_artists.is_empty() => vec![shelves::shelf(key, &data.top_artists)],
+                    shelves::TOP_ARTISTS if !data.favorite_artists.is_empty() => {
+                        vec![shelves::shelf(key, &data.favorite_artists)]
+                    }
+                    shelves::TOP_ARTISTS => {
+                        let derived = feed::top_artists_from_plays(&history_tracks(), &data.favorite_artists, top);
+                        vec![shelves::shelf(key, &derived)]
+                    }
+                    _ if !data.top_tracks.is_empty() => vec![shelves::shelf(key, &data.top_tracks)],
+                    _ => vec![shelves::shelf(key, &feed::top_tracks_from_plays(&history_tracks(), top))],
                 })
                 .filter(|shelf| !shelf.items.is_empty())
                 .collect()
@@ -188,90 +228,204 @@ impl HomeService {
         self.publish();
     }
 
+    fn session(&self) -> Option<Session> {
+        route::account_session(&self.auth.api(), &self.player)
+    }
+
+    /// Сессия, подождав её до SESSION_WAIT: после входа движок librespot поднимается не сразу.
+    async fn wait_session(&self) -> Option<Session> {
+        let started = Instant::now();
+        loop {
+            if let Some(session) = self.session() {
+                return Some(session);
+            }
+            let coming = matches!(self.player.local_playback(), sf_player::LocalPlayback::Connecting);
+            if !coming || started.elapsed() >= SESSION_WAIT {
+                return None;
+            }
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+    }
+
+    /// Сессия готова: обновление без неё (Web API) повторить через неё. Идущее обновление не дублируется:
+    /// оно ждёт сессию само, а если так и прошло без неё — повторится по окончании.
+    fn session_ready(&self) {
+        let loading = self.snapshot.borrow().loading;
+        let again = {
+            let mut data = lock(&self.data);
+            let again = data.loaded_at.is_some() && !data.via_session;
+            if again && loading {
+                data.session_pending = true;
+            }
+            again && !loading
+        };
+        if again {
+            self.refresh(true);
+        }
+    }
+
     async fn load(self: Arc<Self>, generation: u64) {
         let api = self.auth.api();
+        let http = api.http();
+        let session = self.wait_session().await;
+        if !self.current(generation) {
+            return;
+        }
+        lock(&self.data).via_session = session.is_some();
         let me = self.auth.account_id();
 
-        let top_artists = async {
-            let client = api.client_for(Operation::UserData).await?;
-            let page = client.top_artists("medium_term", shelves::TOP_LIMIT).await?;
-            let items: Vec<ArtistItem> = page.items.iter().map(sf_api::map::artist_item).collect();
-            self.store(generation, |d| d.top_artists = items);
-            Ok::<_, sf_api::ApiError>(())
-        };
-        let top_tracks = async {
-            let client = api.client_for(Operation::UserData).await?;
-            let page = client.top_tracks("short_term", shelves::TOP_LIMIT, 0).await?;
-            let items: Vec<TrackItem> = page.items.iter().map(sf_api::map::track_item).collect();
-            self.store(generation, |d| d.top_tracks = items);
-            Ok::<_, sf_api::ApiError>(())
-        };
-        // «Сделано для вас» — только общий ключ: личное приложение плейлисты Spotify не видит
+        // главная Spotify и «Для тебя» через сессию; без неё — поиск Discover-терминов общим ключом
         let made_for_you = async {
-            let client = api.client_for(Operation::PlaylistSearch).await?;
-            let mut all = Vec::new();
-            let mut seen = HashSet::new();
-            for term in shelves::DISCOVER_TERMS {
-                match client.search(term, &["playlist"]).await {
-                    Ok(results) => {
-                        let found = results
-                            .playlists
-                            .map(|p| p.items)
-                            .unwrap_or_default()
-                            .iter()
-                            .map(|p| sf_api::map::playlist_item(p, me.as_ref()))
-                            .collect();
-                        all.extend(shelves::made_for_you(term, found).into_iter().filter(|p| seen.insert(p.playlist_id.clone())));
+            if let Some(session) = &session {
+                let read = async { tokio::join!(home_feed::home(&http, session), home_feed::made_for_you(&http, session)) };
+                let (home, browse) = match tokio::time::timeout(SESSION_TIMEOUT, read).await {
+                    Ok(answers) => answers,
+                    Err(_) => (Err(anyhow::anyhow!("таймаут")), Err(anyhow::anyhow!("таймаут"))),
+                };
+                if let Err(error) = &home {
+                    tracing::debug!("главная Spotify через сессию: {error:#}");
+                }
+                if let Err(error) = &browse {
+                    tracing::debug!("«Для тебя» через сессию: {error:#}");
+                }
+                if home.is_ok() || browse.is_ok() {
+                    let home = home.unwrap_or_default();
+                    let mut browse = browse.unwrap_or_default();
+                    let publish = |browse: &[home_feed::FeedSection]| {
+                        let tiles = feed::made_for_you_tiles(&home, browse);
+                        let shelves = feed::feed_shelves(&home);
+                        let favorites = feed::favorite_artists(&home);
+                        self.store(generation, |d| {
+                            d.made_for_you = tiles;
+                            d.feed = shelves;
+                            d.favorite_artists = favorites;
+                        });
+                    };
+                    publish(&browse);
+                    // миксы дня приходят из browse одними URI — подписи дочитываются через сессию
+                    if browse.iter().any(|s| s.cards.iter().any(|c| c.title.is_empty())) {
+                        for section in &mut browse {
+                            section.cards.truncate(feed::MADE_FOR_YOU_PER_SECTION * 2);
+                            section.cards = home_feed::resolve_playlists(session, std::mem::take(&mut section.cards)).await;
+                        }
+                        publish(&browse);
                     }
-                    Err(e) => tracing::debug!("главная: «{term}» не найден: {e}"),
+                    return Ok(());
                 }
             }
-            self.store(generation, |d| d.made_for_you = all);
-            Ok::<_, sf_api::ApiError>(())
+            let search = async {
+                let client = api.client_for(Operation::PlaylistSearch).await?;
+                let mut all = Vec::new();
+                let mut seen = HashSet::new();
+                for term in shelves::DISCOVER_TERMS {
+                    match client.search(term, &["playlist"]).await {
+                        Ok(results) => {
+                            let found = results
+                                .playlists
+                                .map(|p| p.items)
+                                .unwrap_or_default()
+                                .iter()
+                                .map(|p| sf_api::map::playlist_item(p, me.as_ref()))
+                                .collect();
+                            all.extend(
+                                shelves::made_for_you(term, found).into_iter().filter(|p| seen.insert(p.playlist_id.clone())),
+                            );
+                        }
+                        Err(e) => tracing::debug!("главная: «{term}» не найден: {e}"),
+                    }
+                }
+                Ok::<_, sf_api::ApiError>(all)
+            };
+            let all = web(search).await?;
+            let tiles: Vec<LibraryEntry> = all.iter().map(shelves::playlist_entry).collect();
+            self.store(generation, |d| d.made_for_you = tiles);
+            Ok::<_, String>(())
+        };
+        // топ за 4 недели: GraphQL через сессию (пустой — тоже ответ: заменит история), без сессии — Web API
+        let top = async {
+            if let Some(session) = &session {
+                match tokio::time::timeout(SESSION_TIMEOUT, home_feed::top(&http, session, shelves::TOP_LIMIT)).await {
+                    Ok(Ok((artists, tracks))) => {
+                        let artists: Vec<ArtistItem> = artists.iter().map(sf_api::map::artist_item).collect();
+                        let tracks: Vec<TrackItem> = tracks.iter().map(sf_api::map::track_item).collect();
+                        self.store(generation, |d| {
+                            d.top_artists = artists;
+                            d.top_tracks = tracks;
+                        });
+                        return Ok(());
+                    }
+                    Ok(Err(error)) => tracing::debug!("топ через сессию: {error:#}"),
+                    Err(_) => tracing::debug!("топ через сессию: таймаут"),
+                }
+            }
+            let read = async {
+                let client = api.client_for(Operation::UserData).await?;
+                let artists = client.top_artists("short_term", shelves::TOP_LIMIT).await?;
+                let tracks = client.top_tracks("short_term", shelves::TOP_LIMIT, 0).await?;
+                Ok::<_, sf_api::ApiError>((artists, tracks))
+            };
+            let (artists, tracks) = web(read).await?;
+            let artists: Vec<ArtistItem> = artists.items.iter().map(sf_api::map::artist_item).collect();
+            let tracks: Vec<TrackItem> = tracks.items.iter().map(sf_api::map::track_item).collect();
+            self.store(generation, |d| {
+                d.top_artists = artists;
+                d.top_tracks = tracks;
+            });
+            Ok::<_, String>(())
         };
         let podcasts = async {
-            let mut shows: Vec<ShowItem> = self.library.shows();
-            if shows.is_empty() {
-                let client = api.client_for(Operation::UserData).await?;
-                let page = client.saved_shows(0, 50).await?;
-                shows = page.items.iter().map(|s| sf_api::map::show_item(&s.show)).collect();
-            }
-            shows.retain(|s| !s.show_id.is_empty());
-            shows.truncate(shelves::HOME_PODCAST_SHOWS);
-            if shows.is_empty() {
-                self.store(generation, |d| d.podcasts.clear());
-                return Ok(());
-            }
-            let client = api.client_for(Operation::Catalog).await?;
-            let mut podcasts = Vec::new();
-            for show in shows {
-                match client.show_episodes(&show.show_id, 0, shelves::EPISODES_PER_SHOW).await {
-                    Ok(page) => {
-                        let episodes = page.items.iter().map(|e| sf_api::map::episode_item(e, None)).collect();
-                        podcasts.push((show, episodes));
-                    }
-                    // полка необязательная: квота/429 — без этого шоу
-                    Err(e) => tracing::debug!("главная: выпуски {}: {e}", show.show_id),
+            let read = async {
+                let mut shows: Vec<ShowItem> = self.library.shows();
+                if shows.is_empty() {
+                    let client = api.client_for(Operation::UserData).await?;
+                    let page = client.saved_shows(0, 50).await?;
+                    shows = page.items.iter().map(|s| sf_api::map::show_item(&s.show)).collect();
                 }
-            }
+                shows.retain(|s| !s.show_id.is_empty());
+                shows.truncate(shelves::HOME_PODCAST_SHOWS);
+                let mut podcasts = Vec::new();
+                if shows.is_empty() {
+                    return Ok(podcasts);
+                }
+                let client = api.client_for(Operation::Catalog).await?;
+                for show in shows {
+                    match client.show_episodes(&show.show_id, 0, shelves::EPISODES_PER_SHOW).await {
+                        Ok(page) => {
+                            let episodes = page.items.iter().map(|e| sf_api::map::episode_item(e, None)).collect();
+                            podcasts.push((show, episodes));
+                        }
+                        // полка необязательная: квота/429 — без этого шоу
+                        Err(e) => tracing::debug!("главная: выпуски {}: {e}", show.show_id),
+                    }
+                }
+                Ok::<_, sf_api::ApiError>(podcasts)
+            };
+            let podcasts = web(read).await?;
             let today = jiff::Zoned::now().date();
             let shelf = shelves::podcast_episodes(&podcasts, today);
             self.store(generation, |d| d.podcasts = shelf);
-            Ok::<_, sf_api::ApiError>(())
+            Ok::<_, String>(())
         };
-        let (a, b, c, d) = tokio::join!(top_artists, top_tracks, made_for_you, podcasts);
-        let errors: Vec<String> =
-            [a, b, c, d].into_iter().filter_map(Result::err).map(|e| ServiceError::from(e).to_string()).collect();
+        let (a, b, c) = tokio::join!(made_for_you, top, podcasts);
+        let errors: Vec<String> = [a, b, c].into_iter().filter_map(Result::err).collect();
         if !self.current(generation) {
             return;
         }
         let empty = self.snapshot.borrow().shelves.is_empty();
         // полки — дополнение: ошибка видна, только если не вышло ничего
-        let error = (errors.len() == 4 && empty).then(|| errors[0].clone());
+        let error = (errors.len() == 3 && empty).then(|| errors[0].clone());
         self.snapshot.send_modify(|s| {
             s.loading = false;
             s.error_text = error.unwrap_or_default();
         });
+        // сессия встала, пока шло обновление без неё, — обновить через неё (без квоты Web API)
+        let again = {
+            let mut data = lock(&self.data);
+            std::mem::take(&mut data.session_pending) && !data.via_session
+        };
+        if again && self.session().is_some() {
+            self.refresh(true);
+        }
     }
 
     fn clear(&self) {
@@ -281,7 +435,17 @@ impl HomeService {
     }
 }
 
-/// Вход/выход, библиотека, история и скрытие полок → полки.
+/// Запасной запрос Web API с таймаутом; ошибка — текстом для пользователя. Фоном: уступает страницам и не
+/// идёт в сеть, пока Web API ограничен (полки — дополнение).
+async fn web<T>(read: impl std::future::Future<Output = Result<T, sf_api::ApiError>>) -> Result<T, String> {
+    match tokio::time::timeout(WEB_TIMEOUT, sf_api::limits::background(read)).await {
+        Ok(Ok(value)) => Ok(value),
+        Ok(Err(error)) => Err(ServiceError::from(error).to_string()),
+        Err(_) => Err("Spotify долго не отвечает".to_owned()),
+    }
+}
+
+/// Вход/выход, готовность сессии, библиотека, история и скрытие полок → полки.
 async fn listen(weak: Weak<HomeService>) {
     let Some(me) = weak.upgrade() else { return };
     let mut auth = me.auth.subscribe();
@@ -297,6 +461,7 @@ async fn listen(weak: Weak<HomeService>) {
                 match event {
                     Ok(AuthEvent::SignedIn(_)) => me.refresh(true),
                     Ok(AuthEvent::SignedOut) => me.clear(),
+                    Ok(AuthEvent::PlaybackReady(_)) => me.session_ready(),
                     Ok(_) => {}
                     Err(broadcast::error::RecvError::Lagged(_)) => me.publish(),
                     Err(broadcast::error::RecvError::Closed) => break,

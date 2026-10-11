@@ -4,9 +4,11 @@ import Md3
 import Materialfy.Core
 import ".."
 
-// Шаг 2 «Слушать на этом компьютере»: отдельное разрешение librespot (scope streaming, ответ на
-// 127.0.0.1:8898), после него компьютер — устройство Spotify Connect. Слева — hero по Auth.playbackState,
-// справа — плашка Premium / «Применить» и параметры движка из Settings. Уже 760 px — одна колонка.
+// «Слушать на этом компьютере»: сессия librespot (scope streaming, ответ на 127.0.0.1:8898), после неё
+// компьютер — устройство Spotify Connect. С Premium это и есть основной вход (включается при входе);
+// отдельным шагом — только после входа без Premium (Web API). Без Web API «Отключить» = «Выйти».
+// Слева — hero по Auth.playbackState, справа — плашка Premium / «Применить» и параметры движка.
+// Уже 760 px — одна колонка.
 Page {
     id: page
     title: "Воспроизведение"
@@ -15,6 +17,8 @@ Page {
     property string pst: Auth.playbackState
     property bool premium: Auth.premium === true
     property bool signedIn: Auth.state === "signedIn"
+    // вход только через сессию: отключить её — значит выйти
+    readonly property bool sessionOnly: Auth.webState !== "ready" && Auth.personalState !== "ready"
     readonly property bool free: signedIn && (!premium || pst === "premiumRequired")
     readonly property string mode: !signedIn ? "signedOut"
                                  : free ? "free"
@@ -154,7 +158,7 @@ Page {
                         spacing: 4
                         Label {
                             Layout.fillWidth: true
-                            text: page.shownMode === "done" ? "Устройство Spotify Connect" : "Шаг 2 из 2 · по желанию"
+                            text: page.shownMode === "done" ? "Устройство Spotify Connect" : "Spotify Premium"
                             type: "labelMedium"
                             font.capitalization: Font.AllUppercase
                             color: Theme.primary
@@ -175,8 +179,8 @@ Page {
                     text: page.mode === "done"
                           ? "Компьютер «" + page.deviceName + "» есть в списке устройств Spotify. Сюда можно перенести музыку с телефона и обратно."
                           : page.mode === "signedOut"
-                          ? "Сначала войдите в аккаунт Spotify — воспроизведение настраивается вторым шагом."
-                          : "Materialfy станет устройством Spotify Connect: музыка будет играть здесь, а телефон увидит компьютер в списке устройств. Нужно ещё одно подтверждение в браузере, и оно даёт только право на воспроизведение."
+                          ? "Войдите через Spotify с Premium — музыка на этом компьютере включится тем же входом."
+                          : "Materialfy станет устройством Spotify Connect: музыка будет играть здесь, а телефон увидит компьютер в списке устройств. Нужно подтверждение в браузере; после него медиатека тоже идёт через этот вход, без лимитов Web API."
                     type: "bodyMedium"
                     color: Theme.fgSurfaceVariant
                     wrapMode: Text.WordWrap
@@ -400,7 +404,7 @@ Page {
                     }
                     Button {
                         visible: page.shownMode === "done"
-                        text: "Отключить"
+                        text: page.sessionOnly ? "Выйти" : "Отключить"
                         icon: "logout"
                         style: "outlined"
                         onClicked: Auth.disablePlayback()

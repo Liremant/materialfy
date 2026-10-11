@@ -227,11 +227,20 @@ impl DevicesService {
             if lock(&me.state).volume_seq.get(&device_id) != Some(&seq) {
                 return;
             }
-            let result = async {
-                let client = me.auth.api().client_for(Operation::Playback).await?;
-                client.set_volume(percent, Some(device_id.as_str())).await
+            // сначала через сессию (connect-state), Web API — только если её нет или она отказала
+            let connect = me.player.connect_volume(&device_id, percent).await;
+            if let Some(Err(e)) = &connect {
+                tracing::debug!("громкость через сессию не прошла ({e}); пробуем Web API");
             }
-            .await;
+            let result = match connect {
+                Some(Ok(())) => Ok(()),
+                _ => async {
+                    let client = me.auth.api().client_for(Operation::Playback).await?;
+                    client.set_volume(percent, Some(device_id.as_str())).await
+                }
+                .await
+                .map_err(ServiceError::from),
+            };
             if let Err(e) = result {
                 let name = me.snapshot().devices.iter().find(|d| d.id == device_id).map(|d| d.name.clone()).unwrap_or_default();
                 {
@@ -241,7 +250,7 @@ impl DevicesService {
                     }
                 }
                 me.recompute();
-                me.notice(format!("Не удалось изменить громкость «{name}»: {}", ServiceError::from(e)));
+                me.notice(format!("Не удалось изменить громкость «{name}»: {e}"));
             }
         });
     }
@@ -327,11 +336,34 @@ impl DevicesService {
         if name.trim().is_empty() { Self::default_device_name() } else { name }
     }
 
+    /// Список из кластера connect-state сессии; Web API — только без движка или при отказе сессии.
     async fn fetch_devices(&self) -> Result<Vec<DeviceItem>, ServiceError> {
-        let client = self.auth.api().client_for(Operation::Playback).await?;
         let this = self.player.this_device_id();
-        let devices = client.devices().await?;
+        let devices = match self.player.connect_devices().await {
+            Some(devices) => devices,
+            None => self.auth.api().client_for(Operation::Playback).await?.devices().await?,
+        };
         Ok(devices.iter().map(|d| sf_api::map::device_item(d, this.as_deref())).collect())
+    }
+
+    /// Кластер изменился (пуш сессии): перечитать список из него — без сети, пока кластер свежий.
+    fn refresh_connect(&self) {
+        let generation = lock(&self.state).account_generation;
+        let Some(me) = self.me.upgrade() else { return };
+        self.rt.spawn(async move {
+            let Some(devices) = me.player.connect_devices().await else { return };
+            let this = me.player.this_device_id();
+            {
+                let mut st = lock(&me.state);
+                if st.account_generation != generation {
+                    return;
+                }
+                st.api = devices.iter().map(|d| sf_api::map::device_item(d, this.as_deref())).collect();
+                st.error_text.clear();
+                st.fetched_at = Some(Instant::now());
+            }
+            me.recompute();
+        });
     }
 
     /// addUser на приёмнике, затем ждём, пока Spotify покажет его в списке устройств; Ok — id устройства.
@@ -457,10 +489,18 @@ async fn listen(weak: Weak<DevicesService>) {
     let mut player = me.player.subscribe().events;
     let mut auth = me.auth.subscribe();
     let mut settings = me.settings.subscribe();
+    let mut connect = me.player.connect_changes();
     me.recompute();
     drop(me);
     loop {
         tokio::select! {
+            changed = connect.changed() => {
+                if changed.is_err() {
+                    break;
+                }
+                let Some(me) = weak.upgrade() else { break };
+                me.refresh_connect();
+            },
             event = player.recv() => match event {
                 Ok(PlayerEvent::DeviceChanged | PlayerEvent::LocalChanged | PlayerEvent::VolumeChanged | PlayerEvent::TrackChanged)
                 | Err(broadcast::error::RecvError::Lagged(_)) => {

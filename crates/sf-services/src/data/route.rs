@@ -25,10 +25,8 @@ pub fn playlist_error_text(error: &ApiError) -> String {
     }
 }
 
-fn session_for(api: &ApiGateway, player: &PlayerHandle, operation: Operation) -> Option<sf_player::Session> {
-    if !api.session_serves(operation) {
-        return None;
-    }
+/// Плейлисты — всегда сначала сессия (свои тоже: личное приложение Web API — лишь запасной путь).
+fn session_for(api: &ApiGateway, player: &PlayerHandle, _operation: Operation) -> Option<sf_player::Session> {
     account_session(api, player)
 }
 
@@ -44,6 +42,47 @@ pub async fn session_read<T>(
     read: impl std::future::Future<Output = Result<T, Failure>>,
 ) -> Option<Result<T, ApiError>> {
     settle(tokio::time::timeout(SESSION_READ_TIMEOUT, read).await)
+}
+
+/// Одно место выбора «сессия или Web API» для чтения. Сначала сессия librespot того же аккаунта (у неё нет квоты
+/// Web API), не дольше `deadline`; Web API (`operation` выбирает общее/личное приложение) — только если сессии нет,
+/// она не успела или ответила Failure::Retry. Failure::Definitive отдаётся как есть: Web API ответил бы так же,
+/// а квоту бы потратил. Фоновое чтение оборачивайте в `sf_api::limits::background(...)`: запасной путь тогда
+/// уступит страницам и не пойдёт в сеть, пока Web API ограничен.
+pub async fn prefer_session<T, SF, WF>(
+    api: &ApiGateway,
+    player: &PlayerHandle,
+    operation: Operation,
+    deadline: Duration,
+    session_read: impl FnOnce(sf_player::Session) -> SF,
+    web_read: impl FnOnce(std::sync::Arc<sf_api::ApiClient>) -> WF,
+) -> Result<T, ApiError>
+where
+    SF: std::future::Future<Output = Result<T, Failure>>,
+    WF: std::future::Future<Output = Result<T, ApiError>>,
+{
+    session_first(account_session(api, player), deadline, session_read, || async move {
+        web_read(api.client_for(operation).await?).await
+    })
+    .await
+}
+
+async fn session_first<S, T, SF, WF>(
+    session: Option<S>,
+    deadline: Duration,
+    session_read: impl FnOnce(S) -> SF,
+    web_read: impl FnOnce() -> WF,
+) -> Result<T, ApiError>
+where
+    SF: std::future::Future<Output = Result<T, Failure>>,
+    WF: std::future::Future<Output = Result<T, ApiError>>,
+{
+    if let Some(session) = session
+        && let Some(result) = settle(tokio::time::timeout(deadline, session_read(session)).await)
+    {
+        return result;
+    }
+    web_read().await
 }
 
 /// Ответ сессии как ответ Web API; None — сессия не смогла, спросить Web API.
@@ -127,6 +166,35 @@ mod tests {
         assert!(api_error_text(&ApiError::Network("x".into())).contains("прокси"));
         let refused = ApiError::Status { status: 404, message: "Not found".into() };
         assert!(playlist_error_text(&refused).contains("сторонним"));
+    }
+
+    #[tokio::test]
+    async fn the_session_answers_first_and_the_web_api_only_backs_it_up() {
+        let web_calls = std::sync::atomic::AtomicUsize::new(0);
+        let web = || async {
+            web_calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok::<_, ApiError>("web")
+        };
+        let short = Duration::from_millis(50);
+        // сессия ответила — Web API не спрашиваем
+        let got = session_first(Some(()), short, |()| async { Ok("session") }, web).await;
+        assert_eq!(got.unwrap(), "session");
+        // окончательный ответ сессии (нет такого объекта) — тоже без Web API
+        let missing = ApiError::Status { status: 404, message: "нет".into() };
+        let got = session_first(Some(()), short, |()| async { Err(Failure::Definitive(missing)) }, web).await;
+        assert_eq!(got.unwrap_err().status(), Some(404));
+        assert_eq!(web_calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+        // сессии нет, она не смогла или не успела — Web API
+        let none: Option<()> = None;
+        assert_eq!(session_first(none, short, |()| async { Ok("session") }, web).await.unwrap(), "web");
+        let failed = |()| async { Err(Failure::Retry(anyhow::anyhow!("сеть"))) };
+        assert_eq!(session_first(Some(()), short, failed, web).await.unwrap(), "web");
+        let slow = |()| async {
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            Ok("session")
+        };
+        assert_eq!(session_first(Some(()), short, slow, web).await.unwrap(), "web");
+        assert_eq!(web_calls.load(std::sync::atomic::Ordering::SeqCst), 3);
     }
 
     #[tokio::test]

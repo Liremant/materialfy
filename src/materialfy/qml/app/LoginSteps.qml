@@ -2,7 +2,8 @@ import QtQuick
 import QtQuick.Layouts
 import Md3
 
-// Две карточки шагов входа: 1 — доступ к библиотеке (Web API), 2 — воспроизведение здесь (Premium).
+// Две карточки входа: 1 — вход в Spotify (медиатека, поиск, пульт), 2 — воспроизведение здесь. С Premium
+// оба выполняет один вход через сессию Spotify; вход без Premium (Web API) даёт только первый.
 // Активная — обводка primary 2 px, у выполненного номер морфится в «солнце» с галочкой;
 // шаг 2 до выполнения шага 1 — surfaceContainerLow. В узкой колонке карточки идут друг под другом.
 GridLayout {
@@ -128,12 +129,12 @@ GridLayout {
 
     StepCard {
         number: 1
-        title: "Доступ к библиотеке"
+        title: "Медиатека и пульт"
         // в сжатом виде — одна строка вместо описания и метки
         text: root.compact ? (root.done1 ? "Готово" : root.waitingText !== "" ? root.waitingText : "Плейлисты, поиск, пульт")
                            : "Плейлисты, любимые треки, поиск, история и пульт для Spotify Connect — телефона, колонки, ТВ."
-        tag: root.compact ? "" : root.done1 ? "Готово" : root.waitingText !== "" ? root.waitingText : "Web API · сейчас"
-        tagIcon: root.done1 ? "check" : root.waitingText !== "" ? "schedule" : "public"
+        tag: root.compact ? "" : root.done1 ? "Готово" : root.waitingText !== "" ? root.waitingText : "Один вход · сейчас"
+        tagIcon: root.done1 ? "check" : root.waitingText !== "" ? "schedule" : "login"
         isActive: root.active === 1 && !root.done1
         done: root.done1
         instant: root._instant
@@ -141,9 +142,9 @@ GridLayout {
     StepCard {
         number: 2
         title: root.compact ? "Слушать здесь" : "Слушать на этом компьютере"
-        text: root.compact ? (root.done2 ? "Готово" : "Premium · можно позже")
-                           : "Отдельное разрешение только на воспроизведение. Нужен Spotify Premium."
-        tag: root.compact ? "" : root.done2 ? "Готово" : "Premium · можно позже"
+        text: root.compact ? (root.done2 ? "Готово" : "Premium — тем же входом")
+                           : "Если у вас Spotify Premium, включается тем же входом: компьютер станет устройством Spotify Connect."
+        tag: root.compact ? "" : root.done2 ? "Готово" : "Premium · тем же входом"
         tagIcon: root.done2 ? "check" : "workspace_premium"
         isActive: root.active === 2 && !root.done2
         done: root.done2

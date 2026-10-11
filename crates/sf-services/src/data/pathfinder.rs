@@ -1,29 +1,27 @@
 //! Поиск через GraphQL-шлюз клиентов Spotify (pathfinder, сохранённый запрос searchDesktop) с токеном сессии
 //! librespot (login5): без квоты Web API, все разделы одним запросом. Ответ приводится к SearchResults Web API.
-//! Spotify со временем отзывает хэши сохранённых запросов (ответ PersistedQueryNotFound) — тогда пробуем
-//! следующий, а если не подошёл ни один, поиск уходит в Web API.
-use std::time::Duration;
-
-use anyhow::{Context, anyhow, bail};
+//! Хэши сохранённого запроса и их обновление из бандла веб-плеера — в [`super::persisted`]; если не подошёл
+//! ни один, поиск уходит в Web API.
+use anyhow::{anyhow, bail};
 use serde_json::{Value, json};
 use sf_api::Http;
 use sf_api::models::{Album, Artist, ArtistRef, Episode, Image, Owner, Page, Playlist, SearchResults, Show, Track};
 
-const URL: &str = "https://api-partner.spotify.com/pathfinder/v1/query";
+use super::persisted;
+
 /// Хэши searchDesktop, проверенные вживую (2026-10): ответы одной формы (tracksV2, albumsV2, podcasts…).
-const SEARCH_HASHES: [&str; 3] = [
+/// Семена: свежий хэш найдётся в бандле веб-плеера, когда все эти отзовут.
+const SEARCH_HASHES: [&str; 4] = [
+    "eef7cc54888d91bdd6802623477873caa3948ae173a0c34fd86827b267e94c03",
     "4801118d4a100f756e833d33984436a3899cff359c532f8fd3aaf174b60b3b49",
     "d9f785900f0710b31c07818d617f4f7600c1e21217e80f5b043d1e78d74e6026",
     "f1f1c151cd392433ef4d2683a10deb9adeefd660f29692d8539ce450d2dfdb96",
 ];
 /// Результатов в разделе — как search_limit общего приложения.
 pub const SEARCH_LIMIT: u32 = 20;
-const TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Все разделы поиска по `query`.
 pub async fn search(http: &Http, session: &sf_player::Session, query: &str) -> anyhow::Result<SearchResults> {
-    let token = session.login5().auth_token().await.map_err(|error| anyhow!("login5: {error}"))?;
-    let client = http.client().map_err(|error| anyhow!(error))?;
     let variables = json!({
         "searchTerm": query,
         "offset": 0,
@@ -33,31 +31,13 @@ pub async fn search(http: &Http, session: &sf_player::Session, query: &str) -> a
         "includeArtistHasConcertsField": false,
         "includePreReleases": false,
         "includeLocalConcertsField": false,
-    })
-    .to_string();
-    let mut last = anyhow!("нет хэшей searchDesktop");
-    for hash in SEARCH_HASHES {
-        let extensions = json!({ "persistedQuery": { "version": 1, "sha256Hash": hash } }).to_string();
-        let response = client
-            .get(URL)
-            .query(&[("operationName", "searchDesktop"), ("variables", &variables), ("extensions", &extensions)])
-            .bearer_auth(&token.access_token)
-            .header("app-platform", "WebPlayer")
-            .header(reqwest::header::ACCEPT, "application/json")
-            .timeout(TIMEOUT)
-            .send()
-            .await
-            .context("pathfinder")?;
-        let status = response.status();
-        let body: Value = response.json().await.with_context(|| format!("pathfinder {status}"))?;
-        match parse(&body) {
-            Ok(results) => return Ok(results),
-            // отозванный хэш — следующий; иное (401, 429, сбой) — сразу в Web API
-            Err(Failure::Retired) => last = anyhow!("searchDesktop {hash:.8}: PersistedQueryNotFound"),
-            Err(Failure::Other(error)) => return Err(error.context(format!("pathfinder {status}"))),
-        }
+    });
+    let body = persisted::query(http, session, "searchDesktop", &SEARCH_HASHES, &variables).await?;
+    match parse(&body) {
+        Ok(results) => Ok(results),
+        Err(Failure::Retired) => Err(anyhow!("searchDesktop: PersistedQueryNotFound")),
+        Err(Failure::Other(error)) => Err(error.context("pathfinder searchDesktop")),
     }
-    Err(last)
 }
 
 enum Failure {
@@ -105,12 +85,12 @@ fn section<T>(search: &Value, name: &str, map: impl Fn(&Value) -> Option<T>) -> 
     Some(Page { limit: SEARCH_LIMIT, total, items, offset: 0, next: None })
 }
 
-fn text(value: &Value, pointer: &str) -> String {
+pub(super) fn text(value: &Value, pointer: &str) -> String {
     value.pointer(pointer).and_then(Value::as_str).unwrap_or_default().to_owned()
 }
 
 /// "spotify:album:ID" → ID.
-fn id_of(uri: &str) -> String {
+pub(super) fn id_of(uri: &str) -> String {
     uri.rsplit(':').next().unwrap_or_default().to_owned()
 }
 
@@ -122,7 +102,7 @@ fn uri_of(data: &Value, kind: &str) -> Option<String> {
     data.get("uri").and_then(Value::as_str).filter(|uri| !uri.is_empty()).map(str::to_owned)
 }
 
-fn images(value: Option<&Value>) -> Vec<Image> {
+pub(super) fn images(value: Option<&Value>) -> Vec<Image> {
     let dimension = |source: &Value, key: &str| source.get(key).and_then(Value::as_u64).and_then(|n| u32::try_from(n).ok());
     value
         .and_then(|sources| sources.get("sources"))

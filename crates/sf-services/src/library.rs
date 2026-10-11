@@ -1,5 +1,6 @@
 //! Библиотека (исполнитель «services-core»): «Любимые треки» (liked.rs: кэш 15 мин, намерения поверх лагающих
-//! чтений), плейлисты и rootlist (папки, права), редактирование своего плейлиста (сразу в Web API, откат по ошибке),
+//! чтений), плейлисты из rootlist сессии (папки, права, шапки), редактирование плейлиста (сразу через сессию —
+//! data/playlist_session.rs, Web API — запасной путь; откат по ошибке),
 //! альбомы/исполнители/подкасты/выпуски, локальные закрепления и «не рекомендовать».
 //! Правила перенесены из spotifast (src/app.rs).
 use std::collections::{HashMap, HashSet};
@@ -20,7 +21,9 @@ use crate::auth::{AuthEvent, AuthService};
 use crate::data::liked::{self, LikedSongs};
 use crate::data::paged::PagedList;
 use crate::data::text::{list_change, plural, tracks as tracks_label};
-use crate::data::{known, playlist_cache, route};
+use crate::data::collection_session::{self, LikedFeed};
+use crate::data::{known, playlist_cache, playlist_session, podcast_session, route};
+use sf_player::engine::session_playlists::Change;
 use crate::history::HistoryService;
 use crate::lock;
 
@@ -148,6 +151,11 @@ struct State {
     playlists_loading: bool,
     rootlist: Option<Rootlist>,
     rootlist_loading: bool,
+    /// список плейлистов взят из rootlist сессии — Web API его уже не перезаписывает
+    session_list: bool,
+    /// что загрузилось без сессии librespot (вход раньше движка, через Web API) — повторить, когда сессия встанет
+    liked_without_session: bool,
+    sections_without_session: HashSet<Section>,
     pages: HashMap<PlaylistId, PlaylistPage>,
 
     albums: Vec<(String, AlbumItem)>,
@@ -604,11 +612,15 @@ impl LibraryService {
                 match player.recv().await {
                     Ok(PlayerEvent::LocalChanged) => {
                         let Some(service) = me.upgrade() else { return };
+                        if !service.player.local_playback().is_ready() {
+                            continue;
+                        }
+                        service.reload_with_session();
                         let wanted = {
                             let state = lock(&service.state);
                             state.account.is_some() && state.rootlist.is_none() && !state.rootlist_loading
                         };
-                        if wanted && service.player.local_playback().is_ready() {
+                        if wanted {
                             service.load_rootlist();
                         }
                     }
@@ -629,6 +641,14 @@ impl LibraryService {
                 task(service).await;
             }
         });
+    }
+
+    /// Фоновое обновление: запасной Web API уступает страницам и не идёт в сеть, пока он ограничен.
+    fn spawn_background<F>(&self, task: impl FnOnce(Arc<Self>) -> F + Send + 'static)
+    where
+        F: std::future::Future<Output = ()> + Send + 'static,
+    {
+        self.spawn(move |service| sf_api::limits::background(task(service)));
     }
 
     fn send(&self, events: impl IntoIterator<Item = LibraryEvent>) {
@@ -735,6 +755,33 @@ impl LibraryService {
         }
     }
 
+    /// Сессия встала: что загрузилось без неё (через Web API), перечитать через неё — один раз; плейлисты
+    /// дочитывает load_rootlist. Раздел, который ещё грузится, повторится по своему окончанию.
+    fn reload_with_session(&self) {
+        if route::account_session(&self.auth.api(), &self.player).is_none() {
+            return;
+        }
+        let (liked, sections) = {
+            let mut state = lock(&self.state);
+            if state.account.is_none() {
+                return;
+            }
+            let liked = !state.liked_running && std::mem::take(&mut state.liked_without_session);
+            let idle: Vec<Section> =
+                state.sections_without_session.iter().filter(|s| !state.progress.contains_key(*s)).copied().collect();
+            for section in &idle {
+                state.sections_without_session.remove(section);
+            }
+            (liked, idle)
+        };
+        if liked {
+            self.load_liked(true);
+        }
+        for section in sections {
+            self.load_section(section);
+        }
+    }
+
     // --- «Любимые треки» ---------------------------------------------------------------------
 
     fn load_liked(&self, force: bool) {
@@ -747,7 +794,7 @@ impl LibraryService {
             state.liked_running = true;
             (state.generation, account)
         };
-        self.spawn(move |service| async move {
+        self.spawn_background(move |service| async move {
             let path = mf_platform::dirs::liked_cache_file(&account);
             let checked = lock(&service.state).liked.cache_checked;
             if !checked {
@@ -775,12 +822,35 @@ impl LibraryService {
             }
             let events = lock(&service.state).sync_liked();
             service.send(events);
+            // сначала коллекция сессии (без квоты Web API); не смогла — дальше Web API с того же места
+            let mut feed: Option<LikedFeed> = None;
+            let mut feed_opened = false;
             loop {
                 let Some(offset) = lock(&service.state).liked.request_offset() else { break };
-                let result = async {
-                    service.client(Operation::UserData).await?.saved_tracks(offset, CHUNK as u32).await
+                if !feed_opened {
+                    feed_opened = true;
+                    feed = LikedFeed::open(&service.auth.api(), &service.player).await;
+                    if feed.is_none() && route::account_session(&service.auth.api(), &service.player).is_none() {
+                        let mut state = lock(&service.state);
+                        if state.generation == generation {
+                            state.liked_without_session = true;
+                        }
+                    }
                 }
-                .await;
+                let from_session = match feed.as_mut() {
+                    Some(open) => open.next_page(offset).await,
+                    None => None,
+                };
+                if from_session.is_none() {
+                    feed = None;
+                }
+                let result = match from_session {
+                    Some(page) => Ok(page),
+                    None => async {
+                        service.client(Operation::UserData).await?.saved_tracks(offset, CHUNK as u32).await
+                    }
+                    .await,
+                };
                 let (events, cache) = {
                     let mut state = lock(&service.state);
                     if state.generation != generation {
@@ -803,6 +873,8 @@ impl LibraryService {
                             events.extend(state.sync_liked());
                             drop(state);
                             service.send(events);
+                            // сессия встала, пока шёл Web API, — повторить через неё
+                            service.reload_with_session();
                             return;
                         }
                     }
@@ -829,6 +901,7 @@ impl LibraryService {
             {
                 tracing::debug!("кэш «Любимых треков» не записан: {error:#}");
             }
+            service.reload_with_session();
         });
     }
 
@@ -908,11 +981,7 @@ impl LibraryService {
         self.send([LibraryEvent::Feedback { kind, track }]);
         let generation = self.generation();
         self.spawn(move |service| async move {
-            let result = async {
-                let client = service.client(Operation::UserData).await?;
-                if target { client.save(&uris).await } else { client.unsave(&uris).await }
-            }
-            .await;
+            let result = collection_session::write(&service.auth.api(), &service.player, &uris, target).await;
             if !service.current(generation) {
                 return;
             }
@@ -971,12 +1040,26 @@ impl LibraryService {
                 return;
             }
             state.playlists_loading = true;
+            state.rootlist_loading = true;
             state.progress.insert(Section::Playlists, (0, 0));
             state.generation
         };
         self.send([LibraryEvent::Playlists(ListChange::Loading(true))]);
-        self.spawn(move |service| async move {
+        self.spawn_background(move |service| async move {
             let api = service.auth.api();
+            // сначала rootlist сессии: шапки, папки и права одним чтением, без квоты Web API
+            if let Some(library) = playlist_session::library(&api, &service.player, playlist_session::SESSION_WAIT).await {
+                service.adopt_library(library, generation);
+                return;
+            }
+            {
+                let mut state = lock(&service.state);
+                if state.generation != generation {
+                    return;
+                }
+                state.rootlist_loading = false;
+                state.session_list = false;
+            }
             let mut raw: Vec<models::Playlist> = Vec::new();
             let mut offset = 0;
             let mut failure = None;
@@ -995,7 +1078,7 @@ impl LibraryService {
                 raw.extend(page.items);
                 let events = {
                     let mut state = lock(&service.state);
-                    if state.generation != generation {
+                    if state.generation != generation || state.session_list {
                         return;
                     }
                     if offset == 0 || raw.len() >= state.playlists_raw.len() {
@@ -1015,7 +1098,7 @@ impl LibraryService {
             }
             let events = {
                 let mut state = lock(&service.state);
-                if state.generation != generation {
+                if state.generation != generation || state.session_list {
                     return;
                 }
                 state.playlists_loading = false;
@@ -1038,7 +1121,8 @@ impl LibraryService {
         });
     }
 
-    /// Дерево папок и права (приглашения) — через сессию librespot.
+    /// Список плейлистов, дерево папок и права (приглашения) — из rootlist сессии librespot (сессия
+    /// подключилась, когда список уже взял Web API).
     fn load_rootlist(&self) {
         let generation = {
             let mut state = lock(&self.state);
@@ -1049,30 +1133,92 @@ impl LibraryService {
             state.generation
         };
         self.spawn(move |service| async move {
-            let result = service.player.rootlist().await;
+            let api = service.auth.api();
+            match playlist_session::library(&api, &service.player, std::time::Duration::ZERO).await {
+                Some(library) => service.adopt_library(library, generation),
+                None => {
+                    let mut state = lock(&service.state);
+                    if state.generation == generation {
+                        state.rootlist_loading = false;
+                    }
+                }
+            }
+        });
+    }
+
+    /// Принять список из rootlist: чего у сессии нет (имя владельца, коллаж), берётся из прежних шапок;
+    /// затем коллажи для плейлистов без своей обложки.
+    fn adopt_library(&self, library: playlist_session::Library, generation: u64) {
+        let (events, coverless) = {
+            let mut state = lock(&self.state);
+            if state.generation != generation {
+                return;
+            }
+            let mut raw = library.playlists;
+            for playlist in &mut raw {
+                if let Some(listed) = state.raw(&playlist.id) {
+                    playlist.fill_from(listed);
+                }
+            }
+            self.auth.api().observe_playlists(raw.iter());
+            let coverless: Vec<String> =
+                raw.iter().filter(|pl| pl.images.is_empty() && pl.track_total() > 0).map(|pl| pl.id.clone()).collect();
+            state.playlists_raw = raw;
+            state.rootlist = Some(library.rootlist);
+            state.rootlist_loading = false;
+            state.session_list = true;
+            let was_loading = std::mem::take(&mut state.playlists_loading);
+            state.progress.remove(&Section::Playlists);
+            let mut events: Vec<LibraryEvent> = state.rebuild_playlists().into_iter().collect();
+            if was_loading {
+                events.push(LibraryEvent::Playlists(ListChange::Loading(false)));
+            }
+            events.extend([LibraryEvent::EntriesChanged, LibraryEvent::SavedChanged]);
+            let ids: Vec<PlaylistId> = state.pages.keys().cloned().collect();
+            events.extend(ids.into_iter().map(LibraryEvent::PlaylistInfo));
+            (events, coverless)
+        };
+        self.send(events);
+        if !coverless.is_empty() {
+            self.spawn(move |service| async move { service.fill_mosaics(coverless, generation).await });
+        }
+    }
+
+    /// Коллажи обложек (как у Web API) для плейлистов без своей обложки — через сессию.
+    async fn fill_mosaics(&self, ids: Vec<String>, generation: u64) {
+        use futures::StreamExt as _;
+        let api = self.auth.api();
+        let mut covers = futures::stream::iter(ids)
+            .map(|id| {
+                let (api, player) = (&api, &self.player);
+                async move { (playlist_session::mosaic(api, player, &id).await, id) }
+            })
+            .buffer_unordered(4);
+        while let Some((images, id)) = covers.next().await {
+            if images.is_empty() {
+                continue;
+            }
             let events = {
-                let mut state = lock(&service.state);
+                let mut state = lock(&self.state);
                 if state.generation != generation {
                     return;
                 }
-                state.rootlist_loading = false;
-                match result {
-                    Ok(rootlist) => {
-                        state.rootlist = Some(rootlist);
-                        let mut events: Vec<LibraryEvent> = state.rebuild_playlists().into_iter().collect();
-                        events.push(LibraryEvent::EntriesChanged);
-                        let ids: Vec<PlaylistId> = state.pages.keys().cloned().collect();
-                        events.extend(ids.into_iter().map(LibraryEvent::PlaylistInfo));
-                        events
-                    }
-                    Err(error) => {
-                        tracing::debug!("rootlist не загрузился: {error:#}");
-                        Vec::new()
-                    }
+                if let Some(listed) = state.playlists_raw.iter_mut().find(|pl| pl.id == id && pl.images.is_empty()) {
+                    listed.images = images.clone();
                 }
+                let id = PlaylistId::new(id);
+                if let Some(header) = state.pages.get_mut(&id).and_then(|page| page.header.as_mut())
+                    && header.images.is_empty()
+                {
+                    header.images = images;
+                }
+                let mut events: Vec<LibraryEvent> = state.rebuild_playlists().into_iter().collect();
+                events.push(LibraryEvent::EntriesChanged);
+                events.push(LibraryEvent::PlaylistInfo(id));
+                events
             };
-            service.send(events);
-        });
+            self.send(events);
+        }
     }
 
     pub fn playlists(&self) -> Vec<PlaylistItem> {
@@ -1433,10 +1579,17 @@ impl LibraryService {
                     false
                 } else {
                     let api = service.auth.api();
-                    let access = api.playlist_access(id.as_str());
-                    match api.client_for(Operation::PlaylistItems(access)).await {
-                        Ok(client) => client.playlist_duplicates(id.as_str(), &uris).await.is_ok_and(|found| !found.is_empty()),
-                        Err(_) => false,
+                    match playlist_session::duplicates(&api, &service.player, id.as_str(), &uris).await {
+                        Some(found) => found.is_ok_and(|found| !found.is_empty()),
+                        None => {
+                            let access = api.playlist_access(id.as_str());
+                            match api.client_for(Operation::PlaylistItems(access)).await {
+                                Ok(client) => {
+                                    client.playlist_duplicates(id.as_str(), &uris).await.is_ok_and(|found| !found.is_empty())
+                                }
+                                Err(_) => false,
+                            }
+                        }
                     }
                 };
                 if duplicate {
@@ -1463,16 +1616,22 @@ impl LibraryService {
             service.send(events);
             let api = service.auth.api();
             let access = api.playlist_access(id.as_str());
-            let result = async {
-                let client = api.client_for(Operation::PlaylistMutation(access)).await?;
-                let mut snapshot = None;
-                for (index, chunk) in uris.chunks(WRITE_CHUNK).enumerate() {
-                    let at = position.map(|at| (at + index * WRITE_CHUNK) as u32);
-                    snapshot = client.add_playlist_items(id.as_str(), chunk, at).await?.or(snapshot);
+            let add = Change::Add { uris: uris.clone(), at: position.map(|at| at as u32) };
+            let result = match playlist_session::change(&api, &service.player, id.as_str(), add).await {
+                Some(result) => result,
+                None => {
+                    async {
+                        let client = api.client_for(Operation::PlaylistMutation(access)).await?;
+                        let mut snapshot = None;
+                        for (index, chunk) in uris.chunks(WRITE_CHUNK).enumerate() {
+                            let at = position.map(|at| (at + index * WRITE_CHUNK) as u32);
+                            snapshot = client.add_playlist_items(id.as_str(), chunk, at).await?.or(snapshot);
+                        }
+                        Ok(snapshot)
+                    }
+                    .await
                 }
-                Ok(snapshot)
-            }
-            .await;
+            };
             if !service.current(generation) {
                 return;
             }
@@ -1522,14 +1681,21 @@ impl LibraryService {
                 let state = lock(&service.state);
                 state.pages.get(&id).map(|page| page.snapshot.clone()).filter(|s| !s.is_empty())
             };
-            let result = async {
-                let client = api.client_for(Operation::PlaylistMutation(access)).await?;
-                for chunk in uris.chunks(WRITE_CHUNK) {
-                    snapshot = client.remove_playlist_items(id.as_str(), chunk, snapshot.as_deref()).await?.or(snapshot);
+            let remove = Change::Remove { uris: uris.clone() };
+            let result = match playlist_session::change(&api, &service.player, id.as_str(), remove).await {
+                Some(result) => result,
+                None => {
+                    async {
+                        let client = api.client_for(Operation::PlaylistMutation(access)).await?;
+                        for chunk in uris.chunks(WRITE_CHUNK) {
+                            snapshot =
+                                client.remove_playlist_items(id.as_str(), chunk, snapshot.as_deref()).await?.or(snapshot);
+                        }
+                        Ok(snapshot)
+                    }
+                    .await
                 }
-                Ok(snapshot)
-            }
-            .await;
+            };
             if service.current(generation) {
                 service.end_write(&id, result, None);
             }
@@ -1551,17 +1717,29 @@ impl LibraryService {
         self.spawn(move |service| async move {
             let api = service.auth.api();
             let access = api.playlist_access(id.as_str());
-            let snapshot = {
+            let (snapshot, alone) = {
                 let state = lock(&service.state);
-                state.pages.get(&id).map(|page| page.snapshot.clone()).filter(|s| !s.is_empty())
+                let page = state.pages.get(&id);
+                (
+                    page.map(|page| page.snapshot.clone()).filter(|s| !s.is_empty()),
+                    page.is_some_and(|page| page.pending_writes == 1),
+                )
             };
-            let result = async {
-                api.client_for(Operation::PlaylistMutation(access))
-                    .await?
-                    .reorder_playlist(id.as_str(), from as u32, insert_before, snapshot.as_deref())
+            // позиции — в строках, которые видел пользователь: их ревизия — база (сервер перебазирует),
+            // если до переноса нет других незаконченных записей
+            let r#move = Change::Move { from: from as u32, insert_before, snapshot: snapshot.clone().filter(|_| alone) };
+            let result = match playlist_session::change(&api, &service.player, id.as_str(), r#move).await {
+                Some(result) => result,
+                None => {
+                    async {
+                        api.client_for(Operation::PlaylistMutation(access))
+                            .await?
+                            .reorder_playlist(id.as_str(), from as u32, insert_before, snapshot.as_deref())
+                            .await
+                    }
                     .await
-            }
-            .await;
+                }
+            };
             if service.current(generation) {
                 service.end_write(&id, result, None);
             }
@@ -1570,9 +1748,17 @@ impl LibraryService {
 
     /// Новый плейлист в начале библиотеки.
     async fn create(&self, title: &str) -> Result<models::Playlist, ApiError> {
-        let client = self.client(Operation::PlaylistCreation).await?;
-        let playlist = client.create_playlist(title, false, "").await?;
-        self.auth.api().observe_playlist(&playlist);
+        let api = self.auth.api();
+        let playlist = match playlist_session::create(&api, &self.player, title, false).await {
+            Some(created) => {
+                let mut playlist = created?;
+                playlist.owner.display_name =
+                    self.auth.account().map(|account| account.display_name).filter(|name| !name.is_empty());
+                playlist
+            }
+            None => self.client(Operation::PlaylistCreation).await?.create_playlist(title, false, "").await?,
+        };
+        api.observe_playlist(&playlist);
         Ok(playlist)
     }
 
@@ -1630,10 +1816,17 @@ impl LibraryService {
         self.spawn(move |service| async move {
             let result = async {
                 let mut playlist = service.create(&title).await?;
-                let client = service.client(Operation::PlaylistMutation(sf_api::PlaylistAccess::Owned)).await?;
-                for chunk in uris.chunks(WRITE_CHUNK) {
-                    if let Some(snapshot) = client.add_playlist_items(&playlist.id, chunk, None).await? {
-                        playlist.snapshot_id = Some(snapshot);
+                let api = service.auth.api();
+                let add = Change::Add { uris: uris.clone(), at: None };
+                match playlist_session::change(&api, &service.player, &playlist.id, add).await {
+                    Some(result) => playlist.snapshot_id = result?.or(playlist.snapshot_id),
+                    None => {
+                        let client = service.client(Operation::PlaylistMutation(sf_api::PlaylistAccess::Owned)).await?;
+                        for chunk in uris.chunks(WRITE_CHUNK) {
+                            if let Some(snapshot) = client.add_playlist_items(&playlist.id, chunk, None).await? {
+                                playlist.snapshot_id = Some(snapshot);
+                            }
+                        }
                     }
                 }
                 playlist.tracks = Some(models::TrackCount { total: uris.len() as u32 });
@@ -1689,13 +1882,32 @@ impl LibraryService {
         self.spawn(move |service| async move {
             let api = service.auth.api();
             let access = api.playlist_access(id.as_str());
-            let result = async {
-                api.client_for(Operation::PlaylistMutation(access))
-                    .await?
-                    .update_playlist(id.as_str(), name.as_deref(), description.as_deref(), public)
+            // название/описание — шапка плейлиста, видимость — строка rootlist; любая часть не вышла через
+            // сессию — всё через Web API (запись повторяемая)
+            let in_session = async {
+                if name.is_some() || description.is_some() {
+                    let details = Change::Details { name: name.clone(), description: description.clone(), collaborative: None };
+                    if let Err(error) = playlist_session::change(&api, &service.player, id.as_str(), details).await? {
+                        return Some(Err(error));
+                    }
+                }
+                match public {
+                    Some(public) => playlist_session::set_public(&api, &service.player, id.as_str(), public).await,
+                    None => Some(Ok(())),
+                }
+            };
+            let result = match in_session.await {
+                Some(result) => result,
+                None => {
+                    async {
+                        api.client_for(Operation::PlaylistMutation(access))
+                            .await?
+                            .update_playlist(id.as_str(), name.as_deref(), description.as_deref(), public)
+                            .await
+                    }
                     .await
-            }
-            .await;
+                }
+            };
             if !service.current(generation) {
                 return;
             }
@@ -1765,13 +1977,18 @@ impl LibraryService {
                 .unwrap_or_default();
             let api = service.auth.api();
             let access = api.playlist_access(id.as_str());
-            let result = async {
-                api.client_for(Operation::PlaylistMutation(access))
-                    .await?
-                    .upload_playlist_cover(id.as_str(), &cover.encoded)
+            let result = match playlist_session::upload_cover(&api, &service.player, id.as_str(), cover.jpeg.to_vec()).await {
+                Some(result) => result.map(|_| ()),
+                None => {
+                    async {
+                        api.client_for(Operation::PlaylistMutation(access))
+                            .await?
+                            .upload_playlist_cover(id.as_str(), &cover.encoded)
+                            .await
+                    }
                     .await
-            }
-            .await;
+                }
+            };
             if !service.current(generation) {
                 return;
             }
@@ -1893,9 +2110,13 @@ impl LibraryService {
         self.spawn(move |service| async move {
             let api = service.auth.api();
             let access = api.playlist_access(id.as_str());
-            let result =
-                async { api.client_for(Operation::PlaylistMutation(access)).await?.follow_playlist(id.as_str()).await }
-                    .await;
+            let result = match playlist_session::follow(&api, &service.player, id.as_str()).await {
+                Some(result) => result,
+                None => {
+                    async { api.client_for(Operation::PlaylistMutation(access)).await?.follow_playlist(id.as_str()).await }
+                        .await
+                }
+            };
             if !service.current(generation) {
                 return;
             }
@@ -1958,9 +2179,13 @@ impl LibraryService {
         self.spawn(move |service| async move {
             let api = service.auth.api();
             let access = api.playlist_access(id.as_str());
-            let result =
-                async { api.client_for(Operation::PlaylistMutation(access)).await?.unfollow_playlist(id.as_str()).await }
-                    .await;
+            let result = match playlist_session::unfollow(&api, &service.player, id.as_str()).await {
+                Some(result) => result,
+                None => {
+                    async { api.client_for(Operation::PlaylistMutation(access)).await?.unfollow_playlist(id.as_str()).await }
+                        .await
+                }
+            };
             if !service.current(generation) {
                 return;
             }
@@ -2002,7 +2227,7 @@ impl LibraryService {
             state.progress.insert(section, (0, 0));
             state.generation
         };
-        self.spawn(move |service| async move {
+        self.spawn_background(move |service| async move {
             let result = service.fetch_section(section, generation).await;
             let events = {
                 let mut state = lock(&service.state);
@@ -2020,6 +2245,8 @@ impl LibraryService {
                 events
             };
             service.send(events);
+            // сессия встала, пока шёл Web API, — повторить через неё
+            service.reload_with_session();
         });
     }
 
@@ -2049,6 +2276,15 @@ impl LibraryService {
     }
 
     async fn fetch_section(&self, section: Section, generation: u64) -> Result<(), ApiError> {
+        if self.session_section(section, generation).await {
+            return Ok(());
+        }
+        if route::account_session(&self.auth.api(), &self.player).is_none() {
+            let mut state = lock(&self.state);
+            if state.generation == generation {
+                state.sections_without_session.insert(section);
+            }
+        }
         let client = self.client(Operation::UserData).await?;
         match section {
             Section::Albums => {
@@ -2177,6 +2413,108 @@ impl LibraryService {
         Ok(())
     }
 
+    /// Альбомы и подписки — из коллекции сессии одним чтением; false — спросить Web API.
+    async fn session_section(&self, section: Section, generation: u64) -> bool {
+        let (api, player) = (self.auth.api(), &self.player);
+        match section {
+            Section::Albums => {
+                let Some(saved) =
+                    collection_session::read(&api, player, "альбомы", |s| async move { collection_session::saved_albums(&s).await })
+                        .await
+                else {
+                    return false;
+                };
+                let rows: Vec<(String, AlbumItem)> = saved
+                    .iter()
+                    .map(|saved| {
+                        let mut item = map::album_item(&saved.album);
+                        item.saved = true;
+                        (saved.added_at.clone().unwrap_or_default(), item)
+                    })
+                    .collect();
+                self.put_section(section, generation, (1, 1, true), |state| {
+                    let old: Vec<AlbumItem> = state.albums.iter().map(|(_, item)| item.clone()).collect();
+                    let new: Vec<AlbumItem> = rows.iter().map(|(_, item)| item.clone()).collect();
+                    state.albums = rows;
+                    list_change(&old, &new).map(LibraryEvent::Albums)
+                });
+                true
+            }
+            Section::Artists => {
+                let Some(followed) = collection_session::read(&api, player, "подписки", |s| async move {
+                    collection_session::followed_artists(&s).await
+                })
+                .await
+                else {
+                    return false;
+                };
+                let artists: Vec<ArtistItem> = followed.iter().map(map::artist_item).collect();
+                self.put_section(section, generation, (1, 1, true), |state| {
+                    let change = list_change(&state.artists, &artists);
+                    state.artists = artists;
+                    change.map(LibraryEvent::Artists)
+                });
+                true
+            }
+            _ => self.session_podcasts(section, generation).await,
+        }
+    }
+
+    /// Подкасты (набор «show», без аудиокниг) и «Ваши выпуски» («listenlater») — из коллекции сессии;
+    /// false — спросить Web API.
+    async fn session_podcasts(&self, section: Section, generation: u64) -> bool {
+        let (api, player) = (self.auth.api(), &self.player);
+        match section {
+            Section::Shows => {
+                let Some(saved) =
+                    collection_session::read(&api, player, "подкасты", |s| async move { podcast_session::saved_shows(&s).await })
+                        .await
+                else {
+                    return false;
+                };
+                let rows: Vec<(String, ShowItem)> = saved
+                    .iter()
+                    .map(|(added_at, show)| {
+                        let mut item = map::show_item(show);
+                        item.saved = true;
+                        (added_at.clone(), item)
+                    })
+                    .collect();
+                self.put_section(section, generation, (1, 1, true), |state| {
+                    let old: Vec<ShowItem> = state.shows.iter().map(|(_, item)| item.clone()).collect();
+                    let new: Vec<ShowItem> = rows.iter().map(|(_, item)| item.clone()).collect();
+                    state.shows = rows;
+                    list_change(&old, &new).map(LibraryEvent::Shows)
+                });
+                true
+            }
+            Section::Episodes => {
+                let Some(saved) = collection_session::read(&api, player, "ваши выпуски", |s| async move {
+                    podcast_session::saved_episodes(&s).await
+                })
+                .await
+                else {
+                    return false;
+                };
+                let episodes: Vec<EpisodeItem> = saved
+                    .iter()
+                    .map(|episode| {
+                        let mut item = map::episode_item(episode, None);
+                        item.saved = true;
+                        item
+                    })
+                    .collect();
+                self.put_section(section, generation, (1, 1, true), |state| {
+                    let change = list_change(&state.episodes, &episodes);
+                    state.episodes = episodes;
+                    change.map(LibraryEvent::Episodes)
+                });
+                true
+            }
+            _ => false,
+        }
+    }
+
     pub fn albums(&self) -> Vec<AlbumItem> {
         lock(&self.state).albums.iter().map(|(_, item)| item.clone()).collect()
     }
@@ -2240,11 +2578,7 @@ impl LibraryService {
         let generation = self.generation();
         self.spawn(move |service| async move {
             let uris = [uri.clone()];
-            let result = async {
-                let client = service.client(Operation::UserData).await?;
-                if target { client.save(&uris).await } else { client.unsave(&uris).await }
-            }
-            .await;
+            let result = collection_session::write(&service.auth.api(), &service.player, &uris, target).await;
             if !service.current(generation) {
                 return;
             }

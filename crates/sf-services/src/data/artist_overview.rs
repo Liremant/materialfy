@@ -1,0 +1,194 @@
+//! Исполнитель через GraphQL-шлюз клиентов Spotify (сохранённый запрос queryArtistOverview) с токеном
+//! сессии: то, чего нет в метаданных librespot, — подписчики, ежемесячные слушатели, подписка аккаунта,
+//! похожие исполнители, биография и широкая шапка. Без квоты Web API. Проверено вживую (2026-10):
+//! data.artistUnion { stats { followers, monthlyListeners }, saved, relatedContent.relatedArtists,
+//! profile.biography.text, headerImage.data.sources[{url, maxWidth}], visuals.avatarImage }.
+use anyhow::{anyhow, bail};
+use serde_json::{Value, json};
+use sf_api::models::{Artist, Image};
+use sf_api::{Http, map, util};
+
+use super::pathfinder::{id_of, images, text};
+use super::persisted;
+use crate::catalog::ArtistPage;
+
+/// Хэши queryArtistOverview (семена; свежий — из бандла веб-плеера).
+const HASHES: [&str; 1] = ["9f8134ef565e78621f1e1793555bd6633c5ac144ae0f89604ed3ae3f80b3c8e6"];
+/// Похожих — как /artists/{id}/related-artists.
+const RELATED: usize = 20;
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ArtistOverview {
+    pub name: String,
+    pub avatar: Vec<Image>,
+    pub followers: Option<u64>,
+    pub monthly_listeners: Option<u64>,
+    /// аккаунт подписан
+    pub followed: Option<bool>,
+    pub related: Vec<Artist>,
+    pub biography: String,
+    pub header_image: Option<String>,
+}
+
+pub async fn artist(http: &Http, session: &sf_player::Session, artist_id: &str) -> anyhow::Result<ArtistOverview> {
+    let variables = json!({ "uri": format!("spotify:artist:{artist_id}"), "locale": "", "includePrerelease": false });
+    let body = persisted::query(http, session, "queryArtistOverview", &HASHES, &variables).await?;
+    parse(&body)
+}
+
+fn parse(body: &Value) -> anyhow::Result<ArtistOverview> {
+    let Some(artist) = body.pointer("/data/artistUnion").filter(|artist| artist.is_object()) else {
+        bail!("нет data.artistUnion: {}", body.get("errors").unwrap_or(&Value::Null));
+    };
+    let kind = artist.get("__typename").and_then(Value::as_str).unwrap_or("Artist");
+    if kind != "Artist" {
+        return Err(anyhow!("artistUnion: {kind}"));
+    }
+    let count = |pointer: &str| artist.pointer(pointer).and_then(Value::as_u64);
+    Ok(ArtistOverview {
+        name: text(artist, "/profile/name"),
+        avatar: images(artist.pointer("/visuals/avatarImage")),
+        followers: count("/stats/followers"),
+        monthly_listeners: count("/stats/monthlyListeners"),
+        followed: artist.get("saved").and_then(Value::as_bool),
+        related: artist
+            .pointer("/relatedContent/relatedArtists/items")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(related)
+            .take(RELATED)
+            .collect(),
+        biography: util::strip_html(&text(artist, "/profile/biography/text")).trim().to_owned(),
+        header_image: header(artist),
+    })
+}
+
+fn related(data: &Value) -> Option<Artist> {
+    let uri = data.get("uri").and_then(Value::as_str).filter(|uri| uri.starts_with("spotify:artist:"))?;
+    Some(Artist {
+        id: id_of(uri),
+        name: text(data, "/profile/name"),
+        uri: uri.to_owned(),
+        images: images(data.pointer("/visuals/avatarImage")),
+        ..Default::default()
+    })
+}
+
+/// Самая широкая шапка.
+fn header(artist: &Value) -> Option<String> {
+    let sources = artist.pointer("/headerImage/data/sources")?.as_array()?;
+    let width = |source: &Value| source.get("maxWidth").and_then(Value::as_u64).unwrap_or(0);
+    let mut best: Option<&Value> = None;
+    for source in sources {
+        if best.is_none_or(|best| width(source) > width(best)) {
+            best = Some(source);
+        }
+    }
+    best?.get("url")?.as_str().filter(|url| !url.is_empty()).map(str::to_owned)
+}
+
+/// Дополнить страницу исполнителя тем, что знает шлюз: подписчики, слушатели, подписка, похожие (если
+/// метаданные сессии их не дали), биография, шапка; фото и имя — если их нет.
+pub fn apply(page: &mut ArtistPage, overview: &ArtistOverview) {
+    let info = &mut page.info;
+    let mapped = map::artist_item(&Artist {
+        name: overview.name.clone(),
+        images: overview.avatar.clone(),
+        ..Default::default()
+    });
+    if info.item.name.is_empty() {
+        info.item.name = mapped.name;
+    }
+    if info.item.cover.is_empty() {
+        info.item.cover = mapped.cover;
+        info.item.cover_large = mapped.cover_large;
+    }
+    if let Some(followers) = overview.followers {
+        info.item.followers = i64::try_from(followers).unwrap_or(i64::MAX);
+    }
+    if let Some(listeners) = overview.monthly_listeners {
+        info.listeners = i64::try_from(listeners).unwrap_or(i64::MAX);
+    }
+    if let Some(followed) = overview.followed {
+        info.followed = followed;
+    }
+    info.biography = overview.biography.clone();
+    info.header_image = overview.header_image.clone().unwrap_or_default();
+    if page.similar.is_empty() {
+        page.similar = overview.related.iter().map(map::artist_item).collect();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use md3_model::{ArtistInfo, ArtistItem};
+
+    fn body() -> Value {
+        json!({ "data": { "artistUnion": {
+            "__typename": "Artist", "id": "a1", "uri": "spotify:artist:a1",
+            "profile": { "name": "Muse", "biography": { "text": "The Wow! Signal. <a href=\"spotify:album:x\">Out</a> &amp; now.", "type": "AUTOBIOGRAPHY" } },
+            "saved": true,
+            "stats": { "followers": 9_094_030, "monthlyListeners": 21_950_166, "worldRank": 399 },
+            "headerImage": { "data": { "__typename": "ImageV2", "sources": [
+                { "maxHeight": 640, "maxWidth": 1494, "url": "small" },
+                { "maxHeight": 1080, "maxWidth": 1920, "url": "wide" }
+            ] } },
+            "visuals": { "avatarImage": { "sources": [
+                { "height": 640, "width": 640, "url": "face640" }, { "height": 160, "width": 160, "url": "face160" }
+            ] } },
+            "relatedContent": { "relatedArtists": { "totalCount": 40, "items": [
+                { "id": "r1", "uri": "spotify:artist:r1", "profile": { "name": "Franz Ferdinand" },
+                  "visuals": { "avatarImage": { "sources": [{ "height": 640, "width": 640, "url": "ff" }] } } },
+                { "id": "x", "uri": "", "profile": { "name": "Broken" } }
+            ] } }
+        } } })
+    }
+
+    #[test]
+    fn an_overview_reads_stats_related_and_profile() {
+        let overview = parse(&body()).unwrap();
+        assert_eq!(overview.name, "Muse");
+        assert_eq!((overview.followers, overview.monthly_listeners), (Some(9_094_030), Some(21_950_166)));
+        assert_eq!(overview.followed, Some(true));
+        assert_eq!(overview.related.len(), 1, "an artist without a link is passed over");
+        let related = &overview.related[0];
+        assert_eq!((related.id.as_str(), related.name.as_str(), related.images[0].url.as_str()), ("r1", "Franz Ferdinand", "ff"));
+        assert_eq!(overview.biography, "The Wow! Signal. Out & now.");
+        assert_eq!(overview.header_image.as_deref(), Some("wide"));
+        assert_eq!(overview.avatar.len(), 2);
+    }
+
+    #[test]
+    fn a_missing_artist_is_an_error() {
+        assert!(parse(&json!({ "data": { "artistUnion": { "__typename": "NotFound" } } })).is_err());
+        assert!(parse(&json!({ "errors": [{ "message": "Unauthorized" }] })).is_err());
+        // пустой профиль — не ошибка: страница возьмёт то, что есть
+        let bare = parse(&json!({ "data": { "artistUnion": { "__typename": "Artist" } } })).unwrap();
+        assert_eq!((bare.followers, bare.followed, bare.header_image), (None, None, None));
+    }
+
+    #[test]
+    fn the_overview_fills_the_session_page_without_overriding_it() {
+        let mut page = ArtistPage {
+            info: ArtistInfo {
+                item: ArtistItem { artist_id: "a1".into(), name: "Muse".into(), cover: "own".into(), ..Default::default() },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        apply(&mut page, &parse(&body()).unwrap());
+        assert_eq!(page.info.item.cover, "own", "the session's photo stays");
+        assert_eq!(page.info.item.followers, 9_094_030);
+        assert_eq!(page.info.listeners, 21_950_166);
+        assert!(page.info.followed);
+        assert_eq!(page.info.header_image, "wide");
+        assert_eq!(page.similar[0].artist_id, "r1");
+
+        let mut empty = ArtistPage::default();
+        apply(&mut empty, &parse(&body()).unwrap());
+        assert_eq!(empty.info.item.name, "Muse");
+        assert!(!empty.info.item.cover.is_empty(), "the overview's photo fills in");
+    }
+}

@@ -12,6 +12,7 @@ use tokio::sync::{broadcast, mpsc, watch};
 use crate::engine::{EngineConfig, Rootlist};
 use crate::state::actor::{Actor, Command, Msg, Reconnect, Restart};
 use crate::state::backend::{SpotifyBackend, WebBackend};
+use crate::state::connect::{self, ConnectBackend};
 use crate::state::core::Core;
 use crate::state::host::EngineHost;
 use crate::state::session::SessionData;
@@ -33,6 +34,7 @@ struct Inner {
     host: Arc<EngineHost>,
     rt: Handle,
     session_file: Option<PathBuf>,
+    connect: Arc<ConnectBackend>,
 }
 
 const NOT_READY: &str = "воспроизведение на этом компьютере не включено";
@@ -51,6 +53,9 @@ impl PlayerHandle {
         let (events, _) = broadcast::channel(1024);
         let (tx, rx) = mpsc::unbounded_channel();
         let host = Arc::new(EngineHost::new(tx.clone()));
+        // Connect (состояние, очередь, команды) — через сессию движка; Web API — запасной путь
+        let connect = connect::wrap(backend, &host, &tx);
+        let backend: Arc<dyn WebBackend> = connect.clone();
         let reconnect: Reconnect = {
             let host = host.clone();
             let rt = rt.clone();
@@ -72,9 +77,13 @@ impl PlayerHandle {
                 Actor::new(core, rx, tx, snapshot, events, backend, reconnect, restart, session_file).run().await;
             });
         }
-        let handle = Self { inner: Arc::new(Inner { tx, snapshot, events, host, rt: rt.clone(), session_file }) };
+        let handle = Self { inner: Arc::new(Inner { tx, snapshot, events, host, rt: rt.clone(), session_file, connect }) };
         handle.load_session();
         handle
+    }
+
+    pub(crate) fn connect(&self) -> &Arc<ConnectBackend> {
+        &self.inner.connect
     }
 
     fn send(&self, command: Command) {

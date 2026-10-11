@@ -3,6 +3,8 @@
 
 /// список устройств Connect: слияние Web API, этого ПК и приёмников mDNS
 pub mod connect;
+/// полки главной из главной Spotify и «Для тебя» (через сессию), запасной топ из истории
+pub mod feed;
 /// панель «Сейчас играет» и медиаклавиши (fastframe-now-playing)
 #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
 pub mod media;

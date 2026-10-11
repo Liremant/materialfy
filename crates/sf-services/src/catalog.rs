@@ -16,7 +16,7 @@ use sf_player::engine::session_reads;
 use tokio::sync::Semaphore;
 
 use crate::auth::AuthService;
-use crate::data::{known, pathfinder, route};
+use crate::data::{artist_overview, known, pathfinder, podcast_session, route};
 use crate::{ServiceError, lock};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -414,32 +414,49 @@ impl CatalogService {
         if let Some(Cached::Artist(page)) = self.cached(&key) {
             return Ok(page);
         }
-        // Страница целиком — из сессии librespot (без квоты Web API: общее приложение подолгу отвечает 429,
-        // а исполнителю нужно пять запросов); Web API — запасной путь. Подписка и похожие — только Web API,
-        // поэтому идут параллельно и не задерживают страницу дольше EXTRAS_GRACE.
-        let uri = format!("spotify:artist:{artist_id}");
-        let extras = async { tokio::join!(self.followed(&uri), self.related(artist_id)) };
-        let (session, extras) = with_extras(self.session_artist(artist_id), extras, EXTRAS_GRACE).await;
-        let (followed, related) = extras.unwrap_or_default();
-        let page = match session {
-            Some(Ok(overview)) => {
-                let similar = if overview.related.is_empty() { related } else { overview.related };
-                artist_page(&overview.artist, followed, &overview.top_tracks, &overview.albums, &overview.appears_on, &similar)
-            }
-            Some(Err(error)) => return Err(self.fail(error)),
-            None => {
-                let (artist, popular, albums, also) = self.api_artist(artist_id).await?;
-                artist_page(&artist, followed, &popular, &albums, &also, &related)
+        // Страница — без квоты Web API (общее приложение подолгу отвечает 429, а исполнителю нужно пять
+        // запросов): метаданные сессии librespot (исполнитель, популярное, релизы) и параллельно GraphQL-шлюз
+        // (queryArtistOverview: подписчики, слушатели, подписка, похожие, биография, шапка), который не держит
+        // страницу дольше EXTRAS_GRACE. Web API — только запасной путь: вся страница, если не смогла сессия;
+        // подписка и похожие, если не ответил шлюз (тоже не дольше EXTRAS_GRACE).
+        let api = self.auth.api();
+        let session = route::account_session(&api, &self.player);
+        let read = async {
+            match &session {
+                Some(session) => route::session_read(session_reads::artist(session, artist_id)).await,
+                None => None,
             }
         };
+        let overview = async {
+            let result = artist_overview::artist(&api.http(), session.as_ref()?, artist_id).await;
+            result.map_err(|error| tracing::debug!("исполнитель {artist_id} через шлюз: {error:#}")).ok()
+        };
+        let (read, overview) = with_extras(read, overview, EXTRAS_GRACE).await;
+        let overview = overview.flatten();
+        let uri = format!("spotify:artist:{artist_id}");
+        let main = async {
+            match read {
+                Some(Ok(record)) => Ok((record.artist, record.top_tracks, record.albums, record.appears_on, record.related)),
+                Some(Err(error)) => Err(self.fail(error)),
+                None => self.api_artist(artist_id).await.map(|(artist, popular, albums, also)| (artist, popular, albums, also, Vec::new())),
+            }
+        };
+        let extras = async {
+            match overview {
+                Some(_) => (false, Vec::new()),
+                None => tokio::join!(self.followed(&uri), self.related(artist_id)),
+            }
+        };
+        let (main, extras) = with_extras(main, extras, EXTRAS_GRACE).await;
+        let (artist, popular, albums, also, similar) = main?;
+        let (followed, related) = extras.unwrap_or_default();
+        let similar = if similar.is_empty() { related } else { similar };
+        let mut page = artist_page(&artist, followed, &popular, &albums, &also, &similar);
+        if let Some(overview) = &overview {
+            artist_overview::apply(&mut page, overview);
+        }
         self.store(key, Cached::Artist(page.clone()));
         Ok(page)
-    }
-
-    /// Исполнитель через сессию; None — сессии нет или она не смогла.
-    async fn session_artist(&self, artist_id: &str) -> Option<Result<session_reads::ArtistOverview, ApiError>> {
-        let session = route::account_session(&self.auth.api(), &self.player)?;
-        route::session_read(session_reads::artist(&session, artist_id)).await
     }
 
     /// Исполнитель через Web API. Обязателен только сам исполнитель: раздел, который не загрузился
@@ -478,8 +495,12 @@ impl CatalogService {
         if uri.is_empty() {
             return false;
         }
-        let Ok(client) = self.auth.api().client_for(Operation::UserData).await else { return false };
-        client.contains(&[uri.to_owned()]).await.ok().and_then(|found| found.first().copied()).unwrap_or(false)
+        // коллекция сессии, потом Web API с коротким сроком
+        crate::data::collection_session::contains(&self.auth.api(), &self.player, &[uri.to_owned()])
+            .await
+            .ok()
+            .and_then(|found| found.first().copied())
+            .unwrap_or(false)
     }
 
     pub async fn search(&self, query: &str, kind: SearchKind) -> Result<SearchResults, ServiceError> {
@@ -554,11 +575,19 @@ impl CatalogService {
         if let Some(Cached::Show(page)) = self.cached(&key) {
             return Ok(page);
         }
-        let client = self.client(Operation::Catalog).await?;
-        let show = client.show(show_id).await.map_err(|e| self.fail(e))?;
-        let first = match show.episodes.clone() {
-            Some(page) if !page.items.is_empty() => page,
-            _ => client.show_episodes(show_id, 0, EPISODE_PAGE).await.map_err(|e| self.fail(e))?,
+        // Шоу и первая страница выпусков — из сессии librespot (без квоты Web API); Web API — запасной путь.
+        let (show, first) = match self.session_show(show_id, 0).await {
+            Some(Ok(read)) => read,
+            Some(Err(error)) => return Err(self.fail(error)),
+            None => {
+                let client = self.client(Operation::Catalog).await?;
+                let show = client.show(show_id).await.map_err(|e| self.fail(e))?;
+                let first = match show.episodes.clone() {
+                    Some(page) if !page.items.is_empty() => page,
+                    _ => client.show_episodes(show_id, 0, EPISODE_PAGE).await.map_err(|e| self.fail(e))?,
+                };
+                (show, first)
+            }
         };
         let total = i64::from(show.total_episodes.unwrap_or(first.total));
         let page = ShowPage {
@@ -572,8 +601,14 @@ impl CatalogService {
 
     /// Следующая страница выпусков (по 50).
     pub async fn show_episodes(&self, show_id: &str, offset: u32) -> Result<Vec<EpisodeItem>, ServiceError> {
-        let client = self.client(Operation::Catalog).await?;
-        let page = client.show_episodes(show_id, offset, EPISODE_PAGE).await.map_err(|e| self.fail(e))?;
+        let page = match self.session_show(show_id, offset).await {
+            Some(Ok((_, page))) => page,
+            Some(Err(error)) => return Err(self.fail(error)),
+            None => {
+                let client = self.client(Operation::Catalog).await?;
+                client.show_episodes(show_id, offset, EPISODE_PAGE).await.map_err(|e| self.fail(e))?
+            }
+        };
         let show = match self.cached(&format!("show:{show_id}")) {
             Some(Cached::Show(page)) => Some(page.info),
             _ => None,
@@ -605,6 +640,45 @@ impl CatalogService {
         if let Some(Cached::Episode(page)) = self.cached(&key) {
             return Ok(page);
         }
+        // Выпуск, его шоу и соседи — из сессии librespot; Web API — запасной путь.
+        let (episode, show, more) = match self.session_episode(episode_id).await {
+            Some(Ok(read)) => read,
+            Some(Err(error)) => return Err(self.fail(error)),
+            None => self.api_episode(episode_id).await?,
+        };
+        let more = more.iter().map(|other| map::episode_item(other, Some(&show))).collect();
+        let page = EpisodePage { info: map::episode_item(&episode, Some(&show)), show: map::show_item(&show), more };
+        known::remember([&page.info.to_track()]);
+        self.store(key, Cached::Episode(page.clone()));
+        Ok(page)
+    }
+
+    /// Шапка шоу и страница выпусков с `offset` через сессию; None — сессии нет или она не смогла.
+    async fn session_show(
+        &self,
+        show_id: &str,
+        offset: u32,
+    ) -> Option<Result<(models::Show, models::Page<models::Episode>), ApiError>> {
+        let api = self.auth.api();
+        let session = route::account_session(&api, &self.player)?;
+        route::session_read(podcast_session::show_page(&api.http(), &session, show_id, offset, EPISODE_PAGE)).await
+    }
+
+    /// Выпуск, его шоу и соседние выпуски через сессию; None — сессии нет или она не смогла.
+    async fn session_episode(
+        &self,
+        episode_id: &str,
+    ) -> Option<Result<(models::Episode, models::Show, Vec<models::Episode>), ApiError>> {
+        let api = self.auth.api();
+        let session = route::account_session(&api, &self.player)?;
+        route::session_read(podcast_session::episode_page(&api.http(), &session, episode_id)).await
+    }
+
+    /// Выпуск через Web API; соседние выпуски, которые не загрузились, — пусто.
+    async fn api_episode(
+        &self,
+        episode_id: &str,
+    ) -> Result<(models::Episode, models::Show, Vec<models::Episode>), ServiceError> {
         let client = self.client(Operation::Catalog).await?;
         let episode = client.episode(episode_id).await.map_err(|e| self.fail(e))?;
         let show = episode.show.clone().unwrap_or_default();
@@ -612,23 +686,14 @@ impl CatalogService {
             Vec::new()
         } else {
             match client.show_episodes(&show.id, 0, 6).await {
-                Ok(page) => page
-                    .items
-                    .iter()
-                    .filter(|other| other.id != episode.id)
-                    .take(3)
-                    .map(|other| map::episode_item(other, Some(&show)))
-                    .collect(),
+                Ok(page) => page.items.into_iter().filter(|other| other.id != episode.id).take(3).collect(),
                 Err(error) => {
                     tracing::debug!("соседние выпуски: {error:#}");
                     Vec::new()
                 }
             }
         };
-        let page = EpisodePage { info: map::episode_item(&episode, Some(&show)), show: map::show_item(&show), more };
-        known::remember([&page.info.to_track()]);
-        self.store(key, Cached::Episode(page.clone()));
-        Ok(page)
+        Ok((episode, show, more))
     }
 
     pub async fn track(&self, track_id: &str) -> Result<TrackItem, ServiceError> {
@@ -636,8 +701,17 @@ impl CatalogService {
         if let Some(Cached::Track(item)) = self.cached(&key) {
             return Ok(item);
         }
-        let client = self.client(Operation::Catalog).await?;
-        let track = client.track(track_id).await.map_err(|e| self.fail(e))?;
+        // Трек — из метаданных сессии librespot; Web API — запасной путь.
+        let session = route::account_session(&self.auth.api(), &self.player);
+        let read = match &session {
+            Some(session) => route::session_read(session_reads::track_by_id(session, track_id)).await,
+            None => None,
+        };
+        let track = match read {
+            Some(Ok(track)) => track,
+            Some(Err(error)) => return Err(self.fail(error)),
+            None => self.client(Operation::Catalog).await?.track(track_id).await.map_err(|e| self.fail(e))?,
+        };
         known::remember_recordings([&track]);
         let item = map::track_item(&track);
         known::remember([&item]);

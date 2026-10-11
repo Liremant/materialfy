@@ -16,6 +16,7 @@ use tokio::sync::{broadcast, watch};
 use mf_platform::{SettingKey, SettingValue, SettingsStore};
 
 use crate::auth::{AuthEvent, AuthService};
+use crate::data::{home_feed, route};
 use crate::extra::seeds::{self, ANY_MAX, SeedSources, station_title};
 use crate::history::HistoryService;
 use crate::library::{FeedbackKind, LibraryEvent, LibraryService};
@@ -26,6 +27,8 @@ pub const RADIO_TIMEOUT: Duration = Duration::from_secs(20);
 /// Сколько истории смотреть для сидов.
 const HISTORY_FOR_SEEDS: usize = 50;
 const LIKED_FOR_SEEDS: usize = 30;
+/// Подпись сида (сессия или запасной Web API).
+const LOOKUP_TIMEOUT: Duration = Duration::from_secs(8);
 /// Пачка событий подряд → одна пересборка сидов.
 const SEEDS_DEBOUNCE: Duration = Duration::from_millis(150);
 
@@ -233,10 +236,11 @@ impl WaveService {
         self.rebuild_seeds();
         if known.is_none() {
             let auth = self.auth.clone();
+            let player = self.player.clone();
             let seed = seed.to_owned();
             let me = self.weak();
             self.rt.spawn(async move {
-                let Some(found) = lookup(&auth, &seed).await else { return };
+                let Some(found) = lookup(&auth, &player, &seed).await else { return };
                 let Some(me) = me.upgrade() else { return };
                 let mut any = lock(&me.any);
                 if let Some(slot) = any.iter_mut().find(|s| s.uri == seed) {
@@ -355,7 +359,7 @@ impl WaveService {
             let name = async {
                 match &label_title {
                     Some(t) => Some(t.clone()),
-                    None => lookup(&me.auth, &seed).await.map(|s| station_title(&s.label)),
+                    None => lookup(&me.auth, &me.player, &seed).await.map(|s| station_title(&s.label)),
                 }
             };
             let (result, name) = tokio::join!(resolve, name);
@@ -531,10 +535,30 @@ async fn resolve(player: &PlayerHandle, station: &str) -> Result<Vec<TrackItem>,
     }
 }
 
-/// Подпись и обложка сида с Web API (для «любого трека» из поиска/меню).
-async fn lookup(auth: &AuthService, seed: &str) -> Option<RadioSeed> {
+/// Подпись и обложка сида (для «любого трека» из поиска/меню): через сессию (подписи GraphQL, без квоты
+/// Web API), без неё — Web API с таймаутом (подпись не должна держать станцию).
+async fn lookup(auth: &AuthService, player: &PlayerHandle, seed: &str) -> Option<RadioSeed> {
     let api = auth.api();
     let id = uri_id(seed)?.to_owned();
+    let kind = uri_kind(seed)?;
+    if let Some(session) = route::account_session(&api, player) {
+        let (http, uris) = (api.http(), [seed.to_owned()]);
+        let read = home_feed::lookup(&http, &session, &uris);
+        match tokio::time::timeout(LOOKUP_TIMEOUT, read).await {
+            Ok(Ok(cards)) => {
+                if let Some(card) = cards.into_iter().find(|c| c.uri == seed && !c.title.is_empty()) {
+                    return Some(RadioSeed { uri: seed.to_owned(), label: card.title, cover: card.cover, kind: kind.to_owned() });
+                }
+            }
+            Ok(Err(error)) => tracing::debug!("подпись сида через сессию: {error:#}"),
+            Err(_) => tracing::debug!("подпись сида через сессию: таймаут"),
+        }
+    }
+    tokio::time::timeout(LOOKUP_TIMEOUT, web_lookup(&api, seed, &id)).await.ok().flatten()
+}
+
+async fn web_lookup(api: &sf_api::ApiGateway, seed: &str, id: &str) -> Option<RadioSeed> {
+    let id = id.to_owned();
     let make = |label: String, cover: String, kind: &str| RadioSeed { uri: seed.to_owned(), label, cover, kind: kind.to_owned() };
     let found = match uri_kind(seed)? {
         "track" => {

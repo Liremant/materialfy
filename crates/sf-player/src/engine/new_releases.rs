@@ -2,15 +2,14 @@
 //! Web API тут только запасной путь: общий ключ упирается в 429, а нужное есть у клиентов Spotify.
 //!
 //! «Радар» (Release Radar): с ноября 2024 Web API не отдаёт приложениям в режиме разработки алгоритмические
-//! плейлисты Spotify (404), а id у каждого аккаунта свой. Клиенты Spotify берут его из категории browse
-//! «Made For You» своим токеном — тот же токен (login5, клиент Spotify) есть у сессии. Сам плейлист потом
-//! читается через spclient, как любой другой (session_reads).
+//! плейлисты Spotify (404), а id у каждого аккаунта свой. Здесь он ищется на главной мобильного клиента
+//! (spclient homeview); страницу «Для тебя» (GraphQL) спрашивает sf-services. Сам плейлист потом читается
+//! через spclient, как любой другой (session_reads).
 //!
 //! Подписки — набор «artist» коллекции (spclient /collection/v2/paging, protobuf collection2v2: librespot его
 //! не собирает, поля PageRequest/PageResponse пишутся и читаются здесь вручную). Релизы — запись исполнителя
 //! (альбомы и синглы, без дат) и пачки ALBUM_V4 extended-metadata с датами, как в session_reads::artist.
 use std::collections::HashMap;
-use std::time::Duration;
 
 use librespot_core::{Session, SpotifyUri, spotify_id::SpotifyId};
 use librespot_metadata::Album as SessionAlbum;
@@ -28,11 +27,7 @@ pub const CATEGORY_LIMIT: u32 = 50;
 /// Релизов в одном пакетном запросе extended-metadata.
 pub const RELEASE_BATCH: usize = 50;
 
-const WEB_API: &str = "https://api.spotify.com/v1";
 const IMAGE_HOST: &str = "https://i.scdn.co/image/";
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(20);
-/// Дольше Retry-After не ждём: «Радар» — не повод держать страницу; спросим при следующем обновлении.
-const MAX_RETRY_AFTER: Duration = Duration::from_secs(10);
 /// Релизов группы, которые вообще читаем (как session_reads: записи перечисляют их не по дате).
 const RELEASES_PER_GROUP: usize = 200;
 const COLLECTION_PAGE: i32 = 300;
@@ -162,90 +157,13 @@ pub fn parse_category(bytes: &[u8]) -> anyhow::Result<Vec<Playlist>> {
     Ok(items.into_iter().filter(|p| !p.id.is_empty()).collect())
 }
 
-/// Сколько ждать по ответу 429: Retry-After в секундах, без него — секунда.
-fn retry_after(headers: &reqwest::header::HeaderMap) -> Duration {
-    headers
-        .get(reqwest::header::RETRY_AFTER)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.trim().parse::<u64>().ok())
-        .map_or(Duration::from_secs(1), Duration::from_secs)
-}
-
-/// Личные плейлисты «Made For You» токеном сессии. `http` — общий клиент приложения (тот же прокси).
-pub async fn made_for_you(
-    session: &Session,
-    http: &reqwest::Client,
-) -> anyhow::Result<Vec<Playlist>> {
-    let url = format!("{WEB_API}/browse/categories/{MADE_FOR_YOU_CATEGORY}/playlists");
-    let country = session.country();
-    let mut query = vec![
-        ("limit", CATEGORY_LIMIT.to_string()),
-        ("offset", "0".to_owned()),
-    ];
-    if !country.is_empty() {
-        query.push(("country", country));
-    }
-    let mut attempt = 0;
-    loop {
-        attempt += 1;
-        let token = session.login5().auth_token().await?;
-        let response = http
-            .get(&url)
-            .query(&query)
-            .header(
-                reqwest::header::AUTHORIZATION,
-                format!("{} {}", token.token_type, token.access_token),
-            )
-            .timeout(REQUEST_TIMEOUT)
-            .send()
-            .await?;
-        let status = response.status();
-        if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-            let wait = retry_after(response.headers());
-            anyhow::ensure!(
-                attempt == 1 && wait <= MAX_RETRY_AFTER,
-                "Spotify ограничивает запросы (Retry-After {wait:?})"
-            );
-            tokio::time::sleep(wait).await;
-            continue;
-        }
-        if status.is_server_error() && attempt == 1 {
-            tokio::time::sleep(Duration::from_millis(800)).await;
-            continue;
-        }
-        anyhow::ensure!(
-            status.is_success(),
-            "категория «Made For You»: HTTP {status}"
-        );
-        let bytes = response.bytes().await?;
-        return parse_category(&bytes);
-    }
-}
-
-/// Личный «Радар новинок» аккаунта сессии: главная Spotify (spclient, без квоты Web API), потом категория
-/// «Made For You» (токен клиента Spotify на api.spotify.com нередко получает 429 QUOTA_EXCEEDED на сутки).
-/// Ok(None) — сессия ответила, а «Радара» нет (новый аккаунт, мало прослушиваний, или его нет на главной).
-pub async fn release_radar(
-    session: &Session,
-    http: &reqwest::Client,
-) -> anyhow::Result<Option<Playlist>> {
-    let home = home_playlists(session).await;
-    if let Ok(home) = &home
-        && let Some(radar) = pick_release_radar(home)
-    {
-        return Ok(Some(radar.clone()));
-    }
-    match made_for_you(session, http).await {
-        Ok(playlists) => Ok(pick_release_radar(&playlists).cloned()),
-        Err(error) if home.is_ok() => {
-            tracing::debug!("категория «Made For You» через сессию: {error:#}");
-            Ok(None)
-        }
-        Err(error) => Err(error.context(format!(
-            "главная Spotify: {:#}",
-            home.err().unwrap_or_else(|| anyhow::anyhow!("?"))
-        ))),
-    }
+/// Личный «Радар новинок» аккаунта сессии с главной мобильного клиента Spotify (spclient homeview, без квоты
+/// Web API). Ok(None) — главная ответила, а «Радара» на ней нет. Страницу «Для тебя» (GraphQL browsePage)
+/// спрашивает sf-services (data/home_feed); категория api.spotify.com токеном сессии больше не нужна — она
+/// тратила квоту Web API клиента Spotify и часто отвечала 429 QUOTA_EXCEEDED.
+pub async fn release_radar(session: &Session) -> anyhow::Result<Option<Playlist>> {
+    let home = home_playlists(session).await?;
+    Ok(pick_release_radar(&home).cloned())
 }
 
 // --- подписки (collection2v2) ------------------------------------------------------------------------
@@ -700,14 +618,6 @@ mod tests {
             .collect();
         assert!(pick_release_radar(&without).is_none());
         assert!(parse_home(b"[]").unwrap().is_empty());
-    }
-
-    #[test]
-    fn retry_after_is_read_in_seconds() {
-        let mut headers = reqwest::header::HeaderMap::new();
-        assert_eq!(retry_after(&headers), Duration::from_secs(1));
-        headers.insert(reqwest::header::RETRY_AFTER, "7".parse().unwrap());
-        assert_eq!(retry_after(&headers), Duration::from_secs(7));
     }
 
     #[test]

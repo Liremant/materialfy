@@ -1,6 +1,8 @@
 //! История прослушиваний (исполнитель «services-core»): локальная (librespot-воспроизведение Spotify не
 //! записывает; засчёт после 30 с или половины трека, ≤ 500 записей, mf_platform::dirs::history_file()) +
-//! /me/player/recently-played, слияние (data::journal::merged). Перенос spotifast/src/history.rs.
+//! недавнее Spotify, слияние (data::journal::merged). Перенос spotifast/src/history.rs.
+//! Недавнее Spotify — через сессию librespot (spclient recently-played + подписи GraphQL, data::home_feed);
+//! /me/player/recently-played Web API — только без сессии или при её сбое, с таймаутом.
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, Weak};
@@ -13,11 +15,16 @@ use tokio::sync::broadcast;
 
 use crate::auth::{AuthEvent, AuthService};
 use crate::data::journal::{self, Journal};
-use crate::data::known;
+use crate::data::{home_feed, known, route};
+use crate::extra::feed;
 use crate::lock;
 
 /// Сколько записей Spotify держать в памяти.
 const REMOTE_KEPT: usize = 200;
+/// Недавних контекстов у сессии (столько же, сколько у веб-плеера).
+const SESSION_RECENT: u32 = 50;
+/// Чтение недавнего через сессию и запасной Web API.
+const READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 
 /// Одно прослушивание.
 #[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -40,6 +47,12 @@ struct State {
     remote: Vec<PlayRecord>,
     /// поздний ответ Web API после выхода отбрасывается
     generation: u64,
+    /// чтение в полёте: повторные refresh (вход, главная) его не дублируют
+    loading: bool,
+    /// последнее чтение удалось через сессию (иначе, когда она встанет, прочитать ещё раз)
+    via_session: bool,
+    /// сессия встала во время чтения без неё — по его окончании прочитать ещё раз
+    session_pending: bool,
 }
 
 pub struct HistoryService {
@@ -112,12 +125,19 @@ impl HistoryService {
                         let Some(service) = me.upgrade() else { return };
                         service.refresh();
                     }
+                    Ok(AuthEvent::PlaybackReady(_)) => {
+                        let Some(service) = me.upgrade() else { return };
+                        service.session_ready();
+                    }
                     Ok(AuthEvent::SignedOut) => {
                         let Some(service) = me.upgrade() else { return };
                         {
                             let mut state = lock(&service.state);
                             state.generation += 1;
                             state.remote.clear();
+                            state.loading = false;
+                            state.via_session = false;
+                            state.session_pending = false;
                         }
                         let _ = service.events.send(HistoryEvent::Changed);
                     }
@@ -186,51 +206,125 @@ impl HistoryService {
         times
     }
 
-    /// Догрузить с Web API (до 50).
+    /// Сессия встала: чтение без неё повторить через неё; идущее — по его окончании.
+    fn session_ready(&self) {
+        let again = {
+            let mut state = lock(&self.state);
+            if state.via_session {
+                false
+            } else if state.loading {
+                state.session_pending = true;
+                false
+            } else {
+                true
+            }
+        };
+        if again {
+            self.refresh();
+        }
+    }
+
+    /// Недавнее Spotify (до 50): через сессию, без неё — Web API фоном. Идущее чтение не дублируется.
     pub fn refresh(&self) {
+        let generation = {
+            let mut state = lock(&self.state);
+            if state.loading {
+                return;
+            }
+            state.loading = true;
+            state.session_pending = false;
+            state.generation
+        };
         let me = self.me.clone();
-        let generation = lock(&self.state).generation;
         self.rt.spawn(async move {
             let Some(service) = me.upgrade() else { return };
-            let api = service.auth.api();
-            let result = async { api.client_for(Operation::UserData).await?.recently_played(50, None, None).await }.await;
-            let page = match result {
-                Ok(page) => page,
-                Err(error) => {
-                    service.auth.note_api_error(&error);
-                    tracing::debug!("история Spotify не загрузилась: {error:#}");
-                    return;
-                }
-            };
-            known::remember_recordings(page.items.iter().map(|play| &play.track));
-            let records: Vec<PlayRecord> = page
-                .items
-                .iter()
-                .map(|play| PlayRecord {
-                    track: sf_api::map::track_item(&play.track),
-                    context: play
-                        .context
-                        .as_ref()
-                        .filter(|context| !context.uri.is_empty())
-                        .map(|context| PlayContext::with_uri(context_kind(&context.kind), context.uri.clone()))
-                        .unwrap_or_else(|| PlayContext::new(contexts::TRACKS)),
-                    played_at: play.played_at.clone().unwrap_or_default(),
-                })
-                .collect();
-            known::remember(records.iter().map(|record| &record.track));
-            let added = {
+            let via_session = sf_api::limits::background(service.read_recent(generation)).await;
+            let again = {
                 let mut state = lock(&service.state);
                 if state.generation != generation {
                     return;
                 }
-                let added = journal::absorb_remote(&mut state.remote, records);
-                state.remote.truncate(REMOTE_KEPT);
-                added
+                state.loading = false;
+                if let Some(via_session) = via_session {
+                    state.via_session = via_session;
+                }
+                std::mem::take(&mut state.session_pending) && !state.via_session
             };
-            if added > 0 {
-                let _ = service.events.send(HistoryEvent::Changed);
+            if again && route::account_session(&service.auth.api(), &service.player).is_some() {
+                service.refresh();
             }
         });
+    }
+
+    /// Одно чтение недавнего; Some(через сессию ли) — прочитано.
+    async fn read_recent(&self, generation: u64) -> Option<bool> {
+        let api = self.auth.api();
+        // сессия ответила (в том числе «истории нет») — Web API не спрашиваем
+        let from_session = match route::account_session(&api, &self.player) {
+            Some(session) => {
+                let http = api.http();
+                let read = session_recent(&http, &session);
+                match tokio::time::timeout(READ_TIMEOUT, read).await {
+                    Ok(Ok(records)) => Some(records),
+                    Ok(Err(error)) => {
+                        tracing::debug!("недавнее через сессию: {error:#}; спрашиваю Web API");
+                        None
+                    }
+                    Err(_) => None,
+                }
+            }
+            None => None,
+        };
+        let via_session = from_session.is_some();
+        let records = match from_session {
+            Some(records) => records,
+            None => {
+                let read = async { api.client_for(Operation::UserData).await?.recently_played(50, None, None).await };
+                let page = match tokio::time::timeout(READ_TIMEOUT, read).await {
+                    Ok(Ok(page)) => page,
+                    Ok(Err(error)) => {
+                        self.auth.note_api_error(&error);
+                        tracing::debug!("история Spotify не загрузилась: {error:#}");
+                        return None;
+                    }
+                    Err(_) => {
+                        tracing::debug!("история Spotify: Web API долго не отвечает");
+                        return None;
+                    }
+                };
+                known::remember_recordings(page.items.iter().map(|play| &play.track));
+                let records: Vec<PlayRecord> = page
+                    .items
+                    .iter()
+                    .map(|play| PlayRecord {
+                        track: sf_api::map::track_item(&play.track),
+                        context: play
+                            .context
+                            .as_ref()
+                            .filter(|context| !context.uri.is_empty())
+                            .map(|context| PlayContext::with_uri(context_kind(&context.kind), context.uri.clone()))
+                            .unwrap_or_else(|| PlayContext::new(contexts::TRACKS)),
+                        played_at: play.played_at.clone().unwrap_or_default(),
+                    })
+                    .collect();
+                // у недавнего сессии треки неполные — в реестр только ответ Web API
+                known::remember(records.iter().map(|record| &record.track));
+                records
+            }
+        };
+        let added = {
+            let mut state = lock(&self.state);
+            if state.generation != generation {
+                return None;
+            }
+            let added = journal::absorb_remote(&mut state.remote, records);
+            state.remote.truncate(REMOTE_KEPT);
+            added
+        };
+        if added > 0 {
+            let _ = self.events.send(HistoryEvent::Changed);
+        }
+        Some(via_session)
     }
 
     pub fn clear(&self) {
@@ -251,4 +345,25 @@ impl HistoryService {
     pub fn flush(&self) {
         lock(&self.state).journal.save(&self.path);
     }
+}
+
+/// Недавние контексты аккаунта сессии с подписями и обложками (lookup GraphQL; без подписей — только URI).
+async fn session_recent(http: &sf_api::Http, session: &sf_player::Session) -> anyhow::Result<Vec<PlayRecord>> {
+    let recent = home_feed::recently_played(session, SESSION_RECENT).await?;
+    if recent.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut uris: Vec<String> = Vec::new();
+    for context in &recent {
+        for uri in [&context.uri, &context.last_track_uri] {
+            if !uri.is_empty() && !uris.contains(uri) {
+                uris.push(uri.clone());
+            }
+        }
+    }
+    let cards = home_feed::lookup(http, session, &uris).await.unwrap_or_else(|error| {
+        tracing::debug!("подписи недавнего: {error:#}");
+        Vec::new()
+    });
+    Ok(feed::recent_records(&recent, &cards))
 }

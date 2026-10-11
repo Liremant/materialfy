@@ -73,6 +73,8 @@ pub mod qobject {
         #[qproperty(bool, engine_restart_pending, cxx_name = "engineRestartPending", READ, NOTIFY = engine_restart_pending_changed)]
         #[qproperty(QString, proxy_state, cxx_name = "proxyState", READ, NOTIFY = proxy_state_changed)]
         #[qproperty(QString, proxy_error, cxx_name = "proxyError", READ, NOTIFY = proxy_state_changed)]
+        /// «Web API ограничен…» (429/QUOTA_EXCEEDED); пусто — ограничений нет.
+        #[qproperty(QString, web_api_limit, cxx_name = "webApiLimit", READ, NOTIFY = web_api_limit_changed)]
         #[qproperty(bool, system_reduced_motion, cxx_name = "systemReducedMotion", READ, CONSTANT)]
         /// тема панели задач для значка трея: "dark", "light" или "" (неизвестно — QML смотрит на тему Qt)
         #[qproperty(QString, system_taskbar_theme, cxx_name = "systemTaskbarTheme", READ, CONSTANT)]
@@ -265,6 +267,9 @@ pub mod qobject {
         #[qsignal]
         #[cxx_name = "proxyStateChanged"]
         fn proxy_state_changed(self: Pin<&mut Settings>);
+        #[qsignal]
+        #[cxx_name = "webApiLimitChanged"]
+        fn web_api_limit_changed(self: Pin<&mut Settings>);
 
         /// Перечитать устройства вывода (sf_player::output_devices в spawn_blocking).
         #[qinvokable]
@@ -358,6 +363,7 @@ macro_rules! settings {
             engine_restart_pending: bool,
             proxy_state: QString,
             proxy_error: QString,
+            web_api_limit: QString,
             system_reduced_motion: bool,
             system_taskbar_theme: QString,
         }
@@ -373,6 +379,7 @@ macro_rules! settings {
                     engine_restart_pending: false,
                     proxy_state: QString::default(),
                     proxy_error: QString::default(),
+                    web_api_limit: QString::default(),
                     system_reduced_motion: mf_platform::system::reduced_motion(),
                     system_taskbar_theme: QString::from(match mf_platform::system::taskbar_dark() {
                         Some(true) => "dark",
@@ -569,6 +576,15 @@ impl qobject::Settings {
         }
     }
 
+    /// Охлаждение Web API после 429/квоты (sf_api::limits) — строка в «Аккаунте».
+    fn on_web_api_limits(mut self: Pin<&mut Self>, limits: sf_api::WebApiLimits) {
+        let text = QString::from(limits.user_text().as_str());
+        if self.web_api_limit != text {
+            self.as_mut().rust_mut().web_api_limit = text;
+            self.as_mut().web_api_limit_changed();
+        }
+    }
+
     fn on_store(mut self: Pin<&mut Self>, delivery: Delivery<SettingKey>) {
         match delivery {
             Delivery::Event(key) => self.reload(key),
@@ -605,5 +621,8 @@ impl cxx_qt::Initialize for qobject::Settings {
         let auth = ctx().services.auth.watch();
         self.as_mut().on_auth(auth.borrow().clone());
         forward_watch(self.qt_thread(), auth, Self::on_auth);
+        let limits = ctx().services.auth.api().web_api_limits();
+        self.as_mut().on_web_api_limits(limits.borrow().clone());
+        forward_watch(self.qt_thread(), limits, Self::on_web_api_limits);
     }
 }
