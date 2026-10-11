@@ -40,14 +40,14 @@ fn playing(core: &mut Core, uri: &str) {
 }
 
 fn loaded_queue(core: &mut Core, current: &str, next: &[&str]) {
-    let fetched = FetchedQueue { current: Some(song(current)), next: next.iter().map(|uri| song(uri)).collect() };
+    let fetched = FetchedQueue { current: Some(song(current)), next: next.iter().map(|uri| song(uri)).collect(), context: None };
     let current = fetched.current.clone().map(|track| QItem { uid: 1000, track });
     let next = fetched.next.iter().enumerate().map(|(i, track)| QItem { uid: 1001 + i as u64, track: track.clone() });
     core.queue = Some(QueueData { current, next: next.collect() });
 }
 
 fn fetched(current: &str, next: &[&str]) -> FetchedQueue {
-    FetchedQueue { current: Some(song(current)), next: next.iter().map(|uri| song(uri)).collect() }
+    FetchedQueue { current: Some(song(current)), next: next.iter().map(|uri| song(uri)).collect(), context: None }
 }
 
 fn queue_uris(core: &Core) -> (Option<String>, Vec<String>) {
@@ -1872,6 +1872,30 @@ fn an_album_started_without_a_title_is_named_after_the_playing_track() {
 }
 
 #[test]
+fn a_context_named_with_the_queue_titles_the_playing_card() {
+    let mut core = headless();
+    core.local.connected = true;
+    // плитка «Слушать»: только URI, а данных играющего трека ещё нет
+    core.play_context(PlayContext::with_uri("album", "spotify:album:al"), None, None);
+    playing(&mut core, "spotify:track:a");
+    assert_eq!(core.shown_context().title, "");
+    core.refresh_queue(true);
+    let mut answer = fetched("spotify:track:a", &["spotify:track:b"]);
+    answer.context = Some(PlayContext::with_uri("album", "spotify:album:al").titled("Discovery").with_cover("d.jpg"));
+    answer_latest(&mut core, Ok(answer));
+    let context = core.shown_context();
+    assert_eq!((context.title.as_str(), context.cover.as_str()), ("Discovery", "d.jpg"));
+    // подпись вызывающего не перекрывается
+    let mine = PlayContext::with_uri("playlist", "spotify:playlist:p").titled("Mine").with_cover("m.jpg");
+    core.play_context(mine.clone(), None, None);
+    core.refresh_queue(true);
+    let mut answer = fetched("spotify:track:a", &[]);
+    answer.context = Some(PlayContext::with_uri("playlist", "spotify:playlist:p").titled("Theirs"));
+    answer_latest(&mut core, Ok(answer));
+    assert_eq!(core.shown_context(), mine);
+}
+
+#[test]
 fn a_context_known_only_by_uri_is_named_by_its_kind() {
     let mut core = headless();
     core.local_ready = false;
@@ -2068,7 +2092,7 @@ mod actor {
             let (events, receiver_events) = broadcast::channel(1024);
             let web = Arc::new(FakeWeb::default());
             *web.queue.lock().unwrap() =
-                Some(FetchedQueue { current: Some(song("spotify:track:a")), next: vec![song("spotify:track:ctx")] });
+                Some(FetchedQueue { current: Some(song("spotify:track:a")), next: vec![song("spotify:track:ctx")], context: None });
             let actor =
                 Actor::new(
                     Core::new(0.5, false),

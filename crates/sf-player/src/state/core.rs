@@ -187,6 +187,8 @@ impl RemoteState {
 pub struct FetchedQueue {
     pub current: Option<TrackItem>,
     pub next: Vec<TrackItem>,
+    /// играющий контекст с названием, если источник его знает (карточка «Играет из …»)
+    pub context: Option<PlayContext>,
 }
 
 impl FetchedQueue {
@@ -194,6 +196,7 @@ impl FetchedQueue {
         Self {
             current: queue.currently_playing.as_ref().map(map::playable),
             next: queue.queue.iter().map(map::playable).collect(),
+            context: None,
         }
     }
 }
@@ -1639,7 +1642,10 @@ impl Core {
         self.queue_stale_retries = 0;
         self.queue_loading = false;
         match result {
-            Ok(fetched) => {
+            Ok(mut fetched) => {
+                if let Some(context) = fetched.context.take() {
+                    self.learn_context(context);
+                }
                 self.queue_cleared = None;
                 self.queue_shuffle_pending = None;
                 self.queue_reorder_pending = None;
@@ -2140,6 +2146,29 @@ impl Core {
             self.known_contexts.insert(uri, context.clone());
         }
         self.context_info = context;
+    }
+
+    /// Название контекста, узнанное вместе с очередью: дополняет известное, не перекрывая подпись вызывающего.
+    pub(crate) fn learn_context(&mut self, context: PlayContext) {
+        let Some(uri) = context.context_uri.clone().filter(|uri| !uri.is_empty()) else {
+            return;
+        };
+        if context.title.is_empty() {
+            return;
+        }
+        if let Some(known) = self.known_contexts.get_mut(&uri) {
+            if known.title.is_empty() {
+                known.title = context.title;
+            }
+            if known.cover.is_empty() {
+                known.cover = context.cover;
+            }
+            return;
+        }
+        if self.known_contexts.len() >= KNOWN_CONTEXTS {
+            self.known_contexts.clear();
+        }
+        self.known_contexts.insert(uri, context);
     }
 
     /// Список треков из модели QML начиная с `row`.

@@ -966,6 +966,68 @@ pub async fn track_by_id(session: &Session, id: &str) -> Result<Track, Failure> 
     }
 }
 
+// --- контекст ---
+
+/// The name and images of what plays, for the "Playing from" card: an
+/// album, playlist, artist or show by its own record, and a radio station
+/// (`spotify:station:<kind>:<id>`) by its seed. `None` for anything else,
+/// such as Liked Songs, which the app names itself.
+pub(crate) async fn context_name(
+    session: &Session,
+    uri: &str,
+) -> Result<Option<(String, Vec<Image>)>, Failure> {
+    let parts: Vec<&str> = uri.split(':').collect();
+    let (kind, id) = match parts.as_slice() {
+        ["spotify", "station", kind, id] => (*kind, *id),
+        ["spotify", kind, id] => (*kind, *id),
+        ["spotify", "user", _, "playlist", id] => ("playlist", *id),
+        _ => return Ok(None),
+    };
+    let named = match kind {
+        "album" => {
+            let uri = SpotifyId::from_base62(id)
+                .map(|id| SpotifyUri::Album { id })
+                .map_err(|_| invalid_id())?;
+            let bytes = session.spclient().get_album_metadata(&uri).await?;
+            let message = librespot_protocol::metadata::Album::parse_from_bytes(&bytes)
+                .map_err(|error| Failure::Retry(error.into()))?;
+            release(&message, "album").map(|album| (album.name, album.images))
+        }
+        "playlist" => {
+            let list = window(session, id, 0, 0).await?;
+            Some((
+                list.attributes.name.clone(),
+                playlist_images(&list.attributes),
+            ))
+        }
+        "artist" => {
+            let uri = SpotifyId::from_base62(id)
+                .map(|id| SpotifyUri::Artist { id })
+                .map_err(|_| invalid_id())?;
+            let bytes = session.spclient().get_artist_metadata(&uri).await?;
+            let message = librespot_protocol::metadata::Artist::parse_from_bytes(&bytes)
+                .map_err(|error| Failure::Retry(error.into()))?;
+            let artist = web_artist(&SessionArtist::try_from(&message)?);
+            Some((artist.name, artist.images))
+        }
+        "show" => {
+            use librespot_metadata::Metadata as _;
+            let uri = SpotifyId::from_base62(id)
+                .map(|id| SpotifyUri::Show { id })
+                .map_err(|_| invalid_id())?;
+            let show = librespot_metadata::Show::get(session, &uri).await?;
+            Some((show.name, images(&show.covers)))
+        }
+        "track" if parts.get(1) == Some(&"station") => {
+            let track = track_by_id(session, id).await?;
+            let covers = track.album.map(|album| album.images).unwrap_or_default();
+            Some((track.name, covers))
+        }
+        _ => None,
+    };
+    Ok(named.filter(|(name, _)| !name.is_empty()))
+}
+
 #[cfg(test)]
 mod tests {
     use librespot_metadata::Metadata as _;

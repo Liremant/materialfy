@@ -555,6 +555,15 @@ impl Engine {
         &self.device_id
     }
 
+    /// The local Connect player's state (track, context, next tracks,
+    /// options) as Spirc last published it; `None` while this device is not
+    /// the active one. Every change wakes the receiver.
+    pub fn playback_state(
+        &self,
+    ) -> tokio::sync::watch::Receiver<Option<Arc<librespot_protocol::player::PlayerState>>> {
+        self.spirc.playback_state()
+    }
+
     /// What this engine is heard at, kept past the engine itself: the next
     /// engine starts there.
     pub fn heard(&self) -> Heard {
