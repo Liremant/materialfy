@@ -1,5 +1,6 @@
 # Release on a v* tag: the same builds as build.yml, published as a GitHub Release.
-# The app has no self-updater - users download new versions from the Releases page.
+# The app checks this repo's latest release and installs the matching asset, verified against SHA256SUMS.txt;
+# asset names must stay stable (see crates/sf-services/src/update).
 name: Release
 
 on:
