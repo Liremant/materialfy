@@ -8,7 +8,7 @@ use std::collections::{BTreeSet, HashMap};
 
 use base64::Engine as _;
 use librespot_core::{FileId, Session, SpotifyUri, error::ErrorKind, spotify_id::SpotifyId};
-use librespot_metadata::artist::Artist as SessionArtist;
+use librespot_metadata::artist::{AlbumGroups, Artist as SessionArtist};
 use librespot_metadata::image::Images;
 use librespot_metadata::playlist::attribute::PlaylistAttributes;
 use librespot_metadata::playlist::item::PlaylistItem as SessionRow;
@@ -24,7 +24,7 @@ use protobuf::{EnumOrUnknown, Message as _};
 
 use sf_api::ApiError;
 use sf_api::models::{
-    Album, ArtistRef, Episode, Image, Owner, Page, PlayableItem, Playlist, PlaylistItem, Show,
+    Album, Artist, ArtistRef, Episode, Image, Owner, Page, PlayableItem, Playlist, PlaylistItem, Show,
     Track, TrackCount, UserRef,
 };
 
@@ -167,7 +167,7 @@ pub async fn station(session: &Session, station: &str) -> anyhow::Result<Vec<Tra
         })?;
     Ok(uris
         .iter()
-        .filter_map(|uri| uri.to_uri().ok())
+        .map(|uri| uri.to_uri())
         .filter_map(|uri| match found.get(&uri) {
             Some(PlayableItem::Track(track)) => Some(track.clone()),
             _ => None,
@@ -191,7 +191,7 @@ fn station_songs(context: &librespot_protocol::context::Context) -> Vec<SpotifyU
             },
         )
         .filter(|uri| matches!(uri, SpotifyUri::Track { .. }))
-        .filter(|uri| uri.to_uri().is_ok_and(|text| seen.insert(text)))
+        .filter(|uri| seen.insert(uri.to_uri()))
         .collect()
 }
 
@@ -381,7 +381,7 @@ fn non_empty(text: &str) -> Option<String> {
 /// so its details are looked up, not taken. A local file has no details
 /// to look up; its URI carries what the Web API would have said of it.
 fn item(row: &SessionRow, playables: &HashMap<String, PlayableItem>) -> PlaylistItem {
-    let uri = row.id.to_uri().unwrap_or_default();
+    let uri = row.id.to_uri();
     PlaylistItem {
         added_at: iso8601(row.attributes.timestamp.as_timestamp_ms()),
         added_by: non_empty(&row.attributes.added_by).map(|id| UserRef { id: Some(id) }),
@@ -457,9 +457,7 @@ fn batch<'a>(
             SpotifyUri::Episode { .. } => ExtensionKind::EPISODE_V4,
             _ => continue,
         };
-        let Ok(text) = uri.to_uri() else {
-            continue;
-        };
+        let text = uri.to_uri();
         if !asked.insert(text.clone()) {
             continue;
         }
@@ -534,7 +532,7 @@ fn playable(kind: ExtensionKind, bytes: &[u8]) -> Option<PlayableItem> {
             // the row's link to the show needs.
             let show_id = SpotifyId::from_raw(message.show.gid())
                 .ok()
-                .and_then(|id| id.to_base62().ok());
+                .map(|id| id.to_base62());
             Some(PlayableItem::Episode(episode(
                 SessionEpisode::try_from(&message).ok()?,
                 show_id,
@@ -546,8 +544,8 @@ fn playable(kind: ExtensionKind, bytes: &[u8]) -> Option<PlayableItem> {
 
 fn track(track: SessionTrack) -> Track {
     Track {
-        id: track.id.to_id().ok(),
-        uri: track.id.to_uri().unwrap_or_default(),
+        id: Some(track.id.to_id()),
+        uri: track.id.to_uri(),
         name: track.name,
         duration_ms: u32::try_from(track.duration).unwrap_or_default(),
         explicit: track.is_explicit,
@@ -562,8 +560,8 @@ fn track(track: SessionTrack) -> Track {
 
 fn album(album: SessionAlbum) -> Album {
     Album {
-        id: album.id.to_id().unwrap_or_default(),
-        uri: album.id.to_uri().unwrap_or_default(),
+        id: album.id.to_id(),
+        uri: album.id.to_uri(),
         images: images(&album.covers),
         artists: album.artists.iter().map(artist_ref).collect(),
         label: non_empty(&album.label),
@@ -574,8 +572,8 @@ fn album(album: SessionAlbum) -> Album {
 
 fn episode(episode: SessionEpisode, show_id: Option<String>) -> Episode {
     Episode {
-        id: episode.id.to_id().unwrap_or_default(),
-        uri: episode.id.to_uri().unwrap_or_default(),
+        id: episode.id.to_id(),
+        uri: episode.id.to_uri(),
         name: episode.name,
         duration_ms: u32::try_from(episode.duration).unwrap_or_default(),
         description: episode.description,
@@ -594,9 +592,9 @@ fn episode(episode: SessionEpisode, show_id: Option<String>) -> Episode {
 
 fn artist_ref(artist: &SessionArtist) -> ArtistRef {
     ArtistRef {
-        id: artist.id.to_id().ok(),
+        id: Some(artist.id.to_id()),
         name: artist.name.clone(),
-        uri: artist.id.to_uri().ok(),
+        uri: Some(artist.id.to_uri()),
     }
 }
 
@@ -620,6 +618,238 @@ fn iso8601(timestamp_ms: i64) -> Option<String> {
         .ok()
         .filter(|_| timestamp_ms > 0)
         .map(|time| time.to_string())
+}
+
+// --- исполнитель ---
+
+/// Релизов в разделе страницы исполнителя — как одна страница Web API (limit=50).
+const ARTIST_RELEASES: usize = 50;
+/// Сколько релизов группы вообще читать: метаданные перечисляют их не по дате, а показать нужно новые.
+const ARTIST_RELEASES_READ: usize = 200;
+/// Релизов в одном пакетном запросе extended-metadata.
+const RELEASE_BATCH: usize = 50;
+/// Популярных треков, как у /artists/{id}/top-tracks.
+const TOP_TRACKS: usize = 10;
+
+/// An artist's page as the Web API answers its several calls: the artist,
+/// the top tracks, albums and singles, releases the artist appears on, and
+/// related artists. Spotify's own clients read all of it from one metadata
+/// record, so the page waits on no app's quota.
+#[derive(Debug, Default)]
+pub struct ArtistOverview {
+    pub artist: Artist,
+    /// /artists/{id}/top-tracks
+    pub top_tracks: Vec<Track>,
+    /// include_groups=album,single — новые сверху
+    pub albums: Vec<Album>,
+    /// include_groups=appears_on,compilation — новые сверху
+    pub appears_on: Vec<Album>,
+    /// /artists/{id}/related-artists; Spotify часто оставляет пустым
+    pub related: Vec<Artist>,
+}
+
+/// The artist's page. Only the artist's own record is required: top tracks
+/// or releases Spotify could not describe leave their section empty rather
+/// than fail the page.
+pub async fn artist(session: &Session, id: &str) -> Result<ArtistOverview, Failure> {
+    let uri = SpotifyId::from_base62(id)
+        .map(|id| SpotifyUri::Artist { id })
+        .map_err(|_| {
+            Failure::Definitive(ApiError::Status {
+                status: 400,
+                message: "Invalid base62 id".into(),
+            })
+        })?;
+    let bytes = session
+        .spclient()
+        .get_artist_metadata(&uri)
+        .await
+        .map_err(refused)?;
+    let message = librespot_protocol::metadata::Artist::parse_from_bytes(&bytes)
+        .map_err(|error| Failure::Retry(error.into()))?;
+    let record = SessionArtist::try_from(&message)?;
+
+    let top = top_track_uris(&record, &session.country());
+    let top_tracks = match metadata(session, top.iter()).await {
+        Ok(found) => top
+            .iter()
+            .filter_map(|uri| match found.get(&uri.to_uri()) {
+                Some(PlayableItem::Track(track)) => Some(track.clone()),
+                _ => None,
+            })
+            .collect(),
+        Err(error) => {
+            tracing::debug!("популярное исполнителя {id} через сессию: {error:?}");
+            Vec::new()
+        }
+    };
+    let albums = releases(
+        session,
+        &[(&record.albums, "album"), (&record.singles, "single")],
+    )
+    .await;
+    let appears_on = releases(
+        session,
+        &[
+            (&record.appears_on_albums, "appears_on"),
+            (&record.compilations, "compilation"),
+        ],
+    )
+    .await;
+    Ok(ArtistOverview {
+        artist: web_artist(&record),
+        top_tracks,
+        albums,
+        appears_on,
+        related: record.related.iter().map(web_artist).collect(),
+    })
+}
+
+/// The artist as the Web API describes one. Followers and genres are not in
+/// the record; the page shows none rather than wait on the Web API for them.
+fn web_artist(artist: &SessionArtist) -> Artist {
+    // Свежие записи кладут фото в portrait_group, старые — в portrait.
+    let portraits = if artist.portrait_group.is_empty() {
+        &artist.portraits
+    } else {
+        &artist.portrait_group
+    };
+    Artist {
+        id: artist.id.to_id(),
+        name: artist.name.clone(),
+        uri: artist.id.to_uri(),
+        images: images(portraits),
+        popularity: u8::try_from(artist.popularity.clamp(0, 100))
+            .ok()
+            .filter(|popularity| *popularity > 0),
+        ..Default::default()
+    }
+}
+
+/// The top tracks for the account's country, else the global list, else
+/// whichever list Spotify gave.
+fn top_track_uris(artist: &SessionArtist, country: &str) -> Vec<SpotifyUri> {
+    let mut tracks = artist.top_tracks.for_country(country).0;
+    if tracks.is_empty() {
+        tracks = artist
+            .top_tracks
+            .first()
+            .map(|top| top.tracks.0.clone())
+            .unwrap_or_default();
+    }
+    tracks.truncate(TOP_TRACKS);
+    tracks
+}
+
+/// The current release of each album in `groups`, with its details, as one
+/// Web API page: group by group in the order given, newest first within a
+/// group. A batch Spotify could not answer only shortens the list.
+async fn releases(session: &Session, groups: &[(&AlbumGroups, &str)]) -> Vec<Album> {
+    let mut grouped = Vec::new();
+    for (albums, group) in groups {
+        let uris: Vec<&SpotifyUri> = albums.current_releases().take(ARTIST_RELEASES_READ).collect();
+        let mut found = Vec::new();
+        for chunk in uris.chunks(RELEASE_BATCH) {
+            match release_details(session, chunk, group).await {
+                Ok(albums) => found.extend(albums),
+                Err(error) => tracing::debug!("релизы исполнителя ({group}) через сессию: {error:#}"),
+            }
+        }
+        grouped.push(found);
+    }
+    arrange(grouped)
+}
+
+/// Groups in order, each newest first, cut to one page.
+fn arrange(groups: Vec<Vec<Album>>) -> Vec<Album> {
+    let mut page = Vec::new();
+    for mut group in groups {
+        // устойчивая сортировка: релизы одного дня — в порядке Spotify
+        group.sort_by(|a, b| b.release_date.cmp(&a.release_date));
+        page.extend(group);
+    }
+    page.truncate(ARTIST_RELEASES);
+    page
+}
+
+async fn release_details(
+    session: &Session,
+    uris: &[&SpotifyUri],
+    group: &str,
+) -> anyhow::Result<Vec<Album>> {
+    let mut request = BatchedEntityRequest::new();
+    for uri in uris {
+        request.entity_request.push(EntityRequest {
+            entity_uri: uri.to_uri(),
+            query: vec![ExtensionQuery {
+                extension_kind: EnumOrUnknown::new(ExtensionKind::ALBUM_V4),
+                ..Default::default()
+            }],
+            ..Default::default()
+        });
+    }
+    let response = session.spclient().get_extended_metadata(request).await?;
+    let mut details = HashMap::new();
+    for array in response.extended_metadata {
+        let provider = array.header.provider_error_status;
+        anyhow::ensure!(
+            matches!(provider, 0 | 200),
+            "metadata provider answered {provider}"
+        );
+        if array.extension_kind.enum_value() != Ok(ExtensionKind::ALBUM_V4) {
+            continue;
+        }
+        for data in array.extension_data {
+            // релиз, которого Spotify не отдаёт (404, 451), просто пропускается
+            if !matches!(data.header.status_code, 0 | 200) {
+                continue;
+            }
+            let album = data.extension_data.as_ref().and_then(|any| {
+                let message = librespot_protocol::metadata::Album::parse_from_bytes(&any.value).ok()?;
+                release(&message, group)
+            });
+            if let Some(album) = album {
+                details.insert(data.entity_uri, album);
+            }
+        }
+    }
+    // ответ — в порядке запроса
+    Ok(uris
+        .iter()
+        .filter_map(|uri| details.remove(&uri.to_uri()))
+        .collect())
+}
+
+/// A release as /artists/{id}/albums lists it.
+fn release(message: &librespot_protocol::metadata::Album, group: &str) -> Option<Album> {
+    use librespot_protocol::metadata::album::Type;
+    let typed = SessionAlbum::try_from(message).ok()?;
+    let kind = match typed.album_type {
+        Type::SINGLE => "single",
+        Type::EP => "ep",
+        Type::COMPILATION => "compilation",
+        _ => "album",
+    };
+    let tracks: usize = typed.discs.iter().map(|disc| disc.tracks.len()).sum();
+    let mut album = album(typed);
+    album.album_type = Some(kind.to_owned());
+    album.album_group = Some(group.to_owned());
+    album.total_tracks = u32::try_from(tracks).ok().filter(|count| *count > 0);
+    album.release_date = message.date.as_ref().and_then(release_date);
+    Some(album)
+}
+
+/// The date with the precision Spotify knows it to, as the Web API writes
+/// `release_date`: "2021", "2021-11" or "2021-11-05".
+fn release_date(date: &librespot_protocol::metadata::Date) -> Option<String> {
+    if date.year() <= 0 {
+        return None;
+    }
+    Some(match (date.has_month(), date.has_day()) {
+        (true, true) => format!("{:04}-{:02}-{:02}", date.year(), date.month(), date.day()),
+        (true, false) => format!("{:04}-{:02}", date.year(), date.month()),
+        _ => format!("{:04}", date.year()),
+    })
 }
 
 #[cfg(test)]
@@ -803,7 +1033,7 @@ mod tests {
         0xef,
     ];
     fn id_of(gid: &[u8]) -> String {
-        SpotifyId::from_raw(gid).unwrap().to_base62().unwrap()
+        SpotifyId::from_raw(gid).unwrap().to_base62()
     }
 
     fn cover(file_id: u8, width: i32) -> librespot_protocol::metadata::Image {
@@ -892,7 +1122,7 @@ mod tests {
 
         let show_id = SpotifyId::from_raw(message.show.gid())
             .ok()
-            .and_then(|id| id.to_base62().ok());
+            .map(|id| id.to_base62());
         let episode = episode(SessionEpisode::try_from(&message).unwrap(), show_id);
         assert_eq!(episode.uri, format!("spotify:episode:{}", id_of(&GID)));
         assert_eq!(episode.name, "Episode 1");
@@ -1316,7 +1546,7 @@ mod tests {
         };
         let uris: Vec<String> = station_songs(&context)
             .iter()
-            .map(|uri| uri.to_uri().unwrap())
+            .map(|uri| uri.to_uri())
             .collect();
         assert_eq!(
             uris,

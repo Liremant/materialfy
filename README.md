@@ -352,7 +352,7 @@ Materialfy основан на двух проектах под лицензие
   компонентов Material 3 Expressive, оболочка на cxx-qt, тема из обложки, тексты песен, платформенные службы,
   скрипты сборки (`src/materialfy/qml`, `crates/materialfy`, `crates/mf-*`).
 
-Сторонние компоненты: [librespot](https://github.com/librespot-org/librespot) (MIT, форк crmne),
+Сторонние компоненты: [librespot](https://github.com/librespot-org/librespot) (MIT, свой форк [fatyzzz/librespot](https://github.com/fatyzzz/librespot) с патчами crmne),
 [fastframe](https://github.com/dennisgr7/fastframe) (MIT, вывод звука и медиаклавиши),
 [cxx-qt](https://github.com/KDAB/cxx-qt) (MIT или Apache-2.0), [Qt 6](https://www.qt.io) (LGPL-3.0, подключается
 динамически), шрифт Google Sans (SIL Open Font License 1.1) и иконки Material Symbols Rounded (Apache License 2.0).
