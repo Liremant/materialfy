@@ -1,21 +1,23 @@
 #!/usr/bin/env bash
-# Упаковка macOS (best effort): Materialfy.app + .dmg через macdeployqt.
+# macOS packaging: Materialfy.app + .dmg via macdeployqt.
 #
 #   QMAKE=~/Qt/6.12.0/macos/bin/qmake6 .github/scripts/package_macos.sh 0.1.0
 #
-# Contents/MacOS: materialfy, qml/, assets/ (оболочка ищет <exe>/qml). Звук — librespot/cpal (CoreAudio)
-# внутри exe, внешних библиотек плеера нет. Значок .icns собирается из materialfy.png (512 px).
+# Contents/MacOS: materialfy, qml/, assets/ (the shell looks for <exe>/qml). Audio is librespot/cpal
+# (CoreAudio) inside the executable, there are no external player libraries. The .icns icon is built
+# from materialfy.png (512 px). The dmg name carries the architecture of the built executable.
 set -euo pipefail
 
-VERSION="${1:?версия}"
+VERSION="${1:?usage: package_macos.sh VERSION}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 EXE="${MATERIALFY_EXE:-$ROOT/target/release/materialfy}"
 OUT="$ROOT/target/dist"
 APP="$OUT/Materialfy.app"
-: "${QMAKE:?нужен QMAKE (путь к qmake6 из Qt 6.12)}"
+: "${QMAKE:?QMAKE must point to qmake6 from Qt 6.12}"
 QTBIN="$("$QMAKE" -query QT_INSTALL_BINS)"
+ARCH="${MATERIALFY_ARCH:-$(uname -m)}"
 
-[ -x "$EXE" ] || { echo "нет $EXE" >&2; exit 1; }
+[ -x "$EXE" ] || { echo "$EXE not found" >&2; exit 1; }
 rm -rf "$APP" "$OUT"/Materialfy*.dmg
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
@@ -27,7 +29,7 @@ cp -R "$ROOT/src/materialfy/assets/fonts" "$APP/Contents/MacOS/assets/fonts"
 find "$ROOT/src/materialfy/assets" -maxdepth 1 -type f \( -name '*.svg' -o -name '*.png' \) \
     -exec cp {} "$APP/Contents/MacOS/assets/" \;
 
-# .icns из PNG-набора логотипа (sips + iconutil есть в любой macOS)
+# .icns from a PNG set of the logo (sips and iconutil ship with every macOS)
 ICONSET="$OUT/materialfy.iconset"
 rm -rf "$ICONSET" && mkdir -p "$ICONSET"
 SRC_PNG="$ROOT/materialfy.png"
@@ -52,20 +54,27 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>$VERSION</string>
-  <key>CFBundleDevelopmentRegion</key><string>ru</string>
+  <key>CFBundleDevelopmentRegion</key><string>en</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSPrincipalClass</key><string>NSApplication</string>
-  <key>NSLocalNetworkUsageDescription</key><string>Spotify Connect: поиск устройств в локальной сети.</string>
+  <key>NSLocalNetworkUsageDescription</key><string>Spotify Connect: discovering devices on the local network.</string>
   <key>NSBonjourServices</key><array><string>_spotify-connect._tcp</string></array>
 </dict>
 </plist>
 PLIST
 
 "$QTBIN/macdeployqt" "$APP" -qmldir="$ROOT/src/materialfy/qml" -always-overwrite
-# macdeployqt правит бинарники — подпись ad hoc, иначе arm64 не запустит
+# macdeployqt rewrites the binaries - ad hoc signature, otherwise arm64 refuses to launch it
 codesign --force --deep --sign - "$APP"
 
-DMG="$OUT/Materialfy-$VERSION-macos-$(uname -m).dmg"
-hdiutil create -volname "Materialfy" -srcfolder "$APP" -ov -format UDZO "$DMG"
+DMG="$OUT/Materialfy-$VERSION-macos-$ARCH.dmg"
+# hdiutil occasionally fails with "Resource busy" on CI runners - retry a few times
+for i in 1 2 3 4 5; do
+    if hdiutil create -volname "Materialfy" -srcfolder "$APP" -ov -format UDZO "$DMG"; then
+        break
+    fi
+    [ "$i" -eq 5 ] && { echo "hdiutil failed" >&2; exit 1; }
+    sleep $((i * 5))
+done
 echo "dmg: $DMG"
