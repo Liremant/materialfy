@@ -107,12 +107,15 @@ Item {
             Layout.preferredWidth: root.size
             spacing: 4
             Label {
-                Layout.fillWidth: implicitWidth > width
-                Layout.maximumWidth: implicitWidth
+                id: titleLabel
+                // не шире плитки (минус плашка «E»): длинное название не залезает на соседнюю, а затухает
+                Layout.preferredWidth: Math.min(naturalWidth, root.size - (root.explicit ? 20 : 0))
+                Layout.maximumWidth: Layout.preferredWidth
                 Layout.alignment: root.round ? Qt.AlignHCenter : Qt.AlignLeft
                 text: root.title
                 type: "titleSmall"
-                horizontalAlignment: root.round ? Text.AlignHCenter : Text.AlignLeft
+                fade: true
+                horizontalAlignment: root.round && !overflowing ? Text.AlignHCenter : Text.AlignLeft
             }
             Rectangle {
                 visible: root.explicit
@@ -131,7 +134,8 @@ Item {
             text: root.subtitle
             type: "bodySmall"
             color: Theme.fgSurfaceVariant
-            horizontalAlignment: root.round ? Text.AlignHCenter : Text.AlignLeft
+            fade: true
+            horizontalAlignment: root.round && !overflowing ? Text.AlignHCenter : Text.AlignLeft
         }
     }
 

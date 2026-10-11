@@ -70,6 +70,7 @@ Item {
             Layout.fillWidth: true
             text: root.liked ? "Любимые треки" : (root.entry.title ?? "")
             type: "titleSmall"
+            fade: true
         }
         Icon {
             visible: root.playingHere && !root.hovered

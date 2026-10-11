@@ -424,7 +424,8 @@ Item {
                                         anchors.topMargin: 6
                                         x: 2
                                         width: parent.width - 4
-                                        horizontalAlignment: Text.AlignHCenter
+                                        fade: true
+                                        horizontalAlignment: overflowing ? Text.AlignLeft : Text.AlignHCenter
                                         text: seed.label
                                         type: "labelMedium"
                                         weight: seed.on ? 700 : 500
