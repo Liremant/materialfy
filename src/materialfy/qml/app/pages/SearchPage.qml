@@ -147,7 +147,7 @@ Page {
                     Layout.fillWidth: true
                     spacing: 4
                     Label {
-                        text: (({ track: I18n.t("Track"), album: bestCard.item.kind || I18n.t("Album"), artist: I18n.t("Artist"), playlist: I18n.t("Playlist"), show: I18n.t("Podcast") })[bestCard.best.type] ?? "").toUpperCase()
+                        text: (({ track: I18n.t("Track"), album: bestCard.item.kind ? I18n.any(bestCard.item.kind) : I18n.t("Album"), artist: I18n.t("Artist"), playlist: I18n.t("Playlist"), show: I18n.t("Podcast") })[bestCard.best.type] ?? "").toUpperCase()
                         type: "labelLarge"
                         color: Theme.primary
                         font.letterSpacing: 1.2

@@ -258,7 +258,7 @@ Page {
                 cover: modelData.cover ?? ""
                 title: modelData.title ?? ""
                 subtitle: [modelData.artists ?? "", modelData.dateLabel ?? ""].filter(x => x).join(" · ")
-                badge: modelData.group === "single" ? (modelData.kind ?? "").toUpperCase() : ""
+                badge: modelData.group === "single" ? I18n.any(modelData.kind).toUpperCase() : ""
                 explicit: modelData.explicit === true
                 showPlay: true
                 playing: Player.playing && (modelData.uri ?? "") !== "" && Player.contextUri === modelData.uri

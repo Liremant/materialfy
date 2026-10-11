@@ -42,6 +42,25 @@ QtObject {
         return arguments.length > 1 ? format(pattern, Array.prototype.slice.call(arguments, 1)) : pattern
     }
 
+    // Russian → English for plain (non-plural) entries, built once.
+    readonly property var _en: {
+        const back = {}
+        for (const k in _ru) {
+            const v = _ru[k]
+            if (typeof v === "string" && k.indexOf("|") < 0 && !(v in back))
+                back[v] = k
+        }
+        return back
+    }
+
+    // Text that Rust produced (and may have cached) in either language, shown in the current one:
+    // a Russian dictionary value maps back to its English source first, then translates as usual.
+    function any(text) {
+        const s = String(text ?? "")
+        const en = typeof _en[s] === "string" ? _en[s] : s
+        return t(en)
+    }
+
     // Russian plural category: 0 one (1, 21), 1 few (2–4, 22–24), 2 many (0, 5–20, 11–14, 25…)
     function _ruIndex(count) {
         const n = Math.abs(Math.trunc(Number(count) || 0))

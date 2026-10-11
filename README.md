@@ -7,7 +7,7 @@
   <img src="docs/brand/wordmark.svg" width="420" alt="Materialfy">
 </picture>
 
-<!-- CI badge -->
+[![Build](https://github.com/fatyzzz/materialfy/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/fatyzzz/materialfy/actions/workflows/build.yml)
 
 Desktop Spotify client built with Rust and Qt Quick, with a Material 3 Expressive interface.<br>
 Windows and Linux; macOS is experimental.
@@ -36,8 +36,7 @@ The project is assembled from two MIT-licensed projects: the Spotify side comes 
 
 ## Screenshots
 
-The screenshots were taken with the `--offline` flag, without signing in, so the home page and the playlist list
-show a sign-in prompt instead of music. They show the Russian interface.
+Taken with a Premium account and music playing; the colours follow the cover of the current track.
 
 <table>
   <tr>
@@ -45,18 +44,25 @@ show a sign-in prompt instead of music. They show the Russian interface.
     <td width="50%"><img src="docs/screenshots/materialfy/home-light.png" alt="Home, light theme"></td>
   </tr>
   <tr>
-    <td><img src="docs/screenshots/materialfy/account.png" alt="Signing in to a Spotify account"></td>
-    <td><img src="docs/screenshots/materialfy/playback.png" alt="Setting up playback on this computer"></td>
+    <td><img src="docs/screenshots/materialfy/now-playing.png" alt="Now Playing with synced lyrics"></td>
+    <td><img src="docs/screenshots/materialfy/artist.png" alt="Artist page"></td>
   </tr>
   <tr>
+    <td><img src="docs/screenshots/materialfy/releases.png" alt="New releases"></td>
     <td><img src="docs/screenshots/materialfy/settings.png" alt="Settings"></td>
-    <td><img src="docs/screenshots/materialfy/compact-900x640.png" alt="900×640 window with a narrow sidebar"></td>
   </tr>
   <tr>
+    <td><img src="docs/screenshots/materialfy/account.png" alt="Spotify account"></td>
+    <td><img src="docs/screenshots/materialfy/playback.png" alt="Playback on this computer"></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/materialfy/compact-900x640.png" alt="900×640 window with a narrow sidebar"></td>
     <td><img src="docs/screenshots/materialfy/compact-640x720.png" alt="Compact layout, 640×720"></td>
-    <td valign="top"><img src="docs/screenshots/materialfy/mini-300x120.png" alt="Mini player, 300×120"><br><br>
-      <sub>Left: the compact layout for a narrow window. Above: the mini player, which the window switches to when
-      it is narrower than 480 or shorter than 400 pixels.</sub></td>
+  </tr>
+  <tr>
+    <td valign="top"><img src="docs/screenshots/materialfy/mini-300x120.png" alt="Mini player, 300×120"></td>
+    <td valign="top"><sub>The mini player: the window switches to it when it is narrower than 480 or shorter than
+      400 pixels.</sub></td>
   </tr>
 </table>
 

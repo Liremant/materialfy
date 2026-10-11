@@ -7,7 +7,7 @@
   <img src="docs/brand/wordmark.svg" width="420" alt="Materialfy">
 </picture>
 
-<!-- CI badge -->
+[![Build](https://github.com/fatyzzz/materialfy/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/fatyzzz/materialfy/actions/workflows/build.yml)
 
 Настольный клиент Spotify на Rust и Qt Quick, интерфейс в стиле Material 3 Expressive.<br>
 Windows и Linux, macOS в экспериментальном режиме.
@@ -35,27 +35,32 @@ Materialfy ставят вместо официального настольно
 
 ## Скриншоты
 
-На снимках программа запущена с ключом `--offline`, без входа в аккаунт, поэтому на главной и в списке
-плейлистов вместо музыки стоит приглашение войти.
+Сняты с аккаунтом Premium во время воспроизведения; цвета берутся из обложки текущего трека.
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/screenshots/materialfy/home-dark.png" alt="Главная, тёмная тема"></td>
-    <td width="50%"><img src="docs/screenshots/materialfy/home-light.png" alt="Главная, светлая тема"></td>
+    <td width="50%"><img src="docs/screenshots/materialfy/ru/home-dark.png" alt="Главная, тёмная тема"></td>
+    <td width="50%"><img src="docs/screenshots/materialfy/ru/home-light.png" alt="Главная, светлая тема"></td>
   </tr>
   <tr>
-    <td><img src="docs/screenshots/materialfy/account.png" alt="Вход в аккаунт Spotify"></td>
-    <td><img src="docs/screenshots/materialfy/playback.png" alt="Настройка воспроизведения на этом компьютере"></td>
+    <td><img src="docs/screenshots/materialfy/ru/now-playing.png" alt="«Сейчас играет» с синхронным текстом"></td>
+    <td><img src="docs/screenshots/materialfy/ru/artist.png" alt="Страница исполнителя"></td>
   </tr>
   <tr>
-    <td><img src="docs/screenshots/materialfy/settings.png" alt="Настройки"></td>
-    <td><img src="docs/screenshots/materialfy/compact-900x640.png" alt="Окно 900×640 с узкой боковой панелью"></td>
+    <td><img src="docs/screenshots/materialfy/ru/releases.png" alt="Новинки"></td>
+    <td><img src="docs/screenshots/materialfy/ru/settings.png" alt="Настройки"></td>
   </tr>
   <tr>
-    <td><img src="docs/screenshots/materialfy/compact-640x720.png" alt="Компактная раскладка 640×720"></td>
-    <td valign="top"><img src="docs/screenshots/materialfy/mini-300x120.png" alt="Мини-плеер 300×120"><br><br>
-      <sub>Слева компактная раскладка для узкого окна. Выше мини-плеер: в него окно переходит, если сделать его
-      уже 480 или ниже 400 пикселей.</sub></td>
+    <td><img src="docs/screenshots/materialfy/ru/account.png" alt="Аккаунт Spotify"></td>
+    <td><img src="docs/screenshots/materialfy/ru/playback.png" alt="Воспроизведение на этом компьютере"></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/materialfy/ru/compact-900x640.png" alt="Окно 900×640 с узкой боковой панелью"></td>
+    <td><img src="docs/screenshots/materialfy/ru/compact-640x720.png" alt="Компактная раскладка 640×720"></td>
+  </tr>
+  <tr>
+    <td valign="top"><img src="docs/screenshots/materialfy/ru/mini-300x120.png" alt="Мини-плеер 300×120"></td>
+    <td valign="top"><sub>Мини-плеер: в него окно переходит, если сделать его уже 480 или ниже 400 пикселей.</sub></td>
   </tr>
 </table>
 

@@ -274,7 +274,7 @@ Page {
                 visible: page.allAlbums || index < tilesPerRow.value * 2
                 cover: model.cover
                 title: model.title
-                subtitle: [model.year || "", model.kind].filter(x => x).join(" · ")
+                subtitle: [model.year || "", model.kind ? I18n.any(model.kind) : ""].filter(x => x).join(" · ")
                 explicit: model.explicit
                 onClicked: Catalog.openAlbum(model.albumId)
             }

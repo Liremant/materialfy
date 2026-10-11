@@ -14,7 +14,7 @@ TrackListPage {
     readonly property bool saved: Library.savedRevision >= 0 && (info.uri ?? "") !== "" ? Library.isSaved(info.uri) : info.saved === true
 
     title: info.title ? info.title + (info.version ? " (" + info.version + ")" : "") : ""
-    overline: (info.kind || I18n.t("Album")).toUpperCase()
+    overline: (info.kind ? I18n.any(info.kind) : I18n.t("Album")).toUpperCase()
     heroImage: info.coverLarge || info.cover || ""
     heroIcon: "album"
     heroArtistRefs: info.artistRefs ?? []
