@@ -90,7 +90,7 @@ Item {
         fragmentShader: Qt.resolvedUrl("shaders/backdrop.frag.qsb")
     }
 
-    FrameAnimation {
+    TickAnimation {
         running: root.running && root._flowing && root.ready && !Theme.calm
         onTriggered: root._t += frameTime * (0.15 + 0.85 * Math.min(1, root.flow))
     }

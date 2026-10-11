@@ -15,6 +15,11 @@ Item {
     readonly property string rootName: stack.length ? stack[0].name : ""
     readonly property Item currentItem: current ? current.item : null
 
+    // Страницы, которые живут между посещениями (без параметров): главная тяжёлая — сотни обложек,
+    // пересоздавать её при каждом возврате в раздел дорого и теряется прокрутка.
+    property var keepAlive: ["home"]
+    property var _kept: ({})                // имя → живой экземпляр из keepAlive
+
     property var _components: ({})
     property var _leaving: []               // элементы, которые уничтожить после анимации
     property Item _out: null
@@ -76,7 +81,15 @@ Item {
             console.error("Router:", comp.errorString())
             return null
         }
+        const keep = keepAlive.indexOf(name) >= 0 && Object.keys(props ?? {}).length === 0
+        const kept = keep ? _kept[name] : null
+        if (kept && !stack.some(e => e.item === kept)) {
+            kept.opacity = 0
+            return { name: name, props: {}, item: kept }
+        }
         const item = comp.createObject(container, Object.assign({ router: root }, props ?? {}))
+        if (keep && !kept)
+            _kept[name] = item
         // не anchors.fill: анимации переходов двигают x
         item.width = Qt.binding(() => container.width)
         item.height = Qt.binding(() => container.height)
@@ -151,8 +164,17 @@ Item {
                 root._out.y = 0
                 root._out.scale = 1
             }
-            for (const item of root._leaving)
-                item.destroy()
+            const kept = Object.values(root._kept)
+            for (const item of root._leaving) {
+                if (kept.indexOf(item) < 0) {
+                    item.destroy()
+                } else if (item !== root.currentItem) {
+                    item.visible = false
+                    item.x = 0
+                    item.y = 0
+                    item.scale = 1
+                }
+            }
             root._leaving = []
             root._out = null
         }

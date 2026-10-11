@@ -3,7 +3,7 @@ import QtQuick
 // Медленное вращение фигуры-рамки у MorphImage (target), пока spinning. Остановившись, рамка
 // доворачивается до ближайшей четверти оборота — квадрат не должен встать криво.
 // Отдельный объект, а не часть MorphImage: обложек в списках сотни, а крутятся одна-две.
-FrameAnimation {
+TickAnimation {
     id: root
 
     property Item target

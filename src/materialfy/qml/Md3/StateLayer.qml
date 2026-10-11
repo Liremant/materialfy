@@ -68,7 +68,8 @@ MouseArea {
         id: mask
         anchors.fill: parent
         visible: false
-        layer.enabled: true
+        // слой-маска — только пока виден ripple: таких StateLayer в списках сотни
+        layer.enabled: rippleHost.visible
         topLeftRadius: root.topLeftRadius
         topRightRadius: root.topRightRadius
         bottomLeftRadius: root.bottomLeftRadius

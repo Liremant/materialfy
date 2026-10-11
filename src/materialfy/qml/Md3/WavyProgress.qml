@@ -33,7 +33,7 @@ Item {
     Behavior on _amp { NumberAnimation { duration: Theme.motion.spatialDefault; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.motion.emphasized } }
     property real _phase: 0
 
-    FrameAnimation {
+    TickAnimation {
         running: root.visible && root._amp > 0.01 && root.speed !== 0 && !Theme.calm
         onTriggered: root._phase = (root._phase + frameTime * root.speed * Math.PI * 2) % (Math.PI * 2)
     }

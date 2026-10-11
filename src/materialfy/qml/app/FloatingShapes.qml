@@ -50,7 +50,7 @@ Item {
         return out
     }
 
-    FrameAnimation {
+    TickAnimation {
         running: root.running && !Theme.calm
         onTriggered: root._t += frameTime
     }

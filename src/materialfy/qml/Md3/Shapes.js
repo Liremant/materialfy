@@ -125,3 +125,42 @@ function outline(from, to, t, n, w, h, rotation, time, inset, pulse) {
     pts[n] = pts[0]
     return pts
 }
+
+// Параметры фигуры для шейдера (shaders/shape.frag): 4 vec4 — см. shapeR там же.
+// Масштаб нормирует фигуру в квадрат [-1, 1], как sample(); у клякс — по верхней оценке,
+// иначе «дышащий» контур упирался бы в край элемента.
+const _kinds = { circle: 0, square: 1, cookie: 2, flower: 3, blob: 4 }
+const _packs = {}
+
+function pack(shape) {
+    const cacheable = typeof shape === "string"
+    if (cacheable && _packs[shape])
+        return _packs[shape]
+    const spec = get(shape)
+    const kind = _kinds[spec.kind] ?? 0
+    let scale = 1
+    if (kind === 4) {
+        scale = 1 / (spec.blob || []).reduce((s, h) => s + Math.abs(h[1]), 1)
+    } else if (kind !== 0) {
+        let extent = 0
+        for (let i = 0; i < 256; ++i) {
+            const th = TAU * i / 256
+            const r = radius(spec, th, 0)
+            extent = Math.max(extent, Math.abs(r * Math.cos(th)), Math.abs(r * Math.sin(th)))
+        }
+        scale = 1 / extent
+    }
+    const h = spec.blob || []
+    const hk = i => h[i] ? h[i][0] : 0
+    const ha = i => h[i] ? h[i][1] : 0
+    const hp = i => h[i] ? h[i][2] : 0
+    const out = [
+        Qt.vector4d(kind, spec.n || 0, spec.depth || (kind === 3 ? 0.25 : 0.08), spec.p || (kind === 1 ? 5 : 1)),
+        Qt.vector4d(spec.rotation || 0, spec.aspect || 1, scale, hp(2)),
+        Qt.vector4d(hk(0), ha(0), hp(0), hk(1)),
+        Qt.vector4d(ha(1), hp(1), hk(2), ha(2))
+    ]
+    if (cacheable)
+        _packs[shape] = out
+    return out
+}

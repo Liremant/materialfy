@@ -287,7 +287,7 @@ Item {
                     shape: "cookie9"
                     color: Theme.surfaceContainerHighest
                 }
-                FrameAnimation {
+                TickAnimation {
                     running: coverBackdrop.visible && page.visible && !Theme.calm && Theme.reducedMotion !== true
                              && list.contentY - list.originY < 300
                     onTriggered: coverBackdrop.rotation = (coverBackdrop.rotation + frameTime * 6) % 360

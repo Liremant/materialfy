@@ -28,7 +28,7 @@ Item {
         // недоступна (ничего не играет) — приглушённый контейнер MD3
         color: root.enabled ? root.containerColor : Qt.alpha(Theme.fgSurface, Theme.stateLayer.disabledContainer)
 
-        FrameAnimation {
+        TickAnimation {
             running: root.spin && root.playing && root.visible && !Theme.calm && !Theme.reducedMotion
             // поворот элемента, а не контура (angle) — без пересборки пути каждый кадр
             onTriggered: shape.rotation = (shape.rotation + frameTime * 30) % 360

@@ -21,13 +21,21 @@ pub mod qobject {
 
     unsafe extern "RustQt" {
         #[qobject]
-        #[qproperty(QList_QVariant, shelves, READ, NOTIFY = changed)]
-        #[qproperty(bool, loading, READ, NOTIFY = changed)]
-        #[qproperty(QString, error_text, cxx_name = "errorText", READ, NOTIFY = changed)]
+        // Свой сигнал у каждого свойства: смена loading/errorText не должна пересобирать полки в QML
+        #[qproperty(QList_QVariant, shelves, READ, NOTIFY = shelves_changed)]
+        #[qproperty(bool, loading, READ, NOTIFY = loading_changed)]
+        #[qproperty(QString, error_text, cxx_name = "errorText", READ, NOTIFY = error_text_changed)]
         type Home = super::HomeRust;
 
         #[qsignal]
-        fn changed(self: Pin<&mut Home>);
+        #[cxx_name = "shelvesChanged"]
+        fn shelves_changed(self: Pin<&mut Home>);
+        #[qsignal]
+        #[cxx_name = "loadingChanged"]
+        fn loading_changed(self: Pin<&mut Home>);
+        #[qsignal]
+        #[cxx_name = "errorTextChanged"]
+        fn error_text_changed(self: Pin<&mut Home>);
 
         /// Обновить полки (force — без 10-минутного ограничения).
         #[qinvokable]
@@ -56,13 +64,27 @@ impl qobject::Home {
         if prev == next {
             return;
         }
+        // полки сравниваются по содержимому: сервис может прислать новый Arc с теми же полками
+        let shelves = !Arc::ptr_eq(&prev.shelves, &next.shelves) && prev.shelves != next.shelves;
+        let loading = prev.loading != next.loading;
+        let error = prev.error_text != next.error_text;
         let mut this = self.as_mut().rust_mut();
-        if !Arc::ptr_eq(&prev.shelves, &next.shelves) {
+        if shelves {
             this.shelves = to_qlist(&next.shelves);
         }
         this.loading = next.loading;
-        this.error_text = QString::from(next.error_text.as_str());
-        self.changed();
+        if error {
+            this.error_text = QString::from(next.error_text.as_str());
+        }
+        if shelves {
+            self.as_mut().shelves_changed();
+        }
+        if loading {
+            self.as_mut().loading_changed();
+        }
+        if error {
+            self.as_mut().error_text_changed();
+        }
     }
 }
 

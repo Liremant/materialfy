@@ -1,99 +1,68 @@
 import QtQuick
-import QtQuick.Shapes
-import "Shapes.js" as Shapes
 
 // Фигура MD3 Expressive. При смене `shape` плавно морфится из текущей формы в новую
 // (в том числе из промежуточной, если предыдущий морф ещё не закончился).
-// Корень — Item, а не Shape: Shape пересчитывает свой implicit-размер из пути, а путь зависит
-// от размера — в Layout это петля привязок.
+// Рисует шейдер shaders/shape.frag: контур — полярная функция, морф, цвет, поворот, «дыхание» —
+// uniform'ы. Раньше здесь был PathPolyline из 120 точек: JS пересобирал его каждый кадр морфа,
+// CurveRenderer заново триангулировал, а цвет накладывал отдельный слой.
+// Корень — Item: вложенные элементы (иконка, инициалы) лежат поверх фигуры.
 Item {
     id: root
 
     property var shape: "circle"
     property real angle: 0                 // поворот контура, градусы (Item.rotation не трогаем)
-    property int samples: 120
+    property int samples: 120              // не используется (контур считает шейдер), оставлено для совместимости
     property color color: Theme.primary
     property color strokeColor: "transparent"
-    // true — фигура рисуется белой, а цвет накладывает шейдер (смена цвета = смена uniform, без
-    // перестройки геометрии CurveRenderer). false — для белых масок: слой и шейдер не нужны.
-    property bool tinted: strokeWidth === 0
-    property real strokeWidth: 0
-    property int duration: Theme.motion.spatialDefault
-    property real overshoot: 1.4
-    property real livingSpeed: 1           // скорость «дыхания» blob-фигур, 0 — заморозить
-    property real pulse: 0                 // 0..1 — «дыхание» контура (см. Shapes.outline)
+    property bool tinted: true             // не используется: цвет — всегда uniform
+    property real strokeWidth: 0           // обводка внутрь контура, px
+    property alias duration: m.duration
+    property alias overshoot: m.overshoot
+    property alias livingSpeed: m.livingSpeed // скорость «дыхания» blob-фигур, 0 — заморозить
+    property real pulse: 0                 // 0..1 — «дыхание» контура: впадины глубже, фигура чуть шире
 
-    property var _from: shape
-    property var _to: shape
-    property real _t: 0
-    property real _time: 0
-
-    function morphTo(next) {
-        const current = Shapes.blend(Shapes.radii(_from, samples, _time), Shapes.radii(_to, samples, _time), _t)
-        _from = current
-        _to = next
-        _t = 0
-        morph.restart()
-    }
-
-    // Сменить фигуру сразу, без морфа
-    function jumpTo(next) {
-        _ready = false
-        shape = next
-        morph.stop()
-        _from = next
-        _to = next
-        _t = 0
-        _ready = true
-    }
-
-    // При создании привязка `shape` срабатывает после значения по умолчанию ("circle"), и без этой
-    // проверки каждая фигура полсекунды морфилась из круга — ~0,35 мс/кадр на фигуру, и так при
-    // каждом появлении строки в списке (прокрутка, смена трека).
-    property bool _ready: false
-    Component.onCompleted: { _from = shape; _to = shape; _t = 0; _ready = true }
-    onShapeChanged: if (_ready) morphTo(shape)
+    function morphTo(next) { m.morphTo(next) }
+    // Сменить фигуру сразу, без морфа (привязка m.shape не рвётся)
+    function jumpTo(next) { m._ready = false; shape = next; m._set(next); m._ready = true }
 
     implicitWidth: 48
     implicitHeight: 48
 
-    NumberAnimation {
-        id: morph
-        target: root
-        property: "_t"
-        from: 0
-        to: 1
-        duration: Theme.reducedMotion ? 0 : root.duration
-        easing.type: Easing.OutBack
-        easing.overshoot: root.overshoot
+    ShapeMorph {
+        id: m
+        shape: root.shape
+        active: root.visible && root.opacity > 0
     }
 
-    FrameAnimation {
-        running: root.visible && !Theme.calm && !Theme.reducedMotion && root.livingSpeed > 0 && (Shapes.isLiving(root._from) || Shapes.isLiving(root._to))
-        onTriggered: root._time += frameTime * root.livingSpeed
-    }
-
-    Shape {
-        anchors.fill: parent
+    ShaderEffect {
+        id: fx
+        // чуть больше элемента: перелёт морфа (OutBack) не должен упираться в край прямоугольника
+        readonly property real pad: Math.ceil(Math.min(root.width, root.height) * 0.06) + 1
+        x: -pad
+        y: -pad
+        width: root.width + 2 * pad
+        height: root.height + 2 * pad
         z: -1   // под вложенными элементами (иконка, инициалы)
-        preferredRendererType: Shape.CurveRenderer
-        // Слой только у самой фигуры: иначе шейдер окрашивал бы и вложенные иконки/текст.
-        layer.enabled: root.tinted && root.visible
-        layer.smooth: true
-        layer.effect: ShaderEffect {
-            property color tint: root.color
-            fragmentShader: Qt.resolvedUrl("shaders/tint.frag.qsb")
-        }
+        visible: root.width > 0 && root.height > 0 && (root.color.a > 0 || root.strokeWidth > 0)
+        blending: true
 
-        ShapePath {
-            fillColor: root.tinted ? "white" : root.color
-            strokeColor: root.strokeColor
-            strokeWidth: root.strokeWidth
-            joinStyle: ShapePath.RoundJoin
-            PathPolyline {
-                path: Shapes.outline(root._from, root._to, root._t, root.samples, root.width, root.height,
-                                     root.angle * Math.PI / 180, root._time, root.strokeWidth / 2, root.pulse)
-            }
-        }
+        property vector4d a0: m.a[0]
+        property vector4d a1: m.a[1]
+        property vector4d a2: m.a[2]
+        property vector4d a3: m.a[3]
+        property vector4d b0: m.b[0]
+        property vector4d b1: m.b[1]
+        property vector4d b2: m.b[2]
+        property vector4d b3: m.b[3]
+        property vector4d c0: m.c[0]
+        property vector4d c1: m.c[1]
+        property vector4d c2: m.c[2]
+        property vector4d c3: m.c[3]
+        property vector4d morph: Qt.vector4d(m.s, m.t, root.angle * Math.PI / 180, root.pulse)
+        property vector4d misc: Qt.vector4d(m.time, root.strokeWidth, 1, 0)
+        property vector4d box: Qt.vector4d(width / Math.max(1, root.width), height / Math.max(1, root.height), 1, 1)
+        property color fill: root.color
+        property color stroke: root.strokeColor
+        fragmentShader: Qt.resolvedUrl("shaders/shape.frag.qsb")
     }
 }

@@ -14,10 +14,38 @@ Page {
 
     readonly property bool signedIn: Auth.state === "signedIn"
     readonly property bool compact: width < 760
-    readonly property var shelves: signedIn ? (Home.shelves ?? []) : []
+    // Полки: Repeater по составу полок [{key, kind}] — он меняется, только если полки добавились, ушли
+    // или переставились. Данные полки кладутся в её Loader на месте и только если изменились: обновление
+    // «Недавно прослушанного» не пересоздаёт «Сделано для вас» и остальные плитки.
+    property var shelfIds: []
+    function _syncShelves() {
+        const list = signedIn ? (Home.shelves ?? []) : []
+        const ids = list.map(s => ({ key: s.key ?? "", kind: s.kind ?? "" }))
+        if (JSON.stringify(ids) !== JSON.stringify(shelfIds))
+            shelfIds = ids
+        for (let i = 0; i < list.length; ++i) {
+            const loader = shelfRepeater.itemAt(i)
+            if (!loader)
+                continue
+            const json = JSON.stringify(list[i])
+            if (loader.json !== json) {
+                loader.json = json
+                loader.shelfData = list[i]
+            }
+        }
+    }
+    Connections {
+        target: Home
+        function onShelvesChanged() { page._syncShelves() }
+    }
+    onSignedInChanged: _syncShelves()
 
     onVisibleChanged: if (visible && signedIn) Home.refresh(false)
-    Component.onCompleted: if (signedIn) Home.refresh(false)
+    Component.onCompleted: {
+        _syncShelves()
+        if (signedIn)
+            Home.refresh(false)
+    }
     Connections {
         target: Auth
         function onSignedIn() { Home.refresh(false) }
@@ -103,8 +131,7 @@ Page {
     RadioOrbit {
         id: orbit
         Layout.fillWidth: true
-        Layout.leftMargin: -16
-        Layout.rightMargin: -16
+        Layout.topMargin: 8
         Layout.preferredHeight: implicitHeight
         compact: page.compact
         signedIn: page.signedIn
@@ -137,7 +164,7 @@ Page {
 
         // Загрузка: заглушки без мерцания
         ColumnLayout {
-            visible: Home.loading && page.shelves.length === 0
+            visible: Home.loading && page.shelfIds.length === 0
             Layout.fillWidth: true
             spacing: 12
             SectionHeader { text: "Быстрый доступ" }
@@ -166,7 +193,7 @@ Page {
         }
 
         EmptyState {
-            visible: Home.errorText !== "" && page.shelves.length === 0 && !Home.loading
+            visible: Home.errorText !== "" && page.shelfIds.length === 0 && !Home.loading
             Layout.alignment: Qt.AlignHCenter
             Layout.topMargin: 24
             icon: "cloud_off"
@@ -178,10 +205,13 @@ Page {
         }
 
         Repeater {
-            model: page.shelves
+            id: shelfRepeater
+            model: page.shelfIds
             Loader {
                 id: shelf
-                required property var modelData
+                required property var modelData        // {key, kind}
+                property var shelfData: ({})
+                property string json
                 Layout.fillWidth: true
                 sourceComponent: modelData.key === "quick" ? quickShelf
                     : modelData.kind === "tracks" ? tracksShelf
@@ -194,7 +224,7 @@ Page {
     Component {
         id: quickShelf
         ColumnLayout {
-            readonly property var shelfData: parent ? parent.modelData : ({})
+            readonly property var shelfData: parent ? parent.shelfData : ({})
             spacing: 12
             SectionHeader { text: shelfData.title ?? "" }
             GridLayout {
@@ -222,7 +252,7 @@ Page {
         id: tracksShelf
         ColumnLayout {
             id: tracksCol
-            readonly property var shelfData: parent ? parent.modelData : ({})
+            readonly property var shelfData: parent ? parent.shelfData : ({})
             readonly property var tracks: shelfData.items ?? []
             property bool expanded: false
             spacing: 12
@@ -274,7 +304,7 @@ Page {
         id: rowShelf
         ColumnLayout {
             id: rowCol
-            readonly property var shelfData: parent ? parent.modelData : ({})
+            readonly property var shelfData: parent ? parent.shelfData : ({})
             readonly property string kind: shelfData.kind ?? "tiles"
             spacing: 12
             RowLayout {
@@ -347,6 +377,9 @@ Page {
                 rightMargin: 32
                 interactive: false
                 clip: true
+                // плитки за краем не создаются, ушедшие за край переиспользуются
+                reuseItems: true
+                cacheBuffer: 360
                 model: rowCol.shelfData.items ?? []
                 function pageBy(dir) {
                     const target = Math.max(originX - leftMargin, Math.min(originX + contentWidth - width + rightMargin,
