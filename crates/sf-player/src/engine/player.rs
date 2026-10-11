@@ -191,6 +191,9 @@ pub struct LocalState {
     /// `Paused` that brings the position counts as a seek for media
     /// controls, which would otherwise count on past the end (#587).
     pub replay_pending: bool,
+    /// The DJ is saying a line around the track; the track's position
+    /// holds still meanwhile.
+    pub narrating: bool,
 }
 
 /// What local playback was doing when its session ended, so the engine
@@ -445,6 +448,8 @@ impl Engine {
             normalisation_report: Some(Arc::clone(&normalisation_factor)),
             // Where each packet sits in its track, for the crossfade.
             playback_report: Some(audio.report()),
+            // Settings → DJ voice, read live by the player.
+            narration: super::fx::dj_voice(),
             ..PlayerConfig::default()
         };
 
@@ -966,6 +971,7 @@ fn apply_event(state: &mut LocalState, event: PlayerEvent) -> bool {
     match event {
         PlayerEvent::Stopped { .. } => {
             let mut changed = set(&mut state.playback, Playback::Stopped);
+            changed |= set(&mut state.narrating, false);
             changed |= set(&mut state.loading, false);
             changed |= set(&mut state.position_ms, 0);
             changed |= set(&mut state.position_at, None);
@@ -981,12 +987,14 @@ fn apply_event(state: &mut LocalState, event: PlayerEvent) -> bool {
             changed |= set(&mut state.position_ms, position_ms);
             changed |= set(&mut state.position_at, None);
             changed |= set(&mut state.error, None);
+            changed |= set(&mut state.narrating, false);
             changed
         }
         PlayerEvent::Playing { position_ms, .. } => {
             set(&mut state.playback, Playback::Playing);
             set(&mut state.position_ms, position_ms);
-            state.position_at = Some(Instant::now());
+            // the track's clock starts once the DJ has finished talking
+            state.position_at = (!state.narrating).then(Instant::now);
             state.loading = false;
             start_replay(state);
             true
@@ -1001,7 +1009,7 @@ fn apply_event(state: &mut LocalState, event: PlayerEvent) -> bool {
         PlayerEvent::PositionCorrection { position_ms, .. }
         | PlayerEvent::PositionChanged { position_ms, .. } => {
             state.position_ms = position_ms;
-            if state.playback == Playback::Playing {
+            if state.playback == Playback::Playing && !state.narrating {
                 state.position_at = Some(Instant::now());
             }
             true
@@ -1014,8 +1022,22 @@ fn apply_event(state: &mut LocalState, event: PlayerEvent) -> bool {
             state.seek_sequence = state.seek_sequence.wrapping_add(1);
             true
         }
+        PlayerEvent::NarrationStarted { .. } => {
+            let mut changed = set(&mut state.narrating, true);
+            changed |= set(&mut state.position_at, None);
+            changed
+        }
+        PlayerEvent::NarrationEnded { .. } => {
+            let mut changed = set(&mut state.narrating, false);
+            if state.playback == Playback::Playing {
+                state.position_at = Some(Instant::now());
+                changed = true;
+            }
+            changed
+        }
         PlayerEvent::TrackChanged { audio_item } => {
             let track = local_track(&audio_item);
+            state.narrating = false;
             state.replay_pending = state
                 .track
                 .as_ref()
@@ -1485,6 +1507,41 @@ mod tests {
                 disc_number: 1,
             },
         }
+    }
+
+    /// While the DJ talks the track's clock stands still; it starts when
+    /// the line ends, and a new track or a stop clears the DJ.
+    #[test]
+    fn the_track_clock_holds_while_the_dj_talks() {
+        let mut state = LocalState::default();
+        apply_event(&mut state, PlayerEvent::TrackChanged { audio_item: Box::new(interlude()) });
+        let playing = PlayerEvent::Playing { play_request_id: 1, track_id: uri(), position_ms: 0 };
+        apply_event(&mut state, playing.clone());
+        assert!(state.position_at.is_some());
+
+        assert!(apply_event(&mut state, PlayerEvent::NarrationStarted { play_request_id: 1, track_id: uri() }));
+        assert!(state.narrating);
+        assert!(state.position_at.is_none());
+        // a pause and a resume during the line keep the clock stopped
+        apply_event(&mut state, PlayerEvent::Paused { play_request_id: 1, track_id: uri(), position_ms: 0 });
+        apply_event(&mut state, playing.clone());
+        assert!(state.position_at.is_none());
+        apply_event(
+            &mut state,
+            PlayerEvent::PositionCorrection { play_request_id: 1, track_id: uri(), position_ms: 0 },
+        );
+        assert!(state.position_at.is_none());
+
+        assert!(apply_event(&mut state, PlayerEvent::NarrationEnded { play_request_id: 1, track_id: uri() }));
+        assert!(!state.narrating);
+        assert!(state.position_at.is_some());
+
+        apply_event(&mut state, PlayerEvent::NarrationStarted { play_request_id: 1, track_id: uri() });
+        apply_event(&mut state, PlayerEvent::TrackChanged { audio_item: Box::new(interlude()) });
+        assert!(!state.narrating);
+        apply_event(&mut state, PlayerEvent::NarrationStarted { play_request_id: 2, track_id: uri() });
+        apply_event(&mut state, PlayerEvent::Stopped { play_request_id: 2, track_id: uri() });
+        assert!(!state.narrating);
     }
 
     #[test]

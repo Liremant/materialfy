@@ -21,6 +21,7 @@ pub use engine::sink::output_devices;
 pub use engine::{EngineConfig, LoadSpec, LocalState, RepeatMode, Rootlist, RootlistEntry};
 pub use handle::PlayerHandle;
 pub use librespot_core::Session;
+pub use librespot_core::spclient::SpClient;
 pub use librespot_core::authentication::Credentials;
 
 /// Интервалы опроса /me/player (spotifast app.rs: REMOTE_POLL_*), с.
@@ -143,6 +144,8 @@ pub struct PlayerSnapshot {
     pub cover_file: String,
     pub playing: bool,
     pub buffering: bool,
+    /// The DJ is talking between tracks on this computer (Player.narrating).
+    pub narrating: bool,
     /// с экстраполяцией между событиями/опросами
     pub position_ms: i64,
     pub duration_ms: i64,

@@ -822,7 +822,9 @@ impl RodioSink {
             return false;
         }
         let report = &self.control.report;
-        if !report.next_ready.load(Ordering::Relaxed) {
+        // A DJ line is never blended into music; librespot also keeps
+        // `next_ready` down while a line sits between two tracks.
+        if !report.next_ready.load(Ordering::Relaxed) || report.narrating.load(Ordering::Relaxed) {
             return false;
         }
         let duration = u64::from(report.duration_ms.load(Ordering::Relaxed));
@@ -997,7 +999,9 @@ impl Sink for RodioSink {
             log::debug!("crossfade into the next track");
         }
         let input_frames = (samples.len() / NUM_CHANNELS as usize) as u64;
-        let samples = self.stretch.process(&samples, super::fx::speed());
+        // The DJ talks at its own pace: only the music follows the speed setting.
+        let speed = if self.control.report.narrating.load(Ordering::Relaxed) { 1.0 } else { super::fx::speed() };
+        let samples = self.stretch.process(&samples, speed);
         let samples = match &mut output.resampler {
             Some(resampler) => resampler.process(&samples),
             None => samples,
@@ -1829,6 +1833,9 @@ mod tests {
         assert!(!at(200_000, 190_000, true), "ten seconds left");
         assert!(!at(200_000, 194_500, false), "nothing follows");
         assert!(!at(15_000, 10_000, true), "too short to spare a fade");
+        report.narrating.store(true, Ordering::Relaxed);
+        assert!(!at(200_000, 194_500, true), "the DJ is talking");
+        report.narrating.store(false, Ordering::Relaxed);
         assert!(sink.collect_limit() > u64::from(SAMPLE_RATE) * 6);
     }
 

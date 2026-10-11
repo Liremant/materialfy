@@ -62,7 +62,9 @@ Page {
     // ---- Плитки: открыть / играть / меню ----
     function openEntry(e) {
         const k = e.kind ?? ""
-        if (k === "liked")
+        if (k === "dj")             // у DJ нет списка треков: плитка сразу включает его
+            playEntry(e)
+        else if (k === "liked")
             router.push("liked")
         else if (k === "playlist")
             router.push("playlist", { playlistId: e.id, playlistTitle: e.title ?? "", cover: e.cover ?? "" })
@@ -104,12 +106,12 @@ Page {
         _menuEntry = e
         const k = e.kind ?? ""
         const items = [{ id: "play", text: I18n.t("Play"), icon: "play_arrow" }]
-        if (k !== "radio" && k !== "artist")
+        if (k !== "radio" && k !== "artist" && k !== "dj")
             items.push({ id: "shuffle", text: I18n.t("Shuffle play"), icon: "shuffle", enabled: k === "liked" || !!Player.shuffleContext })
         if (k === "playlist" || k === "album" || k === "artist")
             items.push({ id: "radio", text: ({ playlist: I18n.t("Playlist radio"), album: I18n.t("Album radio"), artist: I18n.t("Artist radio") })[k], icon: "radio",
                          enabled: !Radio.locked })
-        if (k !== "liked" && k !== "radio" && (e.uri ?? "") !== "") {
+        if (k !== "liked" && k !== "radio" && k !== "dj" && (e.uri ?? "") !== "") {
             const pinned = Library.pinsRevision >= 0 && Library.isPinned(e.uri)
             items.push({ separator: true }, { id: "pin", text: pinned ? I18n.t("Unpin") : I18n.t("Pin in library"), icon: "push_pin", hint: I18n.t("local") },
                        { id: "link", text: I18n.t("Copy link"), icon: "content_copy" })
@@ -429,9 +431,9 @@ Page {
                             title: e.title ?? ""
                             subtitle: e.subtitle ?? ""
                             round: e.kind === "artist"
-                            shape: e.kind === "radio" ? "flower8" : e.kind === "artist" ? "circle" : "softSquare"
+                            shape: e.kind === "radio" ? "flower8" : e.kind === "dj" ? "cookie12" : e.kind === "artist" ? "circle" : "softSquare"
                             badge: e.kind === "radio" ? I18n.t("RADIO") : ""
-                            placeholderIcon: ({ playlist: "queue_music", album: "album", artist: "person", show: "podcasts", radio: "radio" })[e.kind] ?? "album"
+                            placeholderIcon: ({ playlist: "queue_music", album: "album", artist: "person", show: "podcasts", radio: "radio", dj: "graphic_eq" })[e.kind] ?? "album"
                             showPlay: true
                             playing: page.isPlaying(e)
                             onClicked: page.openEntry(e)

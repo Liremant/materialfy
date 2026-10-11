@@ -1,7 +1,8 @@
 //! Скорость воспроизведения и кроссфейд: живые настройки, которые вывод звука читает на каждом пакете.
 //! Меняются без перезапуска движка; позиция трека в интерфейсе тоже учитывает скорость.
 
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 pub use super::stretch::SPEED_RANGE;
@@ -11,6 +12,8 @@ pub const CROSSFADE_MAX: Duration = Duration::from_secs(12);
 
 static SPEED: AtomicU32 = AtomicU32::new(1.0f32.to_bits());
 static CROSSFADE_MS: AtomicU32 = AtomicU32::new(0);
+/// librespot reads it at each track change and while a DJ line plays (`PlayerConfig::narration`).
+static DJ_VOICE: LazyLock<Arc<AtomicBool>> = LazyLock::new(|| Arc::new(AtomicBool::new(true)));
 
 /// How fast the music plays, 1.0 being as recorded.
 pub fn speed() -> f32 {
@@ -30,6 +33,15 @@ pub fn crossfade() -> Duration {
 pub fn set_crossfade(length: Duration) {
     let ms = length.min(CROSSFADE_MAX).as_millis() as u32;
     CROSSFADE_MS.store(ms, Ordering::Relaxed);
+}
+
+/// Whether the DJ says its lines between tracks. The same switch goes to every engine.
+pub fn dj_voice() -> Arc<AtomicBool> {
+    Arc::clone(&DJ_VOICE)
+}
+
+pub fn set_dj_voice(on: bool) {
+    DJ_VOICE.store(on, Ordering::Relaxed);
 }
 
 /// Track time that passes in `elapsed` of wall time at the current speed.

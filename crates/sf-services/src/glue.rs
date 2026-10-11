@@ -22,7 +22,7 @@ pub fn spawn_settings_glue(rt: &Handle, settings: Arc<SettingsStore>, player: Pl
         loop {
             match changes.recv().await {
                 Ok(SettingKey::Autoplay) => player.set_autoplay(settings.get_bool(SettingKey::Autoplay)),
-                Ok(SettingKey::PlaybackSpeed | SettingKey::Crossfade) => apply_audio_fx(&settings),
+                Ok(SettingKey::PlaybackSpeed | SettingKey::Crossfade | SettingKey::DjVoice) => apply_audio_fx(&settings),
                 Err(broadcast::error::RecvError::Lagged(_)) => {
                     player.set_autoplay(settings.get_bool(SettingKey::Autoplay));
                     apply_audio_fx(&settings);
@@ -40,6 +40,7 @@ fn apply_audio_fx(settings: &SettingsStore) {
     fx::set_speed(settings.get_f64(SettingKey::PlaybackSpeed) as f32);
     let seconds = settings.get_int(SettingKey::Crossfade).clamp(0, mf_platform::settings::CROSSFADE_MAX_S) as u64;
     fx::set_crossfade(Duration::from_secs(seconds));
+    fx::set_dj_voice(settings.get_bool(SettingKey::DjVoice));
 }
 
 /// EngineConfig из настроек: имя устройства (DeviceName или DevicesService::default_device_name), битрейт,

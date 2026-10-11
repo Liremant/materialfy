@@ -424,6 +424,7 @@ impl Actor {
             cover_file: self.cover_file.clone(),
             playing: now.as_ref().is_some_and(|now| now.playing),
             buffering: now.as_ref().is_some_and(|now| now.loading),
+            narrating: is_local && core.local.narrating,
             position_ms: now.as_ref().map_or(0, |now| i64::from(now.position_ms)),
             duration_ms: now.as_ref().map_or(0, |now| i64::from(now.duration_ms)),
             volume: f64::from(volume) / f64::from(u16::MAX),
@@ -470,7 +471,7 @@ impl Actor {
         if old.track != next.track || old.codec != next.codec {
             events.push(PlayerEvent::TrackChanged);
         }
-        if old.playing != next.playing || old.buffering != next.buffering {
+        if old.playing != next.playing || old.buffering != next.buffering || old.narrating != next.narrating {
             events.push(PlayerEvent::StateChanged);
         }
         if old.position_ms != next.position_ms || old.duration_ms != next.duration_ms {

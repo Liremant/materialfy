@@ -76,6 +76,8 @@ pub enum SettingKey {
     PlaybackSpeed,
     /// кроссфейд между треками, секунды 0…12 (0 — выкл.); меняется на лету
     Crossfade,
+    /// the DJ's spoken lines between its tracks; changes on the fly
+    DjVoice,
     // Spotify Connect и сеть
     /// имя Connect-устройства; "" — «Materialfy · <имя ПК>»
     DeviceName,
@@ -122,7 +124,7 @@ pub enum SettingType {
 }
 
 impl SettingKey {
-    pub const ALL: [SettingKey; 51] = [
+    pub const ALL: [SettingKey; 52] = [
         SettingKey::ThemeMode,
         SettingKey::SchemeVariant,
         SettingKey::AccentFromCover,
@@ -160,6 +162,7 @@ impl SettingKey {
         SettingKey::PlaybackAuthorized,
         SettingKey::PlaybackSpeed,
         SettingKey::Crossfade,
+        SettingKey::DjVoice,
         SettingKey::DeviceName,
         SettingKey::WebClientId,
         SettingKey::ProxyMode,
@@ -217,6 +220,7 @@ impl SettingKey {
             PlaybackAuthorized => "playbackAuthorized",
             PlaybackSpeed => "playbackSpeed",
             Crossfade => "crossfade",
+            DjVoice => "djVoice",
             DeviceName => "deviceName",
             WebClientId => "webClientId",
             ProxyMode => "proxyMode",
@@ -288,6 +292,7 @@ impl SettingKey {
             PlaybackAuthorized => Bool(false),
             PlaybackSpeed => Float(1.0),
             Crossfade => Int(0),
+            DjVoice => Bool(true),
             DeviceName => Str(String::new()),
             WebClientId => Str(String::new()),
             ProxyMode => Str("system".into()),
@@ -932,7 +937,7 @@ mod tests {
 
     #[test]
     fn schema() {
-        assert_eq!(SettingKey::ALL.len(), 51);
+        assert_eq!(SettingKey::ALL.len(), 52);
         for key in SettingKey::ALL {
             assert_eq!(SettingKey::from_name(key.name()), Some(key));
             assert_eq!(key.default_value().value_type(), key.value_type());

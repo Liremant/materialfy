@@ -266,6 +266,11 @@ Item {
                         size: 34
                         ringColor: Theme.surface
                     }
+                    DjBadge {
+                        anchors.left: parent.left
+                        anchors.top: parent.top
+                        anchors.margins: parent.width * 0.06
+                    }
                 }
 
                 // Подписи при смене трека проявляются заново, чуть снизу

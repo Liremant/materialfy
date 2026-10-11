@@ -277,10 +277,16 @@ impl HomeService {
         // главная Spotify и «Для тебя» через сессию; без неё — поиск Discover-терминов общим ключом
         let made_for_you = async {
             if let Some(session) = &session {
-                let read = async { tokio::join!(home_feed::home(&http, session), home_feed::made_for_you(&http, session)) };
-                let (home, browse) = match tokio::time::timeout(SESSION_TIMEOUT, read).await {
+                let read = async {
+                    tokio::join!(
+                        home_feed::home(&http, session),
+                        home_feed::made_for_you(&http, session),
+                        home_feed::dj_cover(session)
+                    )
+                };
+                let (home, browse, dj) = match tokio::time::timeout(SESSION_TIMEOUT, read).await {
                     Ok(answers) => answers,
-                    Err(_) => (Err(anyhow::anyhow!("timeout")), Err(anyhow::anyhow!("timeout"))),
+                    Err(_) => (Err(anyhow::anyhow!("timeout")), Err(anyhow::anyhow!("timeout")), None),
                 };
                 if let Err(error) = &home {
                     tracing::debug!("Spotify home via session: {error:#}");
@@ -292,7 +298,7 @@ impl HomeService {
                     let home = home.unwrap_or_default();
                     let mut browse = browse.unwrap_or_default();
                     let publish = |browse: &[home_feed::FeedSection]| {
-                        let tiles = feed::made_for_you_tiles(&home, browse);
+                        let tiles = feed::with_dj(feed::made_for_you_tiles(&home, browse), dj.as_deref());
                         let shelves = feed::feed_shelves(&home);
                         let favorites = feed::favorite_artists(&home);
                         self.store(generation, |d| {

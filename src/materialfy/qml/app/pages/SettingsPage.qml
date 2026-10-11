@@ -544,6 +544,11 @@ Page {
             }
         }
         SettingRow {
+            title: I18n.t("DJ voice")
+            description: I18n.t("Spotify’s DJ talks between the songs it plays. Off: just the music")
+            Switch { checked: Settings.djVoice; onToggled: c => Settings.djVoice = c }
+        }
+        SettingRow {
             title: I18n.t("Output device")
             description: I18n.t("Where this computer’s audio goes")
             MenuField {

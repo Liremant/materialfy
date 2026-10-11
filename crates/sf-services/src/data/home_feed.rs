@@ -448,6 +448,33 @@ pub async fn homeview(session: &Session) -> anyhow::Result<Vec<FeedSection>> {
     parse_homeview(&serde_json::from_slice(&bytes)?)
 }
 
+/// Spotify's DJ: a playlist-like context made for each listener, offered in some markets only.
+pub const DJ_URI: &str = "spotify:playlist:37i9dQZF1EYkqdzj48dyYq";
+
+/// The DJ's cover when this account has the DJ, else `None`. Spotify's own
+/// home feed for the web player leaves the DJ out, so this asks for a DJ
+/// session: it only has tracks where the DJ is offered.
+pub async fn dj_cover(session: &Session) -> Option<String> {
+    let url = sf_player::SpClient::context_session_url(DJ_URI);
+    let read = session.spclient().get_context_from_url(&url);
+    let context = match tokio::time::timeout(TIMEOUT, read).await {
+        Ok(Ok(context)) => context,
+        Ok(Err(error)) => {
+            tracing::debug!("no DJ for this account: {error}");
+            return None;
+        }
+        Err(_) => return None,
+    };
+    let mut tracks = context.pages.iter().flat_map(|page| page.tracks.iter()).peekable();
+    tracks.peek()?;
+    let cover = tracks
+        .find_map(|track| track.metadata.get("narration.intro.image").filter(|image| image.starts_with("https://")))
+        .cloned();
+    Some(cover.unwrap_or_else(|| DJ_COVER.to_owned()))
+}
+
+const DJ_COVER: &str = "https://lexicon-assets.spotifycdn.com/Your-DJ-Cover-Art-640.png";
+
 /// Страница «Для тебя»: личные плейлисты Spotify по разделам.
 pub async fn made_for_you(http: &Http, session: &Session) -> anyhow::Result<Vec<FeedSection>> {
     let variables = json!({

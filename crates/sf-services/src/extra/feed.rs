@@ -143,6 +143,34 @@ pub fn made_for_you_tiles(home: &[FeedSection], browse: &[FeedSection]) -> Vec<L
         .collect()
 }
 
+/// The DJ's tile, first in «Made for you»: it plays the DJ rather than
+/// opening a page, since the DJ has no track list to show.
+pub fn dj_entry(cover: &str) -> LibraryEntry {
+    LibraryEntry {
+        kind: "dj".to_owned(),
+        id: crate::data::home_feed::DJ_URI.rsplit(':').next().unwrap_or_default().to_owned(),
+        uri: crate::data::home_feed::DJ_URI.to_owned(),
+        title: "DJ".to_owned(),
+        subtitle: mf_i18n::t("Music and commentary picked for you"),
+        cover: cover.to_owned(),
+        covers: if cover.is_empty() { Vec::new() } else { vec![cover.to_owned()] },
+        owner: "Spotify".to_owned(),
+        owner_id: "spotify".to_owned(),
+        read_only: true,
+        ..Default::default()
+    }
+}
+
+/// «Made for you» with the DJ first when the account has it, and only once.
+pub fn with_dj(tiles: Vec<LibraryEntry>, dj_cover: Option<&str>) -> Vec<LibraryEntry> {
+    let Some(cover) = dj_cover else {
+        return tiles;
+    };
+    std::iter::once(dj_entry(cover))
+        .chain(tiles.into_iter().filter(|tile| tile.uri != crate::data::home_feed::DJ_URI))
+        .collect()
+}
+
 fn section_id(uri: &str) -> &str {
     uri.rsplit(':').next().unwrap_or(uri)
 }
@@ -289,6 +317,24 @@ mod tests {
 
     fn section(uri: &str, title: &str, cards: Vec<FeedCard>) -> FeedSection {
         FeedSection { uri: uri.into(), title: title.into(), cards }
+    }
+
+    #[test]
+    fn the_dj_leads_made_for_you_when_the_account_has_it() {
+        let dj = crate::data::home_feed::DJ_URI;
+        let tiles = vec![
+            LibraryEntry { uri: "spotify:playlist:dw".into(), ..Default::default() },
+            LibraryEntry { uri: dj.into(), kind: "playlist".into(), ..Default::default() },
+        ];
+        assert_eq!(with_dj(tiles.clone(), None), tiles);
+
+        let with = with_dj(tiles, Some("https://cover"));
+        let uris: Vec<&str> = with.iter().map(|t| t.uri.as_str()).collect();
+        assert_eq!(uris, [dj, "spotify:playlist:dw"]);
+        assert_eq!(with[0].kind, "dj");
+        assert_eq!(with[0].id, "37i9dQZF1EYkqdzj48dyYq");
+        assert_eq!(with[0].cover, "https://cover");
+        assert_eq!(with[0].title, "DJ");
     }
 
     #[test]

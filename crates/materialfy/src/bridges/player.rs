@@ -45,6 +45,8 @@ pub mod qobject {
         #[qproperty(QString, cover_file, cxx_name = "coverFile", READ, NOTIFY = cover_file_changed)]
         #[qproperty(bool, playing, READ, NOTIFY = state_changed)]
         #[qproperty(bool, buffering, READ, NOTIFY = state_changed)]
+        /// the DJ is saying a line between tracks (local playback)
+        #[qproperty(bool, narrating, READ, NOTIFY = state_changed)]
         #[qproperty(i32, position_ms, cxx_name = "positionMs", READ, NOTIFY = position_changed)]
         #[qproperty(i32, duration_ms, cxx_name = "durationMs", READ, NOTIFY = position_changed)]
         #[qproperty(f64, position, READ, NOTIFY = position_changed)]
@@ -220,6 +222,7 @@ pub struct PlayerRust {
     cover_file: QString,
     playing: bool,
     buffering: bool,
+    narrating: bool,
     position_ms: i32,
     duration_ms: i32,
     position: f64,
@@ -278,6 +281,7 @@ impl Default for PlayerRust {
             cover_file: QString::default(),
             playing: false,
             buffering: false,
+            narrating: false,
             position_ms: 0,
             duration_ms: 0,
             position: 0.0,
@@ -646,10 +650,11 @@ impl qobject::Player {
         }
 
         // воспроизведение
-        if self.playing != s.playing || self.buffering != s.buffering {
+        if self.playing != s.playing || self.buffering != s.buffering || self.narrating != s.narrating {
             let mut this = self.as_mut().rust_mut();
             this.playing = s.playing;
             this.buffering = s.buffering;
+            this.narrating = s.narrating;
             self.as_mut().state_changed();
         }
 
