@@ -1,0 +1,175 @@
+import QtQuick
+import QtQuick.Layouts
+import Md3
+
+// Строка библиотеки (вид «список»): обложка 48 (исполнитель — круг, папка — иконка, Любимые — градиент),
+// название + булавка / «только чтение», подпись, колонки «Автор», «Добавлено», «Слушали» (последняя
+// прячется в узком окне), ⋯ по наведению. entry — словарь LIBRARY_KEYS.
+Item {
+    id: root
+
+    property var entry: ({})
+    property bool showPlayed: width >= 860
+    property bool showAdded: width >= 640
+    readonly property string kind: entry.kind ?? ""
+
+    signal clicked()
+    signal menuRequested(point point)
+
+    implicitHeight: 64
+
+    readonly property var _months: ["янв.", "февр.", "мар.", "апр.", "мая", "июн.", "июл.", "авг.", "сент.", "окт.", "нояб.", "дек."]
+    function date(iso) {
+        if (!iso)
+            return "—"
+        const d = new Date(iso)
+        if (isNaN(d.getTime()))
+            return "—"
+        return d.getDate() + " " + _months[d.getMonth()] + " " + d.getFullYear()
+    }
+    function ago(iso) {
+        if (!iso)
+            return "—"
+        const d = new Date(iso)
+        if (isNaN(d.getTime()))
+            return "—"
+        const min = (Date.now() - d.getTime()) / 60000
+        if (min < 10) return "Сейчас"
+        if (min < 60) return Math.round(min) + " мин назад"
+        const h = min / 60
+        if (h < 24) return Math.round(h) + " ч назад"
+        const days = Math.floor(h / 24)
+        if (days === 1) return "Вчера"
+        if (days < 7) return days + " " + (days < 5 ? "дня" : "дней") + " назад"
+        if (days < 14) return "На прошлой неделе"
+        if (days < 31) return Math.floor(days / 7) + " недели назад"
+        return date(iso)
+    }
+
+    RowLayout {
+        anchors.fill: parent
+        anchors.leftMargin: 12
+        anchors.rightMargin: 12
+        spacing: 16
+
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.preferredWidth: 3
+            spacing: 12
+
+            Item {
+                Layout.preferredWidth: 48
+                Layout.preferredHeight: 48
+                Rectangle {
+                    anchors.fill: parent
+                    visible: root.kind === "liked"
+                    radius: 12
+                    gradient: Gradient {
+                        orientation: Gradient.Horizontal
+                        GradientStop { position: 0; color: Theme.primaryContainer }
+                        GradientStop { position: 1; color: Theme.tertiaryContainer }
+                    }
+                    Icon { anchors.centerIn: parent; name: "favorite"; size: 22; fill: 1; color: Theme.fgPrimaryContainer }
+                }
+                Rectangle {
+                    anchors.fill: parent
+                    visible: root.kind === "folder"
+                    radius: 12
+                    color: Theme.surfaceContainerHigh
+                    Icon { anchors.centerIn: parent; name: "folder"; size: 22; color: Theme.fgSurfaceVariant }
+                }
+                MorphImage {
+                    anchors.fill: parent
+                    visible: root.kind !== "liked" && root.kind !== "folder" && (root.entry.cover ?? "") !== ""
+                    source: visible ? root.entry.cover : ""
+                    shape: root.kind === "artist" ? (hover.hovered ? "cookie12" : "circle") : (hover.hovered ? "cookie9" : "softSquare")
+                }
+                MorphShape {
+                    anchors.fill: parent
+                    visible: root.kind !== "liked" && root.kind !== "folder" && (root.entry.cover ?? "") === ""
+                    shape: root.kind === "artist" ? "circle" : "softSquare"
+                    color: Theme.surfaceContainerHigh
+                    Icon {
+                        anchors.centerIn: parent
+                        name: ({ playlist: "queue_music", album: "album", artist: "person", show: "podcasts" })[root.kind] ?? "music_note"
+                        size: 22
+                        color: Theme.fgSurfaceVariant
+                    }
+                }
+            }
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 2
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 6
+                    Label {
+                        Layout.fillWidth: implicitWidth > width
+                        Layout.maximumWidth: implicitWidth
+                        text: root.kind === "liked" ? "Любимые треки" : (root.entry.title ?? "")
+                        type: "bodyLarge"
+                        weight: 500
+                    }
+                    Icon { visible: root.entry.pinned === true; name: "push_pin"; size: 18; fill: 1; color: Theme.primary }
+                    ReadOnlyBadge { visible: root.kind === "folder" }
+                    Item { Layout.fillWidth: true }
+                }
+                Label {
+                    Layout.fillWidth: true
+                    text: root.entry.subtitle ?? ""
+                    type: "bodyMedium"
+                    color: Theme.fgSurfaceVariant
+                }
+            }
+        }
+
+        Label {
+            Layout.fillWidth: true
+            Layout.preferredWidth: 1.4
+            text: root.kind === "liked" ? "Вы" : (root.entry.owner ?? "")
+            type: "bodyMedium"
+            color: Theme.fgSurfaceVariant
+        }
+        Label {
+            visible: root.showAdded
+            Layout.preferredWidth: 120
+            text: root.date(root.entry.addedAt)
+            type: "bodyMedium"
+            color: Theme.fgSurfaceVariant
+        }
+        Label {
+            visible: root.showPlayed
+            Layout.preferredWidth: 120
+            text: root.ago(root.entry.playedAt)
+            type: "bodyMedium"
+            color: Theme.fgSurfaceVariant
+            // «На прошлой неделе» — в две строки, а не с многоточием
+            wrapMode: Text.WordWrap
+            maximumLineCount: 2
+        }
+        IconButton {
+            id: more
+            Layout.preferredWidth: 32
+            Layout.preferredHeight: 32
+            icon: "more_horiz"
+            size: "xs"
+            iconSize: 26
+            iconWeight: 700
+            opacity: hover.hovered || pressed ? 1 : 0
+            onClicked: root.menuRequested(more.mapToItem(null, 0, more.height))
+        }
+    }
+
+    HoverHandler { id: hover }
+    TapHandler {
+        acceptedButtons: Qt.RightButton
+        onTapped: point => root.menuRequested(root.mapToItem(null, point.position.x, point.position.y))
+    }
+    StateLayer {
+        z: -1
+        anchors.fill: parent
+        radius: Theme.shape.large
+        onClicked: root.clicked()
+    }
+}

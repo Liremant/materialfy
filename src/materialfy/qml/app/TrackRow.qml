@@ -1,0 +1,348 @@
+import QtQuick
+import QtQuick.Layouts
+import Md3
+import Materialfy.Core
+
+// Строка трека: номер · обложка · название/исполнители · альбом · (добавил/добавлено) · лайк · длительность.
+// editable — режим правки плейлиста: ручка перетаскивания слева, «убрать» вместо сердца и ⋯.
+Item {
+    id: root
+
+    property int number: 0
+    property string trackId
+    property string title
+    property string version
+    property string artists
+    property var artistRefs: []        // [{ id, name }] — для перехода к исполнителю
+    property string albumId
+    property string album
+    property string cover
+    property string coverLarge
+    property string uri
+    property bool isEpisode: false
+    property string showId
+    property int durationMs: 0
+    property bool explicit: false
+    property bool available: true
+    property bool liked: false
+    property bool current: false       // играет сейчас
+    property bool showAlbum: true
+    property bool wide: showAlbum && _wideAuto
+    // колонка альбома появляется с запасом ±20 px, чтобы не мигать у самой границы при растягивании
+    property bool _wideAuto: width > 720
+    onWidthChanged: _wideAuto = _wideAuto ? width > 700 : width > 740
+    property real _albumT: wide ? 1 : 0
+    Behavior on _albumT { NumberAnimation { duration: Theme.motion.spatialDefault; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.motion.emphasized } }
+    property var track: null           // полный словарь трека для меню; без него — собирается из полей
+    property bool highlighted: false   // вспышка «перейти к треку» / после добавления
+
+    // Плейлист: кто и когда добавил. addedColumn: "" — нет колонки, "by" — «Добавил», "at" — «Добавлено»
+    property string addedAt
+    property string addedBy
+    property string addedColumn
+    property bool editable: false
+    property bool dragging: false      // строка поднята и едет за курсором
+
+    signal activated()                 // клик — воспроизвести
+    signal likeClicked()               // клик по сердцу
+    signal removeClicked()             // «убрать из плейлиста» (editable)
+    signal dragStarted()
+    signal dragMoved(real dy, real sceneY)
+    signal dragFinished()
+
+    implicitHeight: 64
+
+    function trackData() {
+        if (track)
+            return track
+        return {
+            trackId: trackId, albumId: albumId, title: title, version: version, artists: artists,
+            artistRefs: artistRefs ?? [], album: album, cover: cover, coverLarge: coverLarge, durationMs: durationMs,
+            explicit: explicit, available: available, uri: uri, isEpisode: isEpisode, showId: showId,
+            addedAt: addedAt, addedBy: addedBy
+        }
+    }
+
+    function openMenu(item, x, y) {
+        const p = item.mapToItem(null, x, y)
+        Catalog.requestTrackMenu(trackData(), p.x, p.y)
+    }
+
+    function _time(ms) {
+        const s = Math.round(ms / 1000)
+        return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0")
+    }
+
+    readonly property var _months: ["янв.", "февр.", "мар.", "апр.", "мая", "июн.", "июл.", "авг.", "сент.", "окт.", "нояб.", "дек."]
+    function _date(iso) {
+        if (!iso)
+            return ""
+        const d = new Date(iso)
+        if (isNaN(d.getTime()))
+            return ""
+        const now = new Date()
+        const day = 24 * 3600 * 1000
+        const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+        if (d.getTime() >= start)
+            return "Сегодня"
+        if (d.getTime() >= start - day)
+            return "Вчера"
+        return d.getDate() + " " + _months[d.getMonth()] + (d.getFullYear() !== now.getFullYear() ? " " + d.getFullYear() : "")
+    }
+
+    readonly property bool _compactAdded: width < 600
+    readonly property real _editT: editable ? 1 : 0
+
+    Rectangle {
+        id: bg
+        anchors.fill: parent
+        radius: Theme.shape.large
+        color: root.dragging ? Theme.surfaceContainerHighest
+             : root.current && !root.editable ? Qt.alpha(Theme.primary, 0.12) : "transparent"
+    }
+    // тень поднятой строки (Elevation кладётся рядом с bg — внутрь строки, сдвигается вместе с ней)
+    Elevation { target: bg; level: root.dragging ? 2 : 0 }
+
+    Rectangle {
+        id: flash
+        anchors.fill: parent
+        radius: Theme.shape.large
+        color: Theme.primary
+        opacity: 0
+        SequentialAnimation {
+            running: root.highlighted && Theme.reducedMotion !== true
+            loops: 2
+            NumberAnimation { target: flash; property: "opacity"; to: 0.18; duration: Theme.motion.effectsDefault }
+            NumberAnimation { target: flash; property: "opacity"; to: 0; duration: Theme.motion.effectsDefault * 2 }
+        }
+        // reduced motion — без вспышки: ровная подсветка, пока строка помечена
+        states: State {
+            when: root.highlighted && Theme.reducedMotion === true
+            PropertyChanges { flash.opacity: 0.12 }
+        }
+    }
+
+    RowLayout {
+        anchors.fill: parent
+        anchors.leftMargin: 12 - 8 * root._editT
+        anchors.rightMargin: 16
+        spacing: 16
+
+        // Ручка перетаскивания: ширина 0 → 28 при входе в правку
+        Item {
+            id: handle
+            Layout.preferredWidth: root.editable ? 28 : 0
+            Layout.rightMargin: root.editable ? 0 : -16
+            Layout.fillHeight: true
+            Behavior on Layout.preferredWidth { enabled: Theme.reducedMotion !== true; NumberAnimation { duration: Theme.motion.spatialFast; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.motion.emphasized } }
+            Behavior on Layout.rightMargin { enabled: Theme.reducedMotion !== true; NumberAnimation { duration: Theme.motion.spatialFast; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.motion.emphasized } }
+            clip: true
+            Icon {
+                anchors.centerIn: parent
+                name: "drag_indicator"
+                size: 22
+                color: handleHover.hovered || root.dragging ? Theme.fgSurface : Theme.fgSurfaceVariant
+                opacity: root.editable ? 1 : 0
+                Behavior on opacity { NumberAnimation { duration: Theme.motion.effectsDefault } }
+            }
+            HoverHandler { id: handleHover; cursorShape: root.dragging ? Qt.ClosedHandCursor : Qt.OpenHandCursor; enabled: root.editable }
+            DragHandler {
+                id: drag
+                enabled: root.editable
+                target: null
+                yAxis.enabled: true
+                xAxis.enabled: false
+                grabPermissions: PointerHandler.CanTakeOverFromAnything
+                onActiveChanged: active ? root.dragStarted() : root.dragFinished()
+                onTranslationChanged: if (active) root.dragMoved(translation.y, centroid.scenePosition.y)
+            }
+        }
+
+        Label {
+            visible: root.number > 0
+            Layout.preferredWidth: 28
+            text: root.number
+            type: "bodyMedium"
+            color: Theme.fgSurfaceVariant
+            horizontalAlignment: Text.AlignRight
+        }
+
+        MorphImage {
+            Layout.preferredWidth: 48
+            Layout.preferredHeight: 48
+            source: root.cover
+            shape: root.current && !root.editable ? "cookie9" : "softSquare"
+        }
+
+        ColumnLayout {
+            Layout.fillWidth: true
+            Layout.preferredWidth: 3
+            spacing: 2
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 6
+                Label {
+                    Layout.fillWidth: implicitWidth > width
+                    Layout.maximumWidth: implicitWidth
+                    text: root.title
+                    type: "bodyLarge"
+                    weight: 500
+                    color: root.current ? Theme.primary : Theme.fgSurface
+                }
+                Label {
+                    visible: root.version !== ""
+                    Layout.fillWidth: implicitWidth > width
+                    Layout.maximumWidth: implicitWidth
+                    text: root.version
+                    type: "bodyLarge"
+                    color: Theme.fgSurfaceVariant
+                }
+                Rectangle {
+                    visible: root.explicit
+                    implicitWidth: 16
+                    implicitHeight: 16
+                    radius: 4
+                    color: Theme.surfaceContainerHighest
+                    Label { anchors.centerIn: parent; text: "E"; type: "labelSmall"; color: Theme.fgSurfaceVariant }
+                }
+                Item { Layout.fillWidth: true }
+            }
+            LinkLabel {
+                Layout.fillWidth: true
+                text: root.artists
+                type: "bodyMedium"
+                color: Theme.fgSurfaceVariant
+                linkEnabled: (root.artistRefs ?? []).length > 0
+                previewArtistId: (root.artistRefs ?? []).length === 1 ? root.artistRefs[0].id : ""
+                onClicked: Catalog.openArtists(root.artistRefs)
+            }
+        }
+
+        LinkLabel {
+            visible: root._albumT > 0.01
+            opacity: root._albumT
+            Layout.fillWidth: true
+            Layout.preferredWidth: 2 * root._albumT
+            linkEnabled: root.albumId !== ""
+            onClicked: Catalog.openAlbum(root.albumId)
+            text: root.album
+            type: "bodyMedium"
+            color: Theme.fgSurfaceVariant
+        }
+
+        // «Добавил» (аватар + имя) / «Добавлено» (дата); в узкой строке — только аватар
+        RowLayout {
+            visible: root.addedColumn !== ""
+            Layout.preferredWidth: root.addedColumn === "by" && root._compactAdded ? 28 : 132
+            Layout.maximumWidth: Layout.preferredWidth
+            spacing: 8
+            Avatar {
+                visible: root.addedColumn === "by" && root.addedBy !== ""
+                size: 24
+                name: root.addedBy
+            }
+            Label {
+                visible: !(root.addedColumn === "by" && root._compactAdded)
+                Layout.fillWidth: true
+                text: root.addedColumn === "by" ? root.addedBy : root._date(root.addedAt)
+                type: "bodyMedium"
+                color: Theme.fgSurfaceVariant
+            }
+        }
+
+        // Сердце и ⋯ — в просмотре; «убрать» — в правке (перекрёстное растворение)
+        Item {
+            implicitWidth: root.editable ? 32 : 32 + 16 + 32
+            implicitHeight: 32
+
+            Row {
+                visible: opacity > 0
+                opacity: 1 - root._editT
+                Behavior on opacity { NumberAnimation { duration: Theme.motion.effectsDefault } }
+                spacing: 16
+
+                // Сердце: залитое у лайкнутых, контур — при наведении на строку
+                Item {
+                    width: 32
+                    height: 32
+                    Icon {
+                        anchors.centerIn: parent
+                        visible: root.available
+                        name: "favorite"
+                        size: 20
+                        fill: root.liked ? 1 : 0
+                        color: root.liked ? Theme.primary : heartArea.containsMouse ? Theme.fgSurface : Theme.fgSurfaceVariant
+                        opacity: root.liked || rowHover.hovered ? 1 : 0
+                        scale: heartArea.pressed ? 0.85 : 1
+                        Behavior on scale { NumberAnimation { duration: Theme.motion.spatialFast; easing.type: Easing.OutBack } }
+                    }
+                    StateLayer {
+                        id: heartArea
+                        anchors.fill: parent
+                        radius: width / 2
+                        visible: root.available && !root.editable && (root.liked || rowHover.hovered)
+                        onClicked: root.likeClicked()
+                    }
+                }
+                IconButton {
+                    id: moreButton
+                    width: 32
+                    height: 32
+                    icon: "more_horiz"
+                    size: "xs"
+                    iconSize: 26
+                    iconWeight: 700
+                    enabled: !root.editable
+                    opacity: rowHover.hovered || pressed ? 1 : 0
+                    onClicked: root.openMenu(moreButton, 0, moreButton.height)
+                }
+            }
+            IconButton {
+                anchors.right: parent.right
+                width: 32
+                height: 32
+                visible: opacity > 0
+                opacity: root._editT
+                Behavior on opacity { NumberAnimation { duration: Theme.motion.effectsDefault } }
+                icon: "remove_circle"
+                size: "xs"
+                iconColor: Theme.fgSurfaceVariant
+                onClicked: root.removeClicked()
+            }
+        }
+
+        Label {
+            Layout.preferredWidth: 44
+            text: root._time(root.durationMs)
+            type: "bodyMedium"
+            color: Theme.fgSurfaceVariant
+            horizontalAlignment: Text.AlignRight
+        }
+    }
+
+    HoverHandler { id: rowHover }
+
+    // Перетаскивание в очередь (вне правки)
+    QueueDragSource {
+        anchors.fill: parent
+        z: -2
+        source: root
+        enabled: !root.editable && root.available && root.uri !== ""
+        title: root.title
+        cover: root.cover
+    }
+
+    TapHandler {
+        acceptedButtons: Qt.RightButton
+        onTapped: (point) => root.openMenu(root, point.position.x, point.position.y)
+    }
+
+    // Под содержимым: клики по сердцу достаются ему, по остальной строке — сюда
+    StateLayer {
+        z: -1
+        anchors.fill: parent
+        radius: Theme.shape.large
+        dragged: root.dragging
+        onClicked: if (!root.editable) root.activated()
+    }
+}

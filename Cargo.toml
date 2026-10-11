@@ -1,0 +1,129 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/md3-model",
+    "crates/sf-auth",
+    "crates/sf-api",
+    "crates/sf-player",
+    "crates/sf-services",
+    "crates/mf-theme",
+    "crates/mf-lyrics",
+    "crates/mf-platform",
+    "crates/materialfy",
+]
+
+[workspace.package]
+description = "Materialfy — клиент Spotify на Qt Quick (Material 3 Expressive) и Rust"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "MIT"
+
+[workspace.dependencies]
+# внутренние
+md3-model = { path = "crates/md3-model" }
+sf-auth = { path = "crates/sf-auth" }
+sf-api = { path = "crates/sf-api" }
+sf-player = { path = "crates/sf-player" }
+sf-services = { path = "crates/sf-services" }
+mf-theme = { path = "crates/mf-theme" }
+mf-lyrics = { path = "crates/mf-lyrics" }
+mf-platform = { path = "crates/mf-platform" }
+
+# асинхронность и сеть
+tokio = { version = "1.53", features = ["rt-multi-thread", "macros", "sync", "time", "fs", "net", "io-util"] }
+futures = "0.3.34"
+reqwest = { version = "0.12.24", default-features = false, features = ["rustls-tls-native-roots", "json", "gzip", "http2", "blocking", "socks", "system-proxy"] }
+hyper-util = { version = "0.1", default-features = false, features = ["client-proxy", "client-proxy-system"] }
+http = "1"
+
+# данные
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.152"
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
+jiff = "0.2"
+fastrand = "2.3"
+rand = "0.9"
+regex = "1.13"
+unicode-normalization = "0.1.25"
+percent-encoding = "2"
+urlencoding = "2"
+protobuf = "3"
+
+# ошибки и логи
+thiserror = "2.0.21"
+anyhow = "1.0.104"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt"] }
+log = "0.4"
+
+# крипто/хэши (тексты NetEase, ключи кэша, PKCE, zeroconf)
+hmac = "0.12.1"
+sha1 = "0.10.6"
+sha2 = "0.10.9"
+md-5 = "0.10.6"
+aes = "0.8.4"
+ecb = { version = "0.1.2", features = ["alloc"] }
+ctr = "0.9"
+pbkdf2 = "0.12"
+base64 = "0.22.1"
+hex = "0.4.3"
+
+# Spotify: воспроизведение и Connect (версии из crates.io, реально — из форка через [patch.crates-io])
+librespot-core = { version = "0.8", default-features = false, features = ["rustls-tls-native-roots"] }
+librespot-playback = { version = "0.8", default-features = false, features = ["rustls-tls-native-roots"] }
+librespot-connect = { version = "0.8", default-features = false }
+librespot-metadata = { version = "0.8", default-features = false }
+librespot-protocol = { version = "0.8", default-features = false }
+# rodio даёт только микшер/очередь; устройство открывает fastframe-audio (cpal 0.18)
+rodio = { version = "0.21", default-features = false }
+# fastframe: только эти два крейта, без egui. rev двигать вместе.
+fastframe-audio = { git = "https://github.com/dennisgr7/fastframe", rev = "f7dc6fbe938e8a953509d110cdba036f537e5b7e" }
+fastframe-now-playing = { git = "https://github.com/dennisgr7/fastframe", rev = "f7dc6fbe938e8a953509d110cdba036f537e5b7e" }
+mdns-sd = "0.21"
+open = "5"
+
+# хранилище секретов Spotify (keyring-core + store под каждую ОС)
+keyring-core = "1"
+windows-native-keyring-store = { version = "1.1", default-features = false }
+apple-native-keyring-store = { version = "1.0.2", features = ["keychain"] }
+zbus-secret-service-keyring-store = { version = "1.0.1", features = ["rt-tokio-crypto-rust"] }
+
+# тема
+material-colors = "0.5.0"
+image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "webp", "bmp"] }
+
+# платформа
+dirs = "6.0.0"
+zbus = { version = "5.12", default-features = false, features = ["tokio"] }
+winreg = "0.55.0"
+libc = "0.2.177"
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading", "Win32_Security"] }
+
+# Qt
+cxx = "1.0.204"
+cxx-qt = "0.10.0"
+cxx-qt-lib = { version = "0.10.0", features = ["qt_gui", "qt_qml", "serde"] }
+cxx-qt-build = "0.10.0"
+clap = { version = "4.6", features = ["derive"] }
+
+[patch.crates-io]
+# rustls 0.23 для hyper-proxy2 (librespot-core -> hyper-proxy2)
+hyper-proxy2 = { git = "https://github.com/crmne/hyper-proxy2", rev = "efca4811371ddae81c06be168de54194938d70b1" }
+# librespot 0.8.0 + патчи Spotifast (очередь, normalisation_report, восстановление сессии, креды в памяти).
+# Все крейты — из одного rev; librespot-oauth нужен как транзитивная зависимость librespot-core.
+librespot-audio = { git = "https://github.com/crmne/librespot", rev = "23fc42cff37848e51f0d8eaefad1a93941b71e59" }
+librespot-connect = { git = "https://github.com/crmne/librespot", rev = "23fc42cff37848e51f0d8eaefad1a93941b71e59" }
+librespot-core = { git = "https://github.com/crmne/librespot", rev = "23fc42cff37848e51f0d8eaefad1a93941b71e59" }
+librespot-metadata = { git = "https://github.com/crmne/librespot", rev = "23fc42cff37848e51f0d8eaefad1a93941b71e59" }
+librespot-oauth = { git = "https://github.com/crmne/librespot", rev = "23fc42cff37848e51f0d8eaefad1a93941b71e59" }
+librespot-playback = { git = "https://github.com/crmne/librespot", rev = "23fc42cff37848e51f0d8eaefad1a93941b71e59" }
+librespot-protocol = { git = "https://github.com/crmne/librespot", rev = "23fc42cff37848e51f0d8eaefad1a93941b71e59" }
+
+# Декодирование аудио на opt-level 0 слишком медленное; сам бинарник остаётся инкрементальным.
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.release]
+lto = "thin"
+codegen-units = 4

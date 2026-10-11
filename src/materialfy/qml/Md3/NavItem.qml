@@ -1,0 +1,99 @@
+import QtQuick
+
+// Пункт навигации сайдбара: пилюля во всю ширину; у выбранного — иконка в квадратике цвета primary.
+// Иконка всегда на одном и том же месте (iconInset от левого края) — и в развёрнутом, и в рейле,
+// поэтому при сворачивании сайдбара меняется только ширина, ничего не прыгает.
+Item {
+    id: root
+
+    property string icon
+    property string text
+    property bool selected: false
+    property bool compact: false          // подпись и хвост гаснут, пилюля сжимается вместе с шириной
+    property real iconInset: 14           // от левого края пилюли до квадрата иконки (28 px)
+    property real labelWidth: 180         // фиксированная: при анимации ширины текст не переносится и не «прыгает» многоточием
+    property string trailingIcon
+    property color trailingColor: Theme.primary
+    property string imageSource
+
+    signal clicked()
+
+    implicitHeight: 48
+    implicitWidth: 240
+    clip: true
+
+    Rectangle {
+        anchors.fill: parent
+        radius: height / 2
+        color: root.selected ? Theme.secondaryContainer : "transparent"
+        Behavior on color { enabled: !Theme.transitioning; ColorAnimation { duration: Theme.motion.effectsDefault } }
+    }
+
+    Item {
+        id: iconBox
+        x: root.iconInset
+        width: 28
+        height: 28
+        anchors.verticalCenter: parent.verticalCenter
+
+        Rectangle {
+            anchors.fill: parent
+            radius: 8
+            color: Theme.primary
+            scale: root.selected && root.imageSource === "" ? 1 : 0.4
+            opacity: root.selected && root.imageSource === "" ? 1 : 0
+            Behavior on scale { NumberAnimation { duration: Theme.motion.spatialFast; easing.type: Easing.OutBack; easing.overshoot: 2 } }
+            Behavior on opacity { NumberAnimation { duration: Theme.motion.effectsFast } }
+        }
+        Icon {
+            anchors.centerIn: parent
+            visible: root.imageSource === ""
+            name: root.icon
+            size: 20
+            fill: root.selected ? 1 : 0
+            color: root.selected ? Theme.fgPrimary : Theme.fgSurfaceVariant
+        }
+        // Обложка (плейлисты) создаётся только при наличии картинки: скрытый MorphImage
+        // всё равно участвовал в каждом кадре перекраски темы.
+        Loader {
+            anchors.fill: parent
+            active: root.imageSource !== ""
+            sourceComponent: MorphImage {
+                source: root.imageSource
+                shape: root.selected ? "cookie9" : "softSquare"
+            }
+        }
+    }
+
+    Label {
+        x: iconBox.x + iconBox.width + 8   // иконка 20 в квадрате 28 → видимый зазор ~12
+        anchors.verticalCenter: parent.verticalCenter
+        width: root.labelWidth - (root.trailingIcon !== "" ? 28 : 0)
+        text: root.text
+        type: "labelLarge"
+        color: root.selected ? Theme.fgSecondaryContainer : Theme.fgSurfaceVariant
+        opacity: root.compact ? 0 : 1
+        visible: opacity > 0
+        Behavior on opacity { NumberAnimation { duration: Theme.motion.effectsFast } }
+    }
+
+    Icon {
+        visible: root.trailingIcon !== "" && opacity > 0
+        opacity: root.compact ? 0 : 1
+        Behavior on opacity { NumberAnimation { duration: Theme.motion.effectsFast } }
+        anchors.right: parent.right
+        anchors.rightMargin: 14
+        anchors.verticalCenter: parent.verticalCenter
+        name: root.trailingIcon
+        size: 18
+        fill: 1
+        color: root.trailingColor
+    }
+
+    StateLayer {
+        anchors.fill: parent
+        radius: height / 2
+        color: Theme.fgSurface
+        onClicked: root.clicked()
+    }
+}

@@ -1,0 +1,36 @@
+[package]
+name = "sf-auth"
+description = "Вход в Spotify: PKCE через браузер (loopback), гранты Web API и воспроизведения, хранилище секретов, прокси"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+reqwest.workspace = true
+hyper-util.workspace = true
+http.workspace = true
+sha2.workspace = true
+base64.workspace = true
+rand.workspace = true
+urlencoding.workspace = true
+open.workspace = true
+log.workspace = true
+tracing.workspace = true
+keyring-core.workspace = true
+librespot-core.workspace = true
+librespot-protocol.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-native-keyring-store.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+apple-native-keyring-store.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus-secret-service-keyring-store.workspace = true

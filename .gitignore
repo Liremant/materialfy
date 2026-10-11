@@ -1,0 +1,18 @@
+# Python: только инструмент сборки шрифта tools/subset_fonts.py
+__pycache__/
+*.pyc
+dist/
+# исходное видео референса (чужой контент, 15 МБ); кадры и разбор лежат рядом
+docs/reference/*.mp4
+# кадры и обложки из чужого видео-референса — только локально (разбор — в DESIGN_NOTES.md)
+docs/reference/screens/
+docs/reference/motion/
+docs/reference/covers/
+
+# Rust
+target/
+
+# Qt, скачанный install.sh рядом с исходниками
+/qt/
+# бинарник, который кладёт install.sh
+/bin/

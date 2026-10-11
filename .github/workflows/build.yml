@@ -1,0 +1,239 @@
+# Сборка всех платформ. Запускается на PR в main, вручную (Actions → Build → Run workflow) и вызывается
+# из release.yml (workflow_call). На обычные коммиты в main не запускается.
+# Windows — основная платформа; Linux и macOS — по возможности (сбой не валит запуск).
+name: Build
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      version:
+        description: "Версия сборки (тег v1.2.3 или 1.2.3); пусто — из Cargo.toml"
+        type: string
+        required: false
+        default: ""
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  QT_VERSION: "6.12.0"
+  QT_ADDONS: "qtshadertools qtimageformats"
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  meta:
+    name: Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: v
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          v="${INPUT_VERSION#v}"
+          if [ -z "$v" ]; then
+            v="$(awk '/^\[workspace\.package\]/{f=1;next} /^\[/{f=0} f && /^version *=/{gsub(/[" ]/,"",$0); split($0,a,"="); print a[2]; exit}' Cargo.toml)"
+          fi
+          [ -n "$v" ] || { echo "не удалось определить версию" >&2; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "Версия: $v"
+
+  windows:
+    name: Windows (Inno Setup)
+    needs: meta
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Кэш Qt
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}\Qt\${{ env.QT_VERSION }}\msvc2022_64
+          key: qt-${{ env.QT_VERSION }}-windows-${{ hashFiles('.github/scripts/install_qt.py') }}
+
+      - name: Qt ${{ env.QT_VERSION }}
+        shell: pwsh
+        run: >
+          python .github/scripts/install_qt.py --host windows --version $env:QT_VERSION
+          --addons $($env:QT_ADDONS -split ' ') --out "$env:RUNNER_TEMP\Qt\$env:QT_VERSION\msvc2022_64" --github
+
+      - name: Inno Setup
+        shell: pwsh
+        run: |
+          $paths = @("C:\Program Files (x86)\Inno Setup 6", "C:\Program Files\Inno Setup 6")
+          if (-not ($paths | Where-Object { Test-Path "$_\ISCC.exe" })) {
+            choco install innosetup -y --no-progress
+          }
+          foreach ($p in $paths) { if (Test-Path "$p\ISCC.exe") { $p | Out-File -Append $env:GITHUB_PATH; break } }
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: qt-${{ env.QT_VERSION }}
+
+      - name: cargo test
+        shell: pwsh
+        run: cargo test --locked --release --workspace
+
+      - name: Сборка, windeployqt, инсталлер
+        shell: pwsh
+        run: ./build_windows.ps1 -QtDir $env:QTDIR -Version $env:VERSION -Portable
+
+      - name: Проверка запуска (снимок окна)
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $exe = "target\dist\materialfy\materialfy.exe"
+          $shot = Join-Path $env:RUNNER_TEMP "shot.png"
+          $p = Start-Process $exe -ArgumentList "--new-instance", "--offline", "--screenshot", $shot, "--delay", "3000" -PassThru
+          if (-not $p.WaitForExit(90000)) { $p.Kill(); throw "оболочка не завершилась за 90 с" }
+          if (-not (Test-Path $shot) -or (Get-Item $shot).Length -eq 0) { throw "нет снимка окна" }
+
+      - name: Снимок
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: smoke-windows
+          path: ${{ runner.temp }}/shot.png
+          if-no-files-found: ignore
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: materialfy-windows
+          path: |
+            target/dist/Materialfy-*-Setup.exe
+            target/dist/Materialfy-*-portable.zip
+          if-no-files-found: error
+
+  linux:
+    name: Linux (AppImage, best effort)
+    needs: meta
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 90
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # libasound2-dev (cpal), libpulse-dev (librespot pulseaudio-backend) — как в CI spotifast
+      - name: Системные пакеты
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config lld p7zip-full patchelf file desktop-file-utils \
+            libasound2-dev libpulse-dev libdbus-1-dev \
+            libgl-dev libegl-dev libopengl-dev libxkbcommon-dev libxkbcommon-x11-0 \
+            libfontconfig1-dev libfreetype-dev libwayland-dev \
+            libxcb1-dev libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 \
+            libxcb-render-util0 libxcb-shape0 libxcb-xfixes0 libxcb-sync1 libxcb-xkb1 libxcb-xinerama0 \
+            libxcb-glx0 libx11-xcb1
+
+      - name: Кэш Qt
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/gcc_64
+          key: qt-${{ env.QT_VERSION }}-linux-${{ hashFiles('.github/scripts/install_qt.py') }}
+
+      - name: Qt ${{ env.QT_VERSION }}
+        run: |
+          read -ra addons <<< "$QT_ADDONS"
+          python3 .github/scripts/install_qt.py --host linux --version "$QT_VERSION" \
+            --addons "${addons[@]}" --out "$RUNNER_TEMP/Qt/$QT_VERSION/gcc_64" --github
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: qt-${{ env.QT_VERSION }}
+
+      - name: cargo build
+        run: cargo build --locked --release -p materialfy
+
+      - name: cargo test
+        env:
+          QT_QPA_PLATFORM: offscreen
+          LD_LIBRARY_PATH: ${{ env.QTDIR }}/lib
+        run: cargo test --locked --release --workspace
+
+      - name: AppImage и tar.gz
+        run: bash .github/scripts/package_linux.sh "$VERSION"
+
+      - name: Проверка запуска (снимок окна)
+        continue-on-error: true
+        run: |
+          timeout 90 target/dist/AppDir/AppRun --screenshot "$RUNNER_TEMP/shot.png" --offline --new-instance --delay 3000
+          test -s "$RUNNER_TEMP/shot.png"
+
+      - name: Снимок
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: smoke-linux
+          path: ${{ runner.temp }}/shot.png
+          if-no-files-found: ignore
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: materialfy-linux
+          path: |
+            target/dist/*.AppImage
+            target/dist/*.tar.gz
+          if-no-files-found: error
+
+  macos:
+    name: macOS (best effort)
+    needs: meta
+    runs-on: macos-latest
+    continue-on-error: true
+    timeout-minutes: 90
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # 7-Zip — для распаковки архивов Qt в install_qt.py
+      - name: Homebrew
+        run: brew install sevenzip
+
+      - name: Кэш Qt
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/macos
+          key: qt-${{ env.QT_VERSION }}-macos-${{ hashFiles('.github/scripts/install_qt.py') }}
+
+      - name: Qt ${{ env.QT_VERSION }}
+        run: |
+          read -ra addons <<< "$QT_ADDONS"
+          python3 .github/scripts/install_qt.py --host mac --version "$QT_VERSION" \
+            --addons "${addons[@]}" --out "$RUNNER_TEMP/Qt/$QT_VERSION/macos" --github
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: qt-${{ env.QT_VERSION }}
+
+      - name: cargo build
+        run: cargo build --locked --release -p materialfy
+
+      - name: Materialfy.app и dmg
+        run: bash .github/scripts/package_macos.sh "$VERSION"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: materialfy-macos
+          path: target/dist/*.dmg
+          if-no-files-found: error

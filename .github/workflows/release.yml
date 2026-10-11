@@ -1,0 +1,50 @@
+# Выпуск по тегу v*: те же сборки, что в build.yml, и публикация в GitHub Release.
+# Самообновления в программе нет — пользователь скачивает новую версию со страницы выпусков.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+    with:
+      version: ${{ github.ref_name }}
+    secrets: inherit
+
+  publish:
+    name: GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: materialfy-*
+          path: dist
+          merge-multiple: true
+
+      - name: Файлы выпуска
+        run: |
+          ls -la dist
+          cd dist && sha256sum -- * > SHA256SUMS.txt && cat SHA256SUMS.txt
+
+      - uses: softprops/action-gh-release@v3
+        with:
+          name: Materialfy ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true
+          fail_on_unmatched_files: false
+          files: |
+            dist/*-Setup.exe
+            dist/*-portable.zip
+            dist/*.AppImage
+            dist/*.tar.gz
+            dist/*.dmg
+            dist/SHA256SUMS.txt

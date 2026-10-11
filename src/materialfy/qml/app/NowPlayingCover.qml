@@ -1,0 +1,99 @@
+import QtQuick
+import Md3
+
+// Обложка полноэкранного плеера. Смена трека — морф через фигуру: старая обложка, вращаясь,
+// сжимается в маленькую «печеньку» и тает; новая вырастает из неё, морфясь из цветка в свою
+// фигуру (с лёгким перелётом). Две обложки — двойной буфер: новая показывается, когда загрузилась.
+// pulse — «дыхание» фигуры в такт, spinning — медленное вращение рамки (обложка внутри неподвижна).
+Item {
+    id: root
+
+    property string source
+    property var restShape: "cookie12"
+    property real pulse: 0
+    property bool spinning: false
+    property int direction: 1              // +1 — вперёд по очереди, -1 — назад: куда вращаться
+
+    property int _front: 0
+    property bool _pending: false
+    readonly property var _layers: [a, b]
+
+    onSourceChanged: {
+        const front = _layers[_front], back = _layers[1 - _front]
+        if (front.source.toString() === "" || !visible) {   // первая обложка / плеер закрыт — без анимации
+            front.source = source
+            return
+        }
+        if (front.source.toString() === source)
+            return
+        back.source = source
+        _pending = true
+        if (back.status === Image.Ready)
+            _go()
+        else
+            timeout.restart()
+    }
+
+    Timer { id: timeout; interval: 1500; onTriggered: if (root._pending) root._go() }
+    Connections {
+        target: root._layers[1 - root._front]
+        function onStatusChanged() {
+            if (root._pending && root._layers[1 - root._front].status === Image.Ready)
+                root._go()
+        }
+    }
+
+    function _go() {
+        _pending = false
+        timeout.stop()
+        outAnim.complete()
+        inAnim.complete()
+        const oldL = _layers[_front], newL = _layers[1 - _front]
+        newL.jumpTo("flower8")
+        newL.scale = 0.2
+        newL.rotation = 120 * direction
+        newL.opacity = 0
+        newL.z = 1
+        oldL.z = 0
+        oldL.shape = "cookie4"
+        outAnim.target = oldL
+        outRot.to = -90 * direction
+        inAnim.target = newL
+        _front = 1 - _front
+        newL.shape = Qt.binding(() => root.restShape)   // морф цветок → своя фигура
+        outAnim.start()
+        inAnim.start()
+    }
+
+    component Layer: MorphImage {
+        id: layer
+        required property int index
+        anchors.fill: parent
+        duration: Theme.motion.spatialSlow
+        shape: root.restShape
+        pulse: index === root._front ? root.pulse : 0
+        MaskSpin { target: layer; spinning: layer.index === root._front && root.spinning }
+        visible: opacity > 0.01
+    }
+
+    Layer { id: a; index: 0 }
+    Layer { id: b; index: 1; opacity: 0 }
+
+    ParallelAnimation {
+        id: outAnim
+        property Item target
+        NumberAnimation { target: outAnim.target; property: "scale"; to: 0.15; duration: 380; easing.type: Easing.InCubic }
+        NumberAnimation { id: outRot; target: outAnim.target; property: "rotation"; duration: 380; easing.type: Easing.InCubic }
+        NumberAnimation { target: outAnim.target; property: "opacity"; to: 0; duration: 380; easing.type: Easing.InQuad }
+    }
+    SequentialAnimation {
+        id: inAnim
+        property Item target
+        PauseAnimation { duration: 140 }
+        ParallelAnimation {
+            NumberAnimation { target: inAnim.target; property: "scale"; to: 1; duration: 680; easing.type: Easing.OutBack; easing.overshoot: 1.25 }
+            NumberAnimation { target: inAnim.target; property: "rotation"; to: 0; duration: 680; easing.type: Easing.OutCubic }
+            NumberAnimation { target: inAnim.target; property: "opacity"; to: 1; duration: 220; easing.type: Easing.OutQuad }
+        }
+    }
+}

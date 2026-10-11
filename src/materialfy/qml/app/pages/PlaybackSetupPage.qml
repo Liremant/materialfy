@@ -1,0 +1,566 @@
+import QtQuick
+import QtQuick.Layouts
+import Md3
+import Materialfy.Core
+import ".."
+
+// Шаг 2 «Слушать на этом компьютере»: отдельное разрешение librespot (scope streaming, ответ на
+// 127.0.0.1:8898), после него компьютер — устройство Spotify Connect. Слева — hero по Auth.playbackState,
+// справа — плашка Premium / «Применить» и параметры движка из Settings. Уже 760 px — одна колонка.
+Page {
+    id: page
+    title: "Воспроизведение"
+    showHeader: false
+
+    property string pst: Auth.playbackState
+    property bool premium: Auth.premium === true
+    property bool signedIn: Auth.state === "signedIn"
+    readonly property bool free: signedIn && (!premium || pst === "premiumRequired")
+    readonly property string mode: !signedIn ? "signedOut"
+                                 : free ? "free"
+                                 : pst === "authorizing" ? "authorizing"
+                                 : pst === "connecting" ? "connecting"
+                                 : pst === "ready" ? "done"
+                                 : pst === "error" ? "error" : "setup"
+    readonly property bool wide: width - 2 * sideMargin >= 760
+    readonly property bool _instant: Theme.reducedMotion === true
+    readonly property string deviceName: Settings.deviceName !== "" ? Settings.deviceName
+                                       : (Devices.thisDeviceName ?? "") !== "" ? Devices.thisDeviceName : "Materialfy"
+
+    Component.onCompleted: Settings.refreshAudioDevices()
+
+    function _later() {
+        if (!page.router)
+            return
+        if (page.router.depth > 1)
+            page.router.back()
+        else
+            page.router.reset("home")
+    }
+    function _cacheText(mb) {
+        return mb >= 1024 ? String(Math.round(mb / 1024 * 10) / 10).replace(".", ",") + " ГБ" : Math.round(mb) + " МБ"
+    }
+    function _errorHint(text) {
+        if (text.indexOf("другой аккаунт") >= 0) {
+            const n = Auth.account.displayName ?? ""
+            return (n !== "" ? "Медиатека открыта как " + n + ", а воспроизведение подтвердил другой аккаунт. " : "")
+                   + "Выйдите на accounts.spotify.com и повторите."
+        }
+        if (text.indexOf("8898") >= 0)
+            return "Закройте программу, которая слушает 127.0.0.1:8898, и повторите."
+        if (text.indexOf("ключ") >= 0)
+            return "Spotify не выдал ключ для этого трека. Попробуйте другой трек или повторите позже."
+        return ""
+    }
+
+    // Строка статуса и действия меняются сквозным затуханием
+    property string shownMode: mode
+    onModeChanged: {
+        if (_instant || !visible) {
+            swap.stop()
+            shownMode = mode
+            status.opacity = 1
+        } else {
+            swap.restart()
+        }
+    }
+    SequentialAnimation {
+        id: swap
+        NumberAnimation { target: status; property: "opacity"; to: 0; duration: Theme.motion.effectsFast; easing.type: Easing.InCubic }
+        ScriptAction { script: page.shownMode = page.mode }
+        NumberAnimation { target: status; property: "opacity"; to: 1; duration: Theme.motion.effectsDefault; easing.type: Easing.OutCubic }
+    }
+
+    component DevRow: SettingRow {
+        Layout.minimumHeight: 60
+    }
+    component RowDivider: Rectangle {
+        Layout.fillWidth: true
+        implicitHeight: 1
+        color: Qt.alpha(Theme.outlineVariant, 0.6)
+    }
+
+    // Узкое окно, Free: плашка — над hero
+    PremiumNotice {
+        visible: !page.wide && page.free
+        Layout.fillWidth: true
+    }
+
+    GridLayout {
+        Layout.fillWidth: true
+        columns: page.wide ? 2 : 1
+        columnSpacing: 20
+        rowSpacing: 16
+
+        // ================= Hero =================
+        Rectangle {
+            id: hero
+            // Free в одну колонку: вместо hero — плашка Premium сверху
+            visible: page.wide || !page.free
+            Layout.alignment: Qt.AlignTop
+            Layout.fillWidth: !page.wide
+            // в две колонки hero тянется до низа колонки настроек, действия прижаты к низу
+            Layout.fillHeight: page.wide
+            Layout.preferredWidth: page.wide ? 400 : -1
+            implicitHeight: heroCol.implicitHeight + 48
+            radius: Theme.shape.extraLarge
+            color: Theme.surfaceContainerHigh
+
+            ColumnLayout {
+                id: heroCol
+                x: 24
+                y: 24
+                width: parent.width - 48
+                height: Math.max(implicitHeight, parent.height - 48)
+                spacing: 12
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 16
+                    Item {
+                        id: heroArt
+                        Layout.preferredWidth: 96
+                        Layout.preferredHeight: 96
+                        readonly property bool done: page.shownMode === "done"
+                        MorphShape {
+                            anchors.fill: parent
+                            shape: heroArt.done ? "sunny" : "cookie12"
+                            duration: page._instant ? 0 : Theme.motion.spatialDefault
+                            overshoot: 1.15
+                            color: Theme.primaryContainer
+                            opacity: 0.35
+                            rotation: 10
+                        }
+                        MorphShape {
+                            anchors.centerIn: parent
+                            width: 72
+                            height: 72
+                            shape: heroArt.done ? "sunny" : "cookie9"
+                            duration: page._instant ? 0 : Theme.motion.spatialDefault
+                            overshoot: 1.15
+                            color: heroArt.done ? Theme.primary : Theme.secondaryContainer
+                            Behavior on color { enabled: !page._instant; ColorAnimation { duration: Theme.motion.effectsDefault } }
+                            Icon {
+                                anchors.centerIn: parent
+                                name: heroArt.done ? "check" : "speaker"
+                                size: 34
+                                fill: 1
+                                color: heroArt.done ? Theme.fgPrimary : Theme.fgSecondaryContainer
+                            }
+                        }
+                    }
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 4
+                        Label {
+                            Layout.fillWidth: true
+                            text: page.shownMode === "done" ? "Устройство Spotify Connect" : "Шаг 2 из 2 · по желанию"
+                            type: "labelMedium"
+                            font.capitalization: Font.AllUppercase
+                            color: Theme.primary
+                            wrapMode: Text.WordWrap
+                            elide: Text.ElideNone
+                        }
+                        Label {
+                            Layout.fillWidth: true
+                            text: "Слушать на этом компьютере"
+                            type: "headlineSmall"
+                            wrapMode: Text.WordWrap
+                            elide: Text.ElideNone
+                        }
+                    }
+                }
+                Label {
+                    Layout.fillWidth: true
+                    text: page.mode === "done"
+                          ? "Компьютер «" + page.deviceName + "» есть в списке устройств Spotify. Сюда можно перенести музыку с телефона и обратно."
+                          : page.mode === "signedOut"
+                          ? "Сначала войдите в аккаунт Spotify — воспроизведение настраивается вторым шагом."
+                          : "Materialfy станет устройством Spotify Connect: музыка будет играть здесь, а телефон увидит компьютер в списке устройств. Нужно ещё одно подтверждение в браузере, и оно даёт только право на воспроизведение."
+                    type: "bodyMedium"
+                    color: Theme.fgSurfaceVariant
+                    wrapMode: Text.WordWrap
+                    elide: Text.ElideNone
+                    lineHeightMode: Text.ProportionalHeight
+                    lineHeight: 1.25
+                }
+
+                // Что даёт воспроизведение здесь
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    Layout.topMargin: 4
+                    spacing: 10
+                    visible: page.mode !== "done" && page.mode !== "signedOut"
+                    Repeater {
+                        model: page.mode === "done" || page.mode === "signedOut" ? [] : [
+                            { icon: "high_quality", text: "До 320 кбит/с, без пауз между треками" },
+                            { icon: "devices", text: "Пульт: переносите музыку между телефоном и компьютером" },
+                            { icon: "lock", text: "Пароль не нужен: подтверждение проходит на сайте Spotify, "
+                                                  + (Qt.platform.os === "windows" ? "ключ хранится в диспетчере учётных данных"
+                                                                                  : "ключ хранится в связке ключей") }
+                        ]
+                        RowLayout {
+                            id: point
+                            required property var modelData
+                            Layout.fillWidth: true
+                            spacing: 12
+                            Icon { Layout.alignment: Qt.AlignTop; name: point.modelData.icon; size: 20; color: Theme.primary }
+                            Label {
+                                Layout.fillWidth: true
+                                text: point.modelData.text
+                                type: "bodyMedium"
+                                wrapMode: Text.WordWrap
+                                elide: Text.ElideNone
+                            }
+                        }
+                    }
+                }
+
+                // Статус и действия по состоянию
+                ColumnLayout {
+                    id: status
+                    Layout.fillWidth: true
+                    Layout.topMargin: 4
+                    visible: ["authorizing", "connecting", "done", "error"].indexOf(page.shownMode) >= 0
+                    spacing: 12
+
+                    // Ждём браузер / подключаемся / подключено
+                    Rectangle {
+                        visible: page.shownMode === "authorizing" || page.shownMode === "connecting" || page.shownMode === "done"
+                        Layout.fillWidth: true
+                        implicitHeight: statusRow.implicitHeight + 24
+                        radius: Theme.shape.large
+                        color: Theme.surfaceContainerHighest
+                        RowLayout {
+                            id: statusRow
+                            x: 14
+                            y: 12
+                            width: parent.width - 28
+                            spacing: 14
+                            LoadingIndicator {
+                                visible: page.shownMode !== "done"
+                                size: 40
+                                running: !Theme.calm && !page._instant
+                            }
+                            Icon {
+                                visible: page.shownMode === "done"
+                                name: "computer"
+                                size: 24
+                                fill: 1
+                                color: Theme.primary
+                            }
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 0
+                                Label {
+                                    Layout.fillWidth: true
+                                    text: page.shownMode === "authorizing" ? "Подтвердите в браузере"
+                                        : page.shownMode === "connecting" ? "Подключаем к Spotify Connect…"
+                                        : page.deviceName + " · этот компьютер"
+                                    type: "titleSmall"
+                                    wrapMode: Text.WordWrap
+                                    elide: Text.ElideNone
+                                }
+                                Label {
+                                    Layout.fillWidth: true
+                                    text: page.shownMode === "authorizing" ? "Разрешение «Воспроизведение в приложениях Spotify»"
+                                        : page.shownMode === "connecting" ? "Регистрируем устройство «" + page.deviceName + "»"
+                                        : Player.localState === "failed" ? "Не удалось подключить — нажмите «Применить» в настройках ниже"
+                                        : Player.localState === "connecting" ? "Подключаемся…"
+                                        : "Подключено · " + Settings.bitrate + " кбит/с"
+                                    type: "bodySmall"
+                                    color: Player.localState === "failed" && page.shownMode === "done" ? Theme.error : Theme.fgSurfaceVariant
+                                    wrapMode: Text.WordWrap
+                                    elide: Text.ElideNone
+                                }
+                            }
+                            IconButton {
+                                visible: page.shownMode === "authorizing"
+                                icon: "open_in_new"
+                                style: "tonal"
+                                onClicked: Auth.reopenBrowser()
+                            }
+                            Rectangle {
+                                visible: page.shownMode === "done" && Player.localState !== "failed"
+                                Layout.preferredWidth: onlineRow.implicitWidth + 20
+                                Layout.preferredHeight: 32
+                                radius: 16
+                                color: Theme.surfaceContainerHighest
+                                Row {
+                                    id: onlineRow
+                                    anchors.centerIn: parent
+                                    spacing: 6
+                                    Rectangle {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        width: 8
+                                        height: 8
+                                        radius: 4
+                                        color: Player.localState === "ready" ? Theme.primary : Theme.outline
+                                    }
+                                    Label {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        text: Player.localState === "ready" ? "В сети" : "Ждём"
+                                        type: "labelMedium"
+                                        color: Theme.fgSurface
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Ошибка
+                    Rectangle {
+                        visible: page.shownMode === "error"
+                        Layout.fillWidth: true
+                        implicitHeight: errRow.implicitHeight + 24
+                        radius: Theme.shape.large
+                        color: Theme.errorContainer
+                        RowLayout {
+                            id: errRow
+                            x: 16
+                            y: 12
+                            width: parent.width - 32
+                            spacing: 12
+                            Icon { Layout.alignment: Qt.AlignTop; name: "error"; size: 20; color: Theme.fgErrorContainer }
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 2
+                                Label {
+                                    Layout.fillWidth: true
+                                    text: Auth.playbackError !== "" ? Auth.playbackError : "Не удалось включить воспроизведение"
+                                    type: "titleSmall"
+                                    color: Theme.fgErrorContainer
+                                    wrapMode: Text.WordWrap
+                                    elide: Text.ElideNone
+                                }
+                                Label {
+                                    Layout.fillWidth: true
+                                    visible: text !== ""
+                                    text: page._errorHint(Auth.playbackError)
+                                    type: "bodySmall"
+                                    color: Theme.fgErrorContainer
+                                    wrapMode: Text.WordWrap
+                                    elide: Text.ElideNone
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Item { Layout.fillHeight: true }
+
+                Flow {
+                    Layout.fillWidth: true
+                    Layout.topMargin: 4
+                    spacing: 8
+                    opacity: status.opacity
+
+                    Button {
+                        visible: page.shownMode === "setup" || page.shownMode === "free"
+                        text: "Разрешить воспроизведение"
+                        icon: "open_in_new"
+                        size: "m"
+                        enabled: page.shownMode === "setup"
+                        onClicked: Auth.authorizePlayback()
+                    }
+                    Button {
+                        visible: page.shownMode === "error"
+                        text: "Повторить"
+                        icon: "refresh"
+                        size: "m"
+                        onClicked: Auth.authorizePlayback()
+                    }
+                    Button {
+                        visible: page.shownMode === "signedOut"
+                        text: "Войти"
+                        icon: "person"
+                        size: "m"
+                        onClicked: page.router ? page.router.reset("account") : null
+                    }
+                    Button {
+                        visible: page.shownMode === "authorizing"
+                        text: "Скопировать ссылку"
+                        icon: "content_copy"
+                        style: "outlined"
+                        onClicked: Auth.copyAuthUrl()
+                    }
+                    Button {
+                        visible: page.shownMode === "authorizing" || page.shownMode === "connecting"
+                        text: "Отмена"
+                        style: "text"
+                        onClicked: Auth.cancelLogin()
+                    }
+                    Button {
+                        visible: page.shownMode === "done"
+                        readonly property bool here: Player.isLocal === true && Player.hasTrack
+                        text: here ? "Играет здесь" : "Играть здесь"
+                        icon: here ? "check" : "play_arrow"
+                        enabled: !here && Player.localState === "ready"
+                        onClicked: Player.transferHere()
+                    }
+                    Button {
+                        visible: page.shownMode === "done"
+                        text: "Отключить"
+                        icon: "logout"
+                        style: "outlined"
+                        onClicked: Auth.disablePlayback()
+                    }
+                    Button {
+                        visible: page.shownMode === "setup" || page.shownMode === "free" || page.shownMode === "error"
+                        text: "Позже"
+                        height: 56      // по центру строки рядом с кнопкой size "m"
+                        style: "text"
+                        onClicked: page._later()
+                    }
+                }
+            }
+        }
+
+        // ================= Плашки и настройки =================
+        ColumnLayout {
+            Layout.alignment: Qt.AlignTop
+            Layout.fillWidth: true
+            spacing: 16
+
+            PremiumNotice {
+                visible: page.wide && page.free
+                Layout.fillWidth: true
+            }
+
+            ApplyBar {
+                Layout.fillWidth: true
+                shown: page.mode === "done" && Settings.engineRestartPending === true
+            }
+
+            // Заголовок и плотная карточка строк с разделителями
+            RowLayout {
+                spacing: 8
+                opacity: devCard.opacity
+                Icon { name: "tune"; size: 20; color: Theme.primary }
+                Label { text: "Устройство"; type: "titleMedium"; color: Theme.primary }
+            }
+            Rectangle {
+                id: devCard
+                Layout.fillWidth: true
+                implicitHeight: devRows.implicitHeight + 32
+                radius: Theme.shape.extraLarge
+                color: Theme.surfaceContainerHigh
+                enabled: page.mode !== "free" && page.mode !== "signedOut"
+                opacity: enabled ? 1 : Theme.stateLayer.disabledContent
+                Behavior on opacity { NumberAnimation { duration: Theme.motion.effectsDefault } }
+
+                ColumnLayout {
+                    id: devRows
+                    x: 24
+                    y: 16
+                    width: parent.width - 48
+                    spacing: 0
+
+                    DevRow {
+                        title: "Имя в Spotify Connect"
+                        description: "Так компьютер виден на телефоне и колонках"
+                        TextField {
+                            id: nameField
+                            width: 240
+                            trailingIcon: "edit"
+                            onTrailingClicked: nameField.inputItem.forceActiveFocus()
+                            leadingIcon: "computer"
+                            text: Settings.deviceName
+                            placeholderText: (Devices.thisDeviceName ?? "") !== "" ? Devices.thisDeviceName : "Materialfy"
+                            maximumLength: 64
+                            function commit() {
+                                const v = text.trim()
+                                if (v !== Settings.deviceName)
+                                    Settings.deviceName = v
+                            }
+                            onAccepted: commit()
+                            Connections {
+                                target: nameField.inputItem
+                                function onEditingFinished() { nameField.commit() }
+                            }
+                        }
+                    }
+                    RowDivider { }
+                    DevRow {
+                        title: "Качество"
+                        description: "Битрейт потока, кбит/с"
+                        ButtonGroup {
+                            model: ["96", "160", "320"]
+                            showCheck: true
+                            autoSelect: false
+                            currentIndex: [96, 160, 320].indexOf(Settings.bitrate)
+                            onActivated: i => Settings.bitrate = [96, 160, 320][i]
+                        }
+                    }
+                    RowDivider { }
+                    DevRow {
+                        title: "Выравнивать громкость"
+                        description: "Нормализация Spotify: тихие и громкие треки звучат ровно"
+                        Switch { checked: Settings.normalisation; onToggled: c => Settings.normalisation = c }
+                    }
+                    RowDivider { }
+                    DevRow {
+                        title: "Без пауз между треками"
+                        description: "Gapless"
+                        Switch { checked: Settings.gapless; onToggled: c => Settings.gapless = c }
+                    }
+                    RowDivider { }
+                    DevRow {
+                        title: "Автовоспроизведение"
+                        description: "Когда очередь закончится, играть похожие треки"
+                        Switch { checked: Settings.autoplay; onToggled: c => Settings.autoplay = c }
+                    }
+                    RowDivider { }
+                    DevRow {
+                        title: "Аудиовыход"
+                        MenuField {
+                            width: 240
+                            leadingIcon: "headphones"
+                            model: [{ id: "", text: "Системный по умолчанию" }]
+                                   .concat((Settings.audioDevices ?? []).map(d => ({ id: d, text: d })))
+                            currentValue: Settings.audioDevice
+                            onActivated: v => Settings.audioDevice = v
+                        }
+                    }
+                    RowDivider { }
+                    DevRow {
+                        title: "Кэш аудио"
+                        description: "Повторы играют без загрузки"
+                        Switch { checked: Settings.audioCache; onToggled: c => Settings.audioCache = c }
+                    }
+                    RowDivider {
+                        visible: Settings.audioCache
+                    }
+                    DevRow {
+                        visible: Settings.audioCache
+                        title: "Размер кэша"
+                        Row {
+                            spacing: 12
+                            Slider {
+                                id: cacheSlider
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 168
+                                from: 256
+                                to: 10240
+                                stepSize: 256
+                                trackHeight: 10
+                                handleHeight: 28
+                                value: Settings.audioCacheMb
+                                valueText: v => page._cacheText(v)
+                                onPressedChanged: if (!pressed && Math.round(value) !== Settings.audioCacheMb) Settings.audioCacheMb = Math.round(value)
+                            }
+                            Label {
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 48
+                                horizontalAlignment: Text.AlignRight
+                                text: page._cacheText(cacheSlider.value)
+                                type: "labelLarge"
+                                color: Theme.fgSurfaceVariant
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

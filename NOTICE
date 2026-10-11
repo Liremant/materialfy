@@ -1,0 +1,41 @@
+Materialfy
+==========
+
+Materialfy основан на spotifast (crmne, MIT) и yamusic-md3 (yaskorinov, MIT).
+Тексты лицензий сохранены, авторство и что откуда взято — ниже.
+
+1. spotifast (crmne) — логика Spotify
+   https://github.com/crmne/spotifast
+   Copyright (c) 2026 Carmine Paolino. Лицензия MIT.
+   Отсюда: вход OAuth PKCE, клиент Web API, воспроизведение через librespot, Spotify Connect,
+   очередь, библиотека, радио (crates/sf-auth, crates/sf-api, crates/sf-player, crates/sf-services).
+
+2. yamusic-md3 (yaskorinov) — интерфейс
+   https://github.com/yaskorinov/yamusic-md3
+   Copyright (c) 2025-2026 yaskorinov and contributors. Лицензия MIT.
+   Отсюда: QML-интерфейс и библиотека компонентов Material 3 Expressive (src/materialfy/qml),
+   оболочка на cxx-qt (crates/materialfy), тема из обложки (crates/mf-theme),
+   тексты песен (crates/mf-lyrics), платформенные службы (crates/mf-platform),
+   скрипты сборки и упаковки.
+
+Сторонние компоненты
+--------------------
+
+- librespot (форк https://github.com/crmne/librespot) — MIT, Copyright (c) 2015 Paul Lietar
+  и участники librespot-org. Воспроизведение и Spotify Connect.
+- fastframe-audio, fastframe-now-playing (https://github.com/dennisgr7/fastframe) — MIT,
+  Copyright (c) 2026 Carmine Paolino. Устройство вывода звука, медиаклавиши и SMTC/MPRIS.
+- hyper-proxy2 (форк https://github.com/crmne/hyper-proxy2) — MIT.
+- cxx-qt (https://github.com/KDAB/cxx-qt) — MIT или Apache-2.0.
+- Qt 6 (https://www.qt.io) — LGPL-3.0; библиотеки Qt подключаются динамически и поставляются
+  без изменений, их исходники доступны на https://download.qt.io.
+- Google Sans — SIL Open Font License 1.1 (src/materialfy/assets/fonts/LICENSE-GoogleSans.txt).
+- Material Symbols Rounded — Apache License 2.0 (src/materialfy/assets/fonts/LICENSE-MaterialSymbols.txt).
+- Остальные Rust-зависимости — по лицензиям, указанным в их пакетах (cargo metadata / Cargo.lock).
+
+Товарные знаки
+--------------
+
+Spotify — товарный знак Spotify AB. Materialfy — независимый проект, не связан со Spotify,
+Яндексом и авторами исходных проектов и не одобрен ими. Логотип Materialfy («Волна-M») —
+собственный и не использует логотип Spotify.

@@ -1,0 +1,89 @@
+import QtQuick
+
+// Короткое уведомление MD3 внизу по центру; само прячется. Кладётся поверх окна:
+// Snackbar { id: snackbar; anchors.fill: parent; z: … }; snackbar.show("Ссылка скопирована").
+// С действием: show("Трек убран", "Вернуть", () => …) — кнопка справа, показ дольше.
+Item {
+    id: root
+
+    property real bottomMargin: 112   // над мини-плеером
+    property int duration: 2500
+    property int actionDuration: 5000
+    property bool shown: false
+    property string actionText
+    property var _onAction: null
+
+    signal action()
+
+    function show(text, actionText, onAction) {
+        label.text = text
+        root.actionText = actionText ?? ""
+        _onAction = typeof onAction === "function" ? onAction : null
+        shown = true
+        hideTimer.interval = root.actionText !== "" ? actionDuration : duration
+        hideTimer.restart()
+    }
+    function hide() { shown = false }
+
+    Timer { id: hideTimer; interval: root.duration; onTriggered: root.hide() }
+
+    Rectangle {
+        id: pill
+        anchors.horizontalCenter: parent.horizontalCenter
+        y: root.height - root.bottomMargin - height + (root.shown ? 0 : 16)
+        width: Math.min(label.implicitWidth + 48 + (actionButton.visible ? actionButton.implicitWidth + 8 : 0), root.width - 32)
+        height: 48
+        radius: root.actionText !== "" ? Theme.shape.medium : height / 2
+        color: Theme.inverseSurface
+        opacity: root.shown ? 1 : 0
+        visible: opacity > 0
+        Behavior on opacity { NumberAnimation { duration: Theme.motion.effectsDefault } }
+        Behavior on y { NumberAnimation { duration: Theme.motion.spatialFast; easing.type: Easing.OutCubic } }
+
+        Elevation { target: pill; level: 3 }
+
+        // клик по плашке не уходит в содержимое под ней
+        MouseArea { anchors.fill: parent; acceptedButtons: Qt.AllButtons }
+
+        Label {
+            id: label
+            x: actionButton.visible ? 16 : (parent.width - width) / 2
+            anchors.verticalCenter: parent.verticalCenter
+            width: Math.min(implicitWidth, parent.width - 48 - (actionButton.visible ? actionButton.implicitWidth : 0))
+            elide: Text.ElideRight
+            type: "bodyMedium"
+            color: Theme.fgInverseSurface
+        }
+
+        Item {
+            id: actionButton
+            visible: root.actionText !== ""
+            anchors.right: parent.right
+            anchors.rightMargin: 4
+            anchors.verticalCenter: parent.verticalCenter
+            implicitWidth: actionLabel.implicitWidth + 24
+            width: implicitWidth
+            height: 40
+            Label {
+                id: actionLabel
+                anchors.centerIn: parent
+                text: root.actionText
+                type: "labelLarge"
+                color: Theme.inversePrimary
+            }
+            StateLayer {
+                anchors.fill: parent
+                radius: height / 2
+                color: Theme.inversePrimary
+                onClicked: {
+                    const f = root._onAction
+                    root._onAction = null
+                    root.hide()
+                    root.action()
+                    if (f)
+                        f()
+                }
+            }
+        }
+    }
+}

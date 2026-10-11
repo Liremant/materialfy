@@ -1,0 +1,194 @@
+import QtQuick
+import QtQuick.Layouts
+import Md3
+import Materialfy.Core
+import ".."
+
+// Выпуск подкаста: шапка, карточка прослушивания, описание с главами, ещё выпуски шоу.
+Page {
+    id: page
+
+    property string episodeId
+    readonly property QtObject ep: Catalog.episode(episodeId)
+    readonly property var info: ep ? ep.info : ({})
+    readonly property var showInfo: ep ? ep.show : ({})
+    readonly property bool compact: width < 840     // окно 900 px (рейл) или 1280 с правой панелью
+    readonly property bool isCurrent: (info.uri ?? "") !== "" && Player.uri === info.uri
+
+    title: info.title ?? ""
+    showHeader: false
+    readonly property bool heroTitle: true     // название — в шапке; в верхней панели — после прокрутки
+
+    readonly property var _months: ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"]
+    function _date(iso) {
+        const m = /^(\d{4})(?:-(\d{2}))?(?:-(\d{2}))?/.exec(iso ?? "")
+        if (!m)
+            return ""
+        if (!m[2])
+            return m[1]
+        if (!m[3])
+            return (_months[Number(m[2]) - 1] ?? "") + " " + m[1]
+        return Number(m[3]) + " " + (_months[Number(m[2]) - 1] ?? "") + " " + m[1]
+    }
+    function _minutes(ms) {
+        const min = Math.max(1, Math.round(ms / 60000))
+        return min >= 60 ? Math.floor(min / 60) + " ч " + (min % 60 ? (min % 60) + " мин" : "") : min + " мин"
+    }
+
+    underlay: HeroShapes {
+        width: page.width
+        active: page.visible
+        headerHeight: hero.height + 24
+        scroll: page.flickable.contentY
+        contentX: page.sideMargin - 16
+        contentWidth: page.width - 2 * contentX
+        seed: page.info.title ?? ""
+        shapesOpacity: 0.5
+    }
+
+    // ---- Шапка ----
+    Item {
+        id: hero
+        Layout.fillWidth: true
+        Layout.preferredHeight: heroRow.implicitHeight + 32
+
+        RowLayout {
+            id: heroRow
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: page.compact ? 20 : 28
+
+            MorphImage {
+                Layout.preferredWidth: page.compact ? 128 : 168
+                Layout.preferredHeight: Layout.preferredWidth
+                Layout.alignment: Qt.AlignTop
+                source: page.info.coverLarge || page.info.cover || ""
+                shape: page.isCurrent ? "cookie12" : "softSquare"
+                duration: Theme.motion.spatialSlow
+            }
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 4
+                Label {
+                    text: page.info.number ? "ВЫПУСК " + page.info.number : "ВЫПУСК"
+                    type: "labelMedium"
+                    color: Theme.primary
+                    font.letterSpacing: 1.2
+                }
+                Label {
+                    Layout.fillWidth: true
+                    text: page.info.title ?? ""
+                    type: page.compact ? "headlineMedium" : "headlineLarge"
+                    weight: 600
+                    wrapMode: Text.WordWrap
+                    maximumLineCount: 3
+                }
+                LinkLabel {
+                    Layout.fillWidth: true
+                    visible: text !== ""
+                    text: page.info.showName || page.showInfo.name || ""
+                    type: "titleMedium"
+                    color: Theme.primary
+                    linkEnabled: (page.info.showId ?? "") !== ""
+                    onClicked: Catalog.openShow(page.info.showId)
+                }
+                Label {
+                    Layout.fillWidth: true
+                    visible: text !== ""
+                    text: [page._date(page.info.releaseDate), (page.info.durationMs ?? 0) > 0 ? page._minutes(page.info.durationMs) : "",
+                           page.info.explicit ? "18+" : ""].filter(x => x).join(" · ")
+                    type: "bodyMedium"
+                    color: Theme.fgSurfaceVariant
+                }
+            }
+        }
+    }
+
+    LoadingIndicator {
+        Layout.alignment: Qt.AlignHCenter
+        Layout.topMargin: 48
+        size: 64
+        contained: true
+        visible: page.ep !== null && page.ep.loading && (page.info.uri ?? "") === ""
+    }
+    EmptyState {
+        Layout.alignment: Qt.AlignHCenter
+        Layout.topMargin: 48
+        visible: page.ep !== null && !page.ep.loading && page.ep.errorText !== ""
+        icon: "cloud_off"
+        title: "Выпуск не загрузился"
+        text: page.ep ? page.ep.errorText : ""
+    }
+
+    EpisodeProgressCard {
+        Layout.fillWidth: true
+        Layout.maximumWidth: 880
+        visible: (page.info.uri ?? "") !== ""
+        episode: page.info
+        compact: page.compact
+        onShared: snackbar.show("Ссылка скопирована")
+    }
+
+    // ---- Описание и главы ----
+    ColumnLayout {
+        Layout.fillWidth: true
+        Layout.maximumWidth: 880
+        visible: (page.info.description ?? "") !== ""
+        spacing: 12
+        SectionHeader { text: "Описание" }
+        Label {
+            Layout.fillWidth: true
+            visible: text !== ""
+            // строки-главы показывает ChapterList
+            text: chapters.chapters.length > 0
+                  ? (page.info.description ?? "").split("\n").filter(l => !/^\s*[(\[]?(\d{1,2}:)?\d{1,2}:\d{2}/.test(l)).join("\n").trim()
+                  : (page.info.description ?? "")
+            textFormat: Text.PlainText
+            type: "bodyLarge"
+            color: Theme.fgSurfaceVariant
+            wrapMode: Text.WordWrap
+            elide: Text.ElideNone
+            lineHeightMode: Text.ProportionalHeight
+            lineHeight: 1.2
+        }
+        ChapterList {
+            id: chapters
+            Layout.fillWidth: true
+            Layout.topMargin: 8
+            text: page.info.description ?? ""
+            uri: page.info.uri ?? ""
+            durationMs: page.info.durationMs ?? 0
+        }
+    }
+
+    // ---- Ещё выпуски ----
+    SectionHeader {
+        visible: page.ep !== null && page.ep.more.count > 0
+        text: "Ещё выпуски"
+        actionText: (page.info.showId ?? "") !== "" ? "Все выпуски" : ""
+        onAction: Catalog.openShow(page.info.showId)
+    }
+    ColumnLayout {
+        Layout.fillWidth: true
+        Layout.topMargin: -12
+        spacing: 0
+        Repeater {
+            model: page.ep ? page.ep.more : null
+            EpisodeRow {
+                required property int index
+                Layout.fillWidth: true
+                visible: index < 3
+                episode: page.ep.more.get(index)
+                compact: page.compact
+            }
+        }
+    }
+
+    Snackbar {
+        id: snackbar
+        parent: page
+        anchors.fill: parent
+        z: 50
+    }
+}

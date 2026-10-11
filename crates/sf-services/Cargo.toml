@@ -1,0 +1,30 @@
+[package]
+name = "sf-services"
+description = "Сервисы приложения на tokio: вход, библиотека, каталог, радио, главная, тексты, устройства Connect, история"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+md3-model.workspace = true
+sf-auth.workspace = true
+sf-api.workspace = true
+sf-player.workspace = true
+mf-lyrics.workspace = true
+mf-platform.workspace = true
+tokio.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+log.workspace = true
+jiff.workspace = true
+rand.workspace = true
+fastrand.workspace = true
+reqwest.workspace = true
+
+[target.'cfg(any(windows, target_os = "macos", target_os = "linux"))'.dependencies]
+fastframe-now-playing.workspace = true

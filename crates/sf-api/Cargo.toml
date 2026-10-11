@@ -1,0 +1,30 @@
+[package]
+name = "sf-api"
+description = "Spotify Web API: клиент с лимитами, общий/личный ключ, модели, HTTP с прокси, маппинг в md3-model"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+md3-model.workspace = true
+sf-auth.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+reqwest.workspace = true
+hyper-util.workspace = true
+http.workspace = true
+base64.workspace = true
+sha2.workspace = true
+image.workspace = true
+percent-encoding.workspace = true
+urlencoding.workspace = true
+jiff.workspace = true
+log.workspace = true
+tracing.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_Storage_FileSystem"] }

@@ -1,0 +1,113 @@
+import QtQuick
+import QtQuick.Layouts
+import Md3
+import Materialfy.Core
+
+// Верхняя панель контента: назад, заголовок прокрученной страницы, кнопки страницы, кнопки окна (опционально).
+// Пустое место тянет окно (startSystemMove), двойной клик — развернуть.
+Item {
+    id: root
+
+    required property var router
+    required property Window window
+    // узкое окно: боковая панель спрятана в шторку, открывается этой кнопкой
+    property bool showMenuButton: false
+    signal menuClicked()
+
+    implicitHeight: 64
+
+    readonly property var page: router.currentItem
+    // заголовок страницы с собственной шапкой (heroTitle: true) появляется только после прокрутки
+    readonly property bool showTitle: page && (page.scrolled || !(page.showHeader || page.heroTitle === true)) && (page.title ?? "") !== ""
+
+    // Перетаскивание окна. Windows: startSystemMove работает, когда у окна есть системное меню
+    // (его возвращает нативная рамка оболочки). Если система отказала — двигаем окно сами.
+    DragHandler {
+        property bool manual: false
+        target: null
+        grabPermissions: PointerHandler.TakeOverForbidden
+        onActiveChanged: if (active) manual = !root.window.startSystemMove()
+        onCentroidChanged: if (active && manual && root.window.visibility === Window.Windowed) {
+            root.window.x += centroid.scenePosition.x - centroid.scenePressPosition.x
+            root.window.y += centroid.scenePosition.y - centroid.scenePressPosition.y
+        }
+    }
+    TapHandler {
+        acceptedButtons: Qt.LeftButton
+        onDoubleTapped: root.window.visibility = root.window.visibility === Window.Maximized ? Window.Windowed : Window.Maximized
+    }
+
+    RowLayout {
+        anchors.fill: parent
+        anchors.leftMargin: 16
+        anchors.rightMargin: 16
+        spacing: 8
+
+        // кнопка шторки въезжает и раздвигает заголовок, а не появляется рывком
+        Item {
+            Layout.preferredWidth: root.showMenuButton ? menuButton.implicitWidth : 0
+            Layout.rightMargin: root.showMenuButton ? 0 : -8
+            Layout.preferredHeight: menuButton.implicitHeight
+            Behavior on Layout.preferredWidth { NumberAnimation { duration: Theme.motion.spatialDefault; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.motion.emphasized } }
+            Behavior on Layout.rightMargin { NumberAnimation { duration: Theme.motion.spatialDefault; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.motion.emphasized } }
+            clip: true
+            IconButton {
+                id: menuButton
+                icon: "menu"
+                enabled: root.showMenuButton
+                opacity: root.showMenuButton ? 1 : 0
+                scale: root.showMenuButton ? 1 : 0.6
+                Behavior on opacity { NumberAnimation { duration: Theme.motion.effectsDefault } }
+                Behavior on scale { NumberAnimation { duration: Theme.motion.spatialDefault; easing.type: Easing.OutBack } }
+                onClicked: root.menuClicked()
+            }
+        }
+
+        // Без «назад» кнопка схлопывается, и заголовок стоит у левого края
+        Item {
+            Layout.preferredWidth: back.enabled ? back.implicitWidth : 0
+            // заголовок встаёт по левому краю содержимого страницы (отступ 32)
+            Layout.rightMargin: back.enabled || root.showMenuButton ? 0 : 8
+            Layout.preferredHeight: back.implicitHeight
+            Behavior on Layout.preferredWidth { NumberAnimation { duration: Theme.motion.spatialFast; easing.type: Easing.OutCubic } }
+            Behavior on Layout.rightMargin { NumberAnimation { duration: Theme.motion.spatialFast; easing.type: Easing.OutCubic } }
+            clip: true
+            IconButton {
+                id: back
+                icon: "arrow_back"
+                enabled: root.router.depth > 1
+                opacity: enabled ? 1 : 0
+                Behavior on opacity { NumberAnimation { duration: Theme.motion.effectsFast } }
+                onClicked: root.router.back()
+            }
+        }
+
+        Label {
+            Layout.fillWidth: true
+            text: root.page ? root.page.title : ""
+            type: "titleLarge"
+            weight: 500
+            opacity: root.showTitle ? 1 : 0
+            Behavior on opacity { NumberAnimation { duration: Theme.motion.effectsDefault } }
+        }
+
+        // Кнопки страницы (поиск по библиотеке, сортировка, вид) — page.toolbar: Component
+        Loader {
+            Layout.alignment: Qt.AlignVCenter
+            active: !!root.page && !!root.page.toolbar
+            sourceComponent: root.page ? root.page.toolbar ?? null : null
+        }
+
+        Row {
+            visible: Settings.windowButtons
+            spacing: 4
+            IconButton { icon: "remove"; size: "xs"; onClicked: root.window.showMinimized() }
+            IconButton {
+                icon: root.window.visibility === Window.Maximized ? "collapse_content" : "expand_content"
+                size: "xs"
+                onClicked: root.window.visibility = root.window.visibility === Window.Maximized ? Window.Windowed : Window.Maximized
+            }
+            IconButton { icon: "close"; size: "xs"; onClicked: root.window.close() }
+        }
+    }
+}

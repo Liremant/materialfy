@@ -1,0 +1,670 @@
+//! OAuth Authorization Code + PKCE через браузер и loopback (перенос spotifast/src/auth.rs).
+//!
+//! Три независимых гранта: общий и (по желанию) личный Web API — разные приложения, разные слоты хранилища;
+//! воспроизведение — идентичность десктоп-клиента Spotify (её использует librespot): токен один раз меняется на
+//! переиспользуемые креды, которые лежат в хранилище ОС. Пароль вводится в браузере; приложение видит только
+//! одноразовый код, который Spotify присылает на loopback-порт.
+
+use std::net::SocketAddr;
+use std::path::Path;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use anyhow::{Context, Result, anyhow, bail};
+use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use rand::RngCore;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::net::TcpListener;
+use tokio::sync::watch;
+
+/// Идентичность десктоп-клиента Spotify — с ней стримит librespot.
+pub const PLAYBACK_CLIENT_ID: &str = "65b708073fc0480ea92a077233ca87bd";
+pub const PLAYBACK_REDIRECT_PORT: u16 = 8898;
+
+/// Общее публичное приложение Web API (spotify-player, ncspot, Omarchy Spotify).
+pub const DEFAULT_WEB_CLIENT_ID: &str = "d420a117a32841c2b3474932e49fb54b";
+pub const WEB_REDIRECT_PORT: u16 = 8989;
+
+pub const REDIRECT_PATH: &str = "/login";
+
+/// Воспроизведение: то, что нужно librespot для звука и Spotify Connect.
+pub const PLAYBACK_SCOPES: &[&str] = &["streaming"];
+
+/// Web API: что нужно видимым функциям, плюс `user-read-private` ради тарифа (Free/Premium),
+/// от которого зависит локальное воспроизведение; без email.
+pub const WEB_SCOPES: &[&str] = &[
+    "ugc-image-upload",
+    "playlist-modify-private",
+    "playlist-modify-public",
+    "playlist-read-collaborative",
+    "playlist-read-private",
+    "user-follow-modify",
+    "user-follow-read",
+    "user-library-modify",
+    "user-library-read",
+    "user-modify-playback-state",
+    "user-read-playback-position",
+    "user-read-playback-state",
+    "user-read-private",
+    "user-read-recently-played",
+    "user-top-read",
+];
+
+const AUTHORIZE_URL: &str = "https://accounts.spotify.com/authorize";
+const TOKEN_URL: &str = "https://accounts.spotify.com/api/token";
+/// Текст ошибки `wait_for_code` при отмене (её не показывают как сбой).
+pub const CANCELLED: &str = "Вход отменён";
+const LOGIN_TIMEOUT: Duration = Duration::from_secs(10 * 60);
+/// Обновлять токен за столько до истечения.
+const REFRESH_MARGIN: Duration = Duration::from_secs(90);
+
+/// Одно OAuth-приложение и запрашиваемые разрешения.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Grant {
+    pub client_id: String,
+    pub redirect_port: u16,
+    pub scopes: &'static [&'static str],
+}
+
+impl Grant {
+    pub fn playback() -> Self {
+        Self {
+            client_id: PLAYBACK_CLIENT_ID.to_string(),
+            redirect_port: PLAYBACK_REDIRECT_PORT,
+            scopes: PLAYBACK_SCOPES,
+        }
+    }
+
+    pub fn shared_web_api() -> Self {
+        Self {
+            client_id: DEFAULT_WEB_CLIENT_ID.to_string(),
+            redirect_port: WEB_REDIRECT_PORT,
+            scopes: WEB_SCOPES,
+        }
+    }
+
+    pub fn personal_web_api(client_id: &str) -> Result<Self> {
+        let client_id = client_id.trim();
+        if client_id.is_empty() {
+            bail!("Укажите Client ID своего приложения Spotify");
+        }
+        Ok(Self {
+            client_id: client_id.to_string(),
+            redirect_port: WEB_REDIRECT_PORT,
+            scopes: WEB_SCOPES,
+        })
+    }
+
+    pub fn redirect_uri(&self) -> String {
+        format!("http://127.0.0.1:{}{REDIRECT_PATH}", self.redirect_port)
+    }
+}
+
+/// Начатый вход: URL для браузера и секреты для завершения.
+#[derive(Clone, Debug)]
+pub struct Flow {
+    pub verifier: String,
+    pub state: String,
+    pub url: String,
+}
+
+fn random_token(bytes: usize) -> String {
+    let mut buffer = vec![0u8; bytes];
+    rand::rng().fill_bytes(&mut buffer);
+    URL_SAFE_NO_PAD.encode(buffer)
+}
+
+pub fn begin(grant: Grant) -> Flow {
+    let verifier = random_token(48);
+    let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
+    let state = random_token(18);
+    let show_dialog = if grant.client_id == PLAYBACK_CLIENT_ID {
+        "&show_dialog=true"
+    } else {
+        ""
+    };
+    let url = format!(
+        "{AUTHORIZE_URL}?client_id={}&response_type=code&redirect_uri={}&code_challenge_method=S256&code_challenge={challenge}&state={state}&scope={}{show_dialog}",
+        grant.client_id,
+        urlencoding::encode(&grant.redirect_uri()),
+        urlencoding::encode(&grant.scopes.join(" "))
+    );
+    Flow {
+        verifier,
+        state,
+        url,
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct TokenResponse {
+    pub access_token: String,
+    #[serde(default)]
+    pub refresh_token: Option<String>,
+    #[serde(default)]
+    pub expires_in: Option<u64>,
+    #[serde(default)]
+    pub scope: Option<String>,
+}
+
+/// Ждёт редирект Spotify на loopback-порт и возвращает код авторизации.
+/// Прерывается, когда `cancel` становится true (ошибка `CANCELLED`), или через 10 минут.
+pub async fn wait_for_code(
+    port: u16,
+    expected_state: &str,
+    mut cancel: watch::Receiver<bool>,
+) -> Result<String> {
+    let address: SocketAddr = ([127, 0, 0, 1], port).into();
+    let listener = TcpListener::bind(address).await.map_err(|error| match error.kind() {
+        std::io::ErrorKind::AddrInUse | std::io::ErrorKind::PermissionDenied => {
+            anyhow!("Порт {port} занят другой программой — закройте её и попробуйте снова")
+        }
+        _ => anyhow!("Не удалось открыть порт {port} для ответа Spotify"),
+    })?;
+    let deadline = tokio::time::sleep(LOGIN_TIMEOUT);
+    tokio::pin!(deadline);
+
+    loop {
+        let (mut stream, _) = tokio::select! {
+            accepted = listener.accept() => accepted.context("ожидание ответа Spotify прервалось")?,
+            _ = cancel.changed() => {
+                if *cancel.borrow() { bail!(CANCELLED); }
+                continue;
+            }
+            _ = &mut deadline => bail!("Время ожидания входа истекло — попробуйте снова"),
+        };
+
+        let mut reader = BufReader::new(&mut stream);
+        let mut request_line = String::new();
+        if reader.read_line(&mut request_line).await.is_err() {
+            continue;
+        }
+        let outcome = parse_request_line(&request_line, expected_state);
+        let (status, body) = match &outcome {
+            Ok(_) => ("200 OK", success_page()),
+            Err(error) => ("400 Bad Request", failure_page(&error.to_string())),
+        };
+        let response = format!(
+            "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}",
+            body.len()
+        );
+        let _ = stream.write_all(response.as_bytes()).await;
+        let _ = stream.shutdown().await;
+        match outcome {
+            Ok(code) => return Ok(code),
+            Err(error) => {
+                // favicon или старая вкладка — не редирект, ждём дальше
+                tracing::debug!("loopback: пропущен запрос: {error}");
+                continue;
+            }
+        }
+    }
+}
+
+fn parse_request_line(line: &str, expected_state: &str) -> Result<String> {
+    let target = line
+        .split_whitespace()
+        .nth(1)
+        .ok_or_else(|| anyhow!("неверный запрос"))?;
+    let (path, query) = target.split_once('?').unwrap_or((target, ""));
+    if path != REDIRECT_PATH {
+        bail!("неожиданный адрес запроса");
+    }
+    let mut code = None;
+    let mut state = None;
+    let mut error = None;
+    for pair in query.split('&') {
+        let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+        let value = urlencoding::decode(value)
+            .map(|value| value.into_owned())
+            .unwrap_or_else(|_| value.to_string());
+        match key {
+            "code" => code = Some(value),
+            "state" => state = Some(value),
+            "error" => error = Some(value),
+            _ => {}
+        }
+    }
+    if error.is_some() {
+        bail!("Вход отменён в браузере");
+    }
+    if state.as_deref() != Some(expected_state) {
+        bail!("ответ не относится к этому входу");
+    }
+    code.ok_or_else(|| anyhow!("Spotify не вернул код авторизации"))
+}
+
+pub async fn exchange_code(
+    http: &reqwest::Client,
+    grant: &Grant,
+    code: &str,
+    verifier: &str,
+) -> Result<TokenResponse> {
+    token_request(
+        http,
+        &[
+            ("client_id", grant.client_id.as_str()),
+            ("grant_type", "authorization_code"),
+            ("code", code),
+            ("redirect_uri", grant.redirect_uri().as_str()),
+            ("code_verifier", verifier),
+        ],
+    )
+    .await
+    .map_err(|error| anyhow!("{error}"))
+}
+
+pub async fn refresh(
+    http: &reqwest::Client,
+    client_id: &str,
+    refresh_token: &str,
+) -> std::result::Result<TokenResponse, TokenEndpointError> {
+    token_request(
+        http,
+        &[
+            ("client_id", client_id),
+            ("grant_type", "refresh_token"),
+            ("refresh_token", refresh_token),
+        ],
+    )
+    .await
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum TokenEndpointError {
+    /// Spotify отклонил сам грант — нужен новый вход через браузер.
+    #[error("Spotify отклонил запрос токена ({status}): {detail}")]
+    Rejected { status: u16, detail: String },
+    /// Сервер не ответил — грант, возможно, ещё действует.
+    #[error("Не удалось получить токен: {0}")]
+    Unreachable(String),
+}
+
+async fn token_request(
+    http: &reqwest::Client,
+    form: &[(&str, &str)],
+) -> std::result::Result<TokenResponse, TokenEndpointError> {
+    let response = http
+        .post(TOKEN_URL)
+        .form(form)
+        .send()
+        .await
+        .map_err(|error| TokenEndpointError::Unreachable(error.to_string()))?;
+    let status = response.status();
+    let text = response.text().await.unwrap_or_default();
+    decode_token_response(status, &text)
+}
+
+fn decode_token_response(
+    status: reqwest::StatusCode,
+    text: &str,
+) -> std::result::Result<TokenResponse, TokenEndpointError> {
+    // 429/408 — «подождите», а не отказ: грант остаётся
+    if status == reqwest::StatusCode::TOO_MANY_REQUESTS || status == reqwest::StatusCode::REQUEST_TIMEOUT {
+        return Err(TokenEndpointError::Unreachable(format!("Spotify просит подождать ({status})")));
+    }
+    if status.is_client_error() {
+        let value = serde_json::from_str::<serde_json::Value>(text).ok();
+        // описание ошибки и битое тело могут содержать секреты: только известные классы, без текста ответа
+        let detail = match value.as_ref().and_then(|value| value["error"].as_str()) {
+            Some("invalid_grant") => "разрешение истекло или отозвано — войдите снова",
+            Some("invalid_client") | Some("unauthorized_client") => "проверьте Client ID приложения Spotify",
+            Some("invalid_scope") => "Spotify не принял запрошенные разрешения",
+            Some("access_denied") => "доступ не разрешён",
+            Some(_) => "войдите снова и проверьте настройки приложения Spotify",
+            // 4xx без кода OAuth (прокси, CDN) — не отказ гранта
+            None => return Err(TokenEndpointError::Unreachable(format!("Spotify ответил {status}"))),
+        };
+        return Err(TokenEndpointError::Rejected {
+            status: status.as_u16(),
+            detail: detail.into(),
+        });
+    }
+    if !status.is_success() {
+        return Err(TokenEndpointError::Unreachable(format!(
+            "Spotify ответил {status}"
+        )));
+    }
+    serde_json::from_str(text).map_err(|_| {
+        TokenEndpointError::Unreachable("Spotify вернул нечитаемый ответ".into())
+    })
+}
+
+/// Грант Web API; сериализуется только внутри защищённого хранилища.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct StoredToken {
+    pub client_id: String,
+    pub access_token: String,
+    pub refresh_token: String,
+    /// Unix-секунды.
+    pub expires_at: u64,
+    #[serde(default)]
+    pub scope: String,
+}
+
+impl StoredToken {
+    pub fn from_response(
+        client_id: &str,
+        response: TokenResponse,
+        previous_refresh: Option<&str>,
+    ) -> Result<Self> {
+        let refresh_token = response
+            .refresh_token
+            .or_else(|| previous_refresh.map(str::to_string))
+            .ok_or_else(|| anyhow!("Spotify не вернул refresh-токен"))?;
+        Ok(Self {
+            client_id: client_id.to_string(),
+            access_token: response.access_token,
+            refresh_token,
+            expires_at: now_secs() + response.expires_in.unwrap_or(3600),
+            scope: response.scope.unwrap_or_default(),
+        })
+    }
+
+    pub fn needs_refresh(&self) -> bool {
+        now_secs() + REFRESH_MARGIN.as_secs() >= self.expires_at
+    }
+
+    pub fn expired(&self) -> bool {
+        now_secs() >= self.expires_at
+    }
+
+    /// Грант покрывает все `scopes`. Расширить его может только браузер, не refresh.
+    pub fn has_scopes(&self, scopes: &[&str]) -> bool {
+        let granted: Vec<&str> = self.scope.split_whitespace().collect();
+        scopes.iter().all(|scope| granted.contains(scope))
+    }
+
+    pub fn load(path: &Path) -> Option<Self> {
+        let text = std::fs::read_to_string(path).ok()?;
+        serde_json::from_str(&text).ok()
+    }
+
+    // только для тестов; хранение — в credentials.rs
+    #[cfg(test)]
+    pub fn save(&self, path: &Path) -> Result<()> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let text = serde_json::to_string_pretty(self)?;
+        let temporary = path.with_extension("json.tmp");
+        write_private(&temporary, text.as_bytes())?;
+        std::fs::rename(&temporary, path)?;
+        Ok(())
+    }
+
+    // только для тестов; хранение — в credentials.rs
+    #[cfg(test)]
+    pub fn remove(path: &Path) {
+        let _ = std::fs::remove_file(path);
+    }
+
+    // только для тестов; хранение — в credentials.rs
+    #[cfg(test)]
+    pub fn migrate_legacy(legacy: &Path, shared: &Path, personal: &Path) -> Result<()> {
+        let Some(token) = Self::load(legacy) else {
+            return Ok(());
+        };
+        let target = if token.client_id == DEFAULT_WEB_CLIENT_ID {
+            shared
+        } else {
+            personal
+        };
+        if let Some(existing) = Self::load(target) {
+            if existing != token {
+                return Ok(());
+            }
+        } else {
+            token.save(target)?;
+        }
+        Self::remove(legacy);
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+fn write_private(path: &Path, contents: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(path)?;
+    file.write_all(contents)?;
+    file.flush()
+}
+
+fn now_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+const LOGO: &str = include_str!("logo.svg");
+
+fn page(title: &str, heading: &str, body: &str, accent: &str) -> String {
+    format!(
+        "<!doctype html><html lang=\"ru\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{title}</title><style>:root{{color-scheme:dark}}body{{margin:0;min-height:100vh;display:grid;place-items:center;background:#141218;color:#e6e0e9;font-family:\"Segoe UI\",Roboto,system-ui,sans-serif}}main{{max-width:28rem;margin:1rem;padding:2.5rem;border-radius:1.75rem;background:#211f26;box-shadow:0 20px 60px rgba(0,0,0,.5);text-align:center}}.logo svg{{width:72px;height:72px;display:block;margin:0 auto 1rem}}.brand{{font-size:.875rem;letter-spacing:.02em;color:#cac4d0;margin:0 0 1.25rem}}h1{{font-size:1.5rem;margin:.25rem 0 .5rem;color:{accent}}}p{{color:#cac4d0;line-height:1.5;margin:0}}</style><main><div class=\"logo\">{LOGO}</div><p class=\"brand\">Materialfy</p><h1>{heading}</h1><p>{body}</p></main><script>setTimeout(function(){{window.close()}},1500)</script></html>"
+    )
+}
+
+fn success_page() -> String {
+    page("Вход выполнен — Materialfy", "Вход выполнен", "Вкладку можно закрыть и вернуться в Materialfy.", "#cfbcff")
+}
+
+fn failure_page(reason: &str) -> String {
+    page(
+        "Вход не завершён — Materialfy",
+        "Вход не завершён",
+        &format!("{}. Вернитесь в Materialfy и попробуйте снова.", html_escape(reason)),
+        "#ffb4ab",
+    )
+}
+
+fn html_escape(text: &str) -> String {
+    text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn token_errors_never_include_authorization_response_contents() {
+        for (status, body) in [
+            (400, r#"{"error":"invalid_grant","error_description":"dummy-refresh-secret"}"#),
+            (400, r#"{"error":"dummy-refresh-secret"}"#),
+            (503, "dummy-refresh-secret"),
+            (200, r#"{"access_token":"dummy-refresh-secret","expires_in":"dummy-refresh-secret"}"#),
+        ] {
+            let error = decode_token_response(reqwest::StatusCode::from_u16(status).unwrap(), body).unwrap_err();
+            assert!(!format!("{error:?} {error}").contains("dummy-refresh-secret"));
+        }
+        for request in
+            ["GET /login?error=dummy-authorization-secret&state=ok HTTP/1.1", "GET /dummy-authorization-secret HTTP/1.1"]
+        {
+            let error = parse_request_line(request, "ok").unwrap_err();
+            assert!(!format!("{error:?} {error}").contains("dummy-authorization-secret"));
+        }
+    }
+
+    #[test]
+    fn rejected_grants_are_classified() {
+        let error = decode_token_response(reqwest::StatusCode::BAD_REQUEST, r#"{"error":"invalid_grant"}"#).unwrap_err();
+        assert!(matches!(error, TokenEndpointError::Rejected { status: 400, .. }));
+        let error = decode_token_response(reqwest::StatusCode::BAD_GATEWAY, "").unwrap_err();
+        assert!(matches!(error, TokenEndpointError::Unreachable(_)));
+        for status in [429, 408] {
+            let body = r#"{"error":"rate_limited"}"#;
+            let error = decode_token_response(reqwest::StatusCode::from_u16(status).unwrap(), body).unwrap_err();
+            assert!(matches!(error, TokenEndpointError::Unreachable(_)), "{status}");
+        }
+        let error = decode_token_response(reqwest::StatusCode::FORBIDDEN, "<html>blocked</html>").unwrap_err();
+        assert!(matches!(error, TokenEndpointError::Unreachable(_)));
+        let ok = decode_token_response(reqwest::StatusCode::OK, r#"{"access_token":"a","expires_in":60}"#).unwrap();
+        assert_eq!(ok.access_token, "a");
+        assert_eq!(ok.expires_in, Some(60));
+    }
+
+    #[test]
+    fn old_web_grants_require_image_upload_consent() {
+        let token = StoredToken {
+            scope: WEB_SCOPES.iter().filter(|scope| **scope != "ugc-image-upload").copied().collect::<Vec<_>>().join(" "),
+            ..Default::default()
+        };
+        assert!(!token.has_scopes(WEB_SCOPES));
+        let renewed = StoredToken { scope: WEB_SCOPES.join(" "), ..token };
+        assert!(renewed.has_scopes(WEB_SCOPES));
+    }
+
+    #[test]
+    fn begin_produces_valid_pkce_material() {
+        let flow = begin(Grant::shared_web_api());
+        assert!(flow.verifier.len() >= 43);
+        assert!(flow.url.contains("code_challenge_method=S256"));
+        assert!(flow.url.contains(&format!("state={}", flow.state)));
+        assert!(flow.url.contains(&format!("client_id={DEFAULT_WEB_CLIENT_ID}")));
+        assert!(flow.url.contains("8989"));
+        assert!(!flow.url.contains("show_dialog=true"));
+        let playback = begin(Grant::playback());
+        assert!(playback.url.contains(&format!("client_id={PLAYBACK_CLIENT_ID}")));
+        assert!(playback.url.contains("8898"));
+        assert!(playback.url.contains("show_dialog=true"));
+        let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(flow.verifier.as_bytes()));
+        assert!(flow.url.contains(&format!("code_challenge={challenge}")));
+    }
+
+    #[test]
+    fn playback_scopes_conform_to_spotify_streaming_contract() {
+        assert_eq!(PLAYBACK_SCOPES, &["streaming"]);
+        let playback = Grant::playback();
+        assert_eq!(playback.scopes, vec!["streaming".to_string()]);
+        assert_eq!(playback.redirect_uri(), "http://127.0.0.1:8898/login");
+        let personal = Grant::personal_web_api("test-id").unwrap();
+        assert_eq!(personal.redirect_uri(), "http://127.0.0.1:8989/login");
+        let flow = begin(personal);
+        assert!(!flow.url.contains("show_dialog=true"));
+    }
+
+    #[test]
+    fn personal_client_id_is_validated_at_the_boundary() {
+        assert_eq!(Grant::personal_web_api("  abc ").unwrap().client_id, "abc");
+        assert!(Grant::personal_web_api("  ").is_err());
+    }
+
+    #[test]
+    fn request_line_parsing() {
+        let code = parse_request_line("GET /login?code=abc%20d&state=s1 HTTP/1.1\r\n", "s1").unwrap();
+        assert_eq!(code, "abc d");
+        assert!(parse_request_line("GET /login?code=abc&state=other HTTP/1.1", "s1").is_err());
+        assert!(parse_request_line("GET /favicon.ico HTTP/1.1", "s1").is_err());
+        assert!(parse_request_line("GET /login?error=access_denied&state=s1 HTTP/1.1", "s1").is_err());
+    }
+
+    #[test]
+    fn stored_token_round_trips_and_tracks_expiry() {
+        let response = TokenResponse {
+            access_token: "a".into(),
+            refresh_token: Some("r".into()),
+            expires_in: Some(3600),
+            scope: Some("x".into()),
+        };
+        let token = StoredToken::from_response("id", response, None).unwrap();
+        assert!(!token.needs_refresh());
+        assert!(!token.expired());
+        assert!(token.has_scopes(&["x"]));
+        assert!(!token.has_scopes(&["x", "y"]));
+        let expiring = StoredToken { expires_at: now_secs() + 10, ..token.clone() };
+        assert!(expiring.needs_refresh());
+        let dir = std::env::temp_dir().join(format!("sf-auth-token-{}", std::process::id()));
+        let path = dir.join("token.json");
+        token.save(&path).unwrap();
+        assert_eq!(StoredToken::load(&path), Some(token));
+        StoredToken::remove(&path);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_refresh_without_a_new_refresh_token_keeps_the_previous_one() {
+        let response = TokenResponse { access_token: "a".into(), refresh_token: None, expires_in: None, scope: None };
+        let token = StoredToken::from_response("id", response.clone(), Some("old")).unwrap();
+        assert_eq!(token.refresh_token, "old");
+        assert!(StoredToken::from_response("id", response, None).is_err());
+    }
+
+    #[test]
+    fn legacy_tokens_move_to_the_matching_session() {
+        let dir = std::env::temp_dir().join(format!("sf-auth-token-migration-{}-{}", std::process::id(), now_secs()));
+        let legacy = dir.join("legacy.json");
+        let shared = dir.join("shared.json");
+        let personal = dir.join("personal.json");
+        for (client_id, target) in [(DEFAULT_WEB_CLIENT_ID, &shared), ("personal-client", &personal)] {
+            let token = StoredToken {
+                client_id: client_id.into(),
+                access_token: "access".into(),
+                refresh_token: "refresh".into(),
+                expires_at: now_secs() + 3600,
+                ..StoredToken::default()
+            };
+            token.save(&legacy).unwrap();
+            StoredToken::migrate_legacy(&legacy, &shared, &personal).unwrap();
+            assert_eq!(StoredToken::load(target), Some(token));
+            assert!(!legacy.exists());
+        }
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn pages_are_russian_branded_and_escape_reasons() {
+        let ok = success_page();
+        assert!(ok.contains("lang=\"ru\""));
+        assert!(ok.contains("Materialfy"));
+        assert!(ok.contains("Вход выполнен"));
+        let failed = failure_page("<script>x</script>");
+        assert!(failed.contains("&lt;script&gt;"));
+        assert!(failed.contains("Вход не завершён"));
+    }
+
+    #[tokio::test]
+    async fn loopback_listener_returns_the_code_and_can_be_cancelled() {
+        let port = {
+            let probe = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            probe.local_addr().unwrap().port()
+        };
+        let (_cancel_tx, cancel_rx) = watch::channel(false);
+        let waiting = tokio::spawn(async move { wait_for_code(port, "s1", cancel_rx).await });
+        let mut stream = loop {
+            match tokio::net::TcpStream::connect(("127.0.0.1", port)).await {
+                Ok(stream) => break stream,
+                Err(_) => tokio::task::yield_now().await,
+            }
+        };
+        stream.write_all(b"GET /login?code=c1&state=s1 HTTP/1.1\r\nHost: x\r\n\r\n").await.unwrap();
+        let mut reply = String::new();
+        tokio::io::AsyncReadExt::read_to_string(&mut stream, &mut reply).await.unwrap();
+        assert!(reply.starts_with("HTTP/1.1 200 OK"));
+        assert!(reply.contains("Вход выполнен"));
+        assert_eq!(waiting.await.unwrap().unwrap(), "c1");
+
+        let (cancel_tx, cancel_rx) = watch::channel(false);
+        let waiting = tokio::spawn(async move { wait_for_code(port, "s2", cancel_rx).await });
+        tokio::task::yield_now().await;
+        cancel_tx.send(true).unwrap();
+        assert_eq!(waiting.await.unwrap().unwrap_err().to_string(), CANCELLED);
+    }
+
+    #[tokio::test]
+    async fn a_busy_port_is_reported_in_russian() {
+        let busy = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = busy.local_addr().unwrap().port();
+        let (_cancel_tx, cancel_rx) = watch::channel(false);
+        let error = wait_for_code(port, "s", cancel_rx).await.unwrap_err().to_string();
+        assert!(error.contains(&format!("Порт {port} занят")), "{error}");
+    }
+}
