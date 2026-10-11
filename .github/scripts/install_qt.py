@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""Ставит Qt из онлайн-репозитория download.qt.io без установщика и без aqtinstall.
+"""Install Qt from the download.qt.io online repository without the installer or aqtinstall.
 
-aqtinstall 3.3 не разбирает новую раскладку репозитория Qt 6.12 (qt6_6120/qt6_6120_<arch>),
-поэтому читаем Updates.xml сами: берём пакет qt.qt6.<ver>.<arch> и нужные addons, качаем все их
-DownloadableArchives, сверяем SHA-1 и распаковываем 7z в один префикс. Архивы Qt 6 перемещаемые —
-qt.conf и правка путей не нужны.
+aqtinstall 3.3 does not understand the Qt 6.12 repository layout (qt6_6120/qt6_6120_<arch>), so we
+read Updates.xml ourselves: take the qt.qt6.<ver>.<arch> package plus the requested addons, download
+all of their DownloadableArchives, verify SHA-1 and extract the 7z archives into one prefix. Qt 6
+archives are relocatable, so no qt.conf or path patching is needed.
 
     python3 install_qt.py --out ~/Qt/6.12.0/gcc_64 --addons qtshadertools qtimageformats
 
-В stdout — только путь к qmake (журнал — в stderr). --github дописывает QTDIR/QMAKE в $GITHUB_ENV и bin в $GITHUB_PATH. Если в --out уже стоит тот же
-набор пакетов (метка .materialfy-qt), ничего не качает — так работает кэш CI.
+Only the qmake path goes to stdout (the log goes to stderr). --github appends QTDIR/QMAKE to
+$GITHUB_ENV and bin/ to $GITHUB_PATH. If --out already holds the same package set (the
+.materialfy-qt marker), nothing is downloaded - this is what makes the CI cache work.
 """
 from __future__ import annotations
 
@@ -30,11 +31,12 @@ from pathlib import Path
 BASE = "https://download.qt.io/online/qtsdkrepository"
 MARKER = ".materialfy-qt"
 
-# хост → (каталог ОС в репозитории, архитектура по умолчанию, суффикс имени пакета)
+# host -> (OS directory in the repository, default arch, package name suffix)
 HOSTS = {
     "windows": ("windows_x86", "msvc2022_64", "win64_msvc2022_64"),
     "linux": ("linux_x64", "linux_gcc_64", "linux_gcc_64"),
     "linux_arm64": ("linux_arm64", "linux_gcc_arm64", "linux_gcc_arm64"),
+    # clang_64 is a universal (x86_64 + arm64) build
     "mac": ("mac_x64", "clang_64", "clang_64"),
 }
 
@@ -43,7 +45,8 @@ def log(msg: str) -> None:
     print(f"[install_qt] {msg}", file=sys.stderr, flush=True)
 
 
-def fetch(url: str, dest: Path | None = None, attempts: int = 4) -> bytes:
+def fetch(url: str, dest: Path | None = None, attempts: int = 5) -> bytes:
+    err: Exception | None = None
     for i in range(1, attempts + 1):
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "materialfy-ci"})
@@ -57,16 +60,16 @@ def fetch(url: str, dest: Path | None = None, attempts: int = 4) -> bytes:
             if e.code == 404:
                 raise
             err = e
-        except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
+        except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as e:
             err = e
-        log(f"сбой {url}: {err}; попытка {i}/{attempts}")
-        time.sleep(3 * i)
-    raise RuntimeError(f"не удалось скачать {url}")
+        log(f"failed {url}: {err}; attempt {i}/{attempts}")
+        time.sleep(5 * i)
+    raise RuntimeError(f"could not download {url}: {err}")
 
 
 def repo_candidates(os_dir: str, ver: str, arch: str) -> list[str]:
     tag = f"qt6_{ver.replace('.', '')}"
-    # 6.8+: qt6_6120/qt6_6120_<arch> (Windows) или qt6_6120/qt6_6120 (Linux, macOS); старые — плоско
+    # 6.8+: qt6_6120/qt6_6120_<arch> (Windows) or qt6_6120/qt6_6120 (Linux, macOS); older ones are flat
     return [
         f"{BASE}/{os_dir}/desktop/{tag}/{tag}_{arch}",
         f"{BASE}/{os_dir}/desktop/{tag}/{tag}",
@@ -80,9 +83,9 @@ def load_repo(os_dir: str, ver: str, arch: str) -> tuple[str, ET.Element]:
             data = fetch(f"{url}/Updates.xml")
         except urllib.error.HTTPError:
             continue
-        log(f"репозиторий: {url}")
+        log(f"repository: {url}")
         return url, ET.fromstring(data)
-    raise SystemExit(f"Updates.xml для Qt {ver} ({os_dir}, {arch}) не найден")
+    raise SystemExit(f"Updates.xml for Qt {ver} ({os_dir}, {arch}) not found")
 
 
 def find_7z() -> str:
@@ -93,7 +96,7 @@ def find_7z() -> str:
     for path in (r"C:\Program Files\7-Zip\7z.exe", "/opt/homebrew/bin/7zz", "/usr/local/bin/7zz"):
         if Path(path).exists():
             return path
-    raise SystemExit("нужен 7-Zip: 7z (Windows, p7zip-full) или 7zz (brew install sevenzip)")
+    raise SystemExit("7-Zip is required: 7z (Windows, p7zip-full / 7zip) or 7zz (brew install sevenzip)")
 
 
 def sha1_of(path: Path) -> str:
@@ -105,7 +108,7 @@ def sha1_of(path: Path) -> str:
 
 
 def main() -> int:
-    # консоль Windows — cp1251/cp866, а сообщения по-русски
+    # Windows consoles may default to a legacy code page
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8", errors="replace")
@@ -115,12 +118,12 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--host", choices=HOSTS, default=host_default)
     ap.add_argument("--version", default="6.12.0")
-    ap.add_argument("--arch", help="каталог в репозитории (msvc2022_64, linux_gcc_64, linux_gcc_arm64, clang_64)")
+    ap.add_argument("--arch", help="repository arch directory (msvc2022_64, linux_gcc_64, linux_gcc_arm64, clang_64)")
     ap.add_argument("--addons", nargs="*", default=["qtshadertools", "qtimageformats"])
-    ap.add_argument("--out", required=True, type=Path, help="префикс Qt (будет содержать bin/, lib/, qml/ …)")
-    ap.add_argument("--skip", nargs="*", default=["qtdoc"], help="префиксы архивов, которые не нужны")
-    ap.add_argument("--github", action="store_true", help="экспортировать QTDIR/QMAKE/PATH для GitHub Actions")
-    ap.add_argument("--dry-run", action="store_true", help="только показать архивы")
+    ap.add_argument("--out", required=True, type=Path, help="Qt prefix (will contain bin/, lib/, qml/ ...)")
+    ap.add_argument("--skip", nargs="*", default=["qtdoc"], help="archive name prefixes to skip")
+    ap.add_argument("--github", action="store_true", help="export QTDIR/QMAKE/PATH for GitHub Actions")
+    ap.add_argument("--dry-run", action="store_true", help="only list the archives")
     args = ap.parse_args()
 
     os_dir, arch_default, _ = HOSTS[args.host]
@@ -137,7 +140,7 @@ def main() -> int:
         qmake = qmake.with_name("qmake.exe" if args.host == "windows" else "qmake")
 
     if marker.exists() and marker.read_text(encoding="utf-8") == stamp and qmake.exists():
-        log(f"Qt уже стоит в {out}")
+        log(f"Qt is already installed in {out}")
     else:
         repo, root = load_repo(os_dir, args.version, arch)
         packages = {p.findtext("Name"): p for p in root.findall("PackageUpdate")}
@@ -145,7 +148,7 @@ def main() -> int:
         for name in names:
             pkg = packages.get(name)
             if pkg is None:
-                raise SystemExit(f"в репозитории нет пакета {name}")
+                raise SystemExit(f"package {name} is not in the repository")
             version = pkg.findtext("Version") or ""
             archives = [a.strip() for a in (pkg.findtext("DownloadableArchives") or "").split(",") if a.strip()]
             for archive in archives:
@@ -168,26 +171,26 @@ def main() -> int:
                 expected = fetch(f"{url}.sha1").decode().split()[0].strip().lower()
                 actual = sha1_of(dest)
                 if actual != expected:
-                    raise SystemExit(f"SHA-1 не совпал для {archive}: {actual} != {expected}")
+                    raise SystemExit(f"SHA-1 mismatch for {archive}: {actual} != {expected}")
                 cmd = [seven, "x", "-y", "-bd", "-bso0", f"-o{out}", str(dest)]
-                # 7-Zip отбрасывает симлинки архивов Qt (libQt6*.so -> .so.6) как «опасные»:
-                # 25.x пропускает их с -snld20, 21–24 — с -snld, старый p7zip 16.02 ключей не знает
+                # 7-Zip drops the symlinks in Qt archives (libQt6*.so -> .so.6) as "dangerous":
+                # 25.x keeps them with -snld20, 21-24 with -snld, the old p7zip 16.02 knows neither flag
                 for flags in (["-snld20"], ["-snld"], []):
                     if subprocess.run([*cmd, *flags]).returncode == 0:
                         break
                 else:
-                    raise SystemExit(f"7z не распаковал {archive}")
+                    raise SystemExit(f"7z could not extract {archive}")
                 dest.unlink()
-                log(f"распакован {archive}")
-        # архив ICU (Linux) ложится в корень, а Qt ищет его через RUNPATH $ORIGIN/../lib
+                log(f"extracted {archive}")
+        # the ICU archive (Linux) lands in the prefix root, but Qt looks for it via RUNPATH $ORIGIN/../lib
         for icu in out.glob("libicu*.so*"):
             shutil.move(str(icu), out / "lib" / icu.name)
         if not qmake.exists():
             qmake = qmake.with_name("qmake.exe" if args.host == "windows" else "qmake")
         if not qmake.exists():
-            raise SystemExit(f"после распаковки нет {qmake}")
+            raise SystemExit(f"{qmake} is missing after extraction")
         marker.write_text(stamp, encoding="utf-8")
-        log(f"Qt {args.version} установлен в {out}")
+        log(f"Qt {args.version} installed in {out}")
 
     if args.github:
         with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as f:

@@ -1,23 +1,36 @@
-# Сборка всех платформ. Запускается на PR в main, вручную (Actions → Build → Run workflow) и вызывается
-# из release.yml (workflow_call). На обычные коммиты в main не запускается.
-# Windows — основная платформа; Linux и macOS — по возможности (сбой не валит запуск).
+# Builds, tests and packages Materialfy on every supported platform.
+# Runs on pushes to main, on pull requests, manually (Actions -> Build -> Run workflow) and is called
+# by release.yml (workflow_call) for tagged releases. Every platform job is required.
 name: Build
 
 on:
+  push:
+    branches: [main, ci]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "LICENSE"
+      - "NOTICE"
   pull_request:
     branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "LICENSE"
+      - "NOTICE"
   workflow_dispatch:
   workflow_call:
     inputs:
       version:
-        description: "Версия сборки (тег v1.2.3 или 1.2.3); пусто — из Cargo.toml"
+        description: "Build version (tag v1.2.3 or 1.2.3); empty means the version from Cargo.toml"
         type: string
         required: false
         default: ""
 
+# A newer push to the same branch / PR cancels the run in progress (never for release tags).
 concurrency:
-  group: build-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: build-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 permissions:
   contents: read
@@ -27,6 +40,7 @@ env:
   QT_ADDONS: "qtshadertools qtimageformats"
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
+  RUST_BACKTRACE: "1"
 
 jobs:
   meta:
@@ -45,33 +59,33 @@ jobs:
           if [ -z "$v" ]; then
             v="$(awk '/^\[workspace\.package\]/{f=1;next} /^\[/{f=0} f && /^version *=/{gsub(/[" ]/,"",$0); split($0,a,"="); print a[2]; exit}' Cargo.toml)"
           fi
-          [ -n "$v" ] || { echo "не удалось определить версию" >&2; exit 1; }
+          [ -n "$v" ] || { echo "could not determine the version" >&2; exit 1; }
           echo "version=$v" >> "$GITHUB_OUTPUT"
-          echo "Версия: $v"
+          echo "Version: $v"
 
   windows:
-    name: Windows (Inno Setup)
+    name: Windows x86_64
     needs: meta
     runs-on: windows-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     env:
       VERSION: ${{ needs.meta.outputs.version }}
     steps:
       - uses: actions/checkout@v7
 
-      - name: Кэш Qt
+      - name: Cache Qt
         uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}\Qt\${{ env.QT_VERSION }}\msvc2022_64
-          key: qt-${{ env.QT_VERSION }}-windows-${{ hashFiles('.github/scripts/install_qt.py') }}
+          key: qt-${{ env.QT_VERSION }}-windows-x86_64-${{ hashFiles('.github/scripts/install_qt.py') }}
 
-      - name: Qt ${{ env.QT_VERSION }}
+      - name: Install Qt ${{ env.QT_VERSION }}
         shell: pwsh
         run: >
           python .github/scripts/install_qt.py --host windows --version $env:QT_VERSION
           --addons $($env:QT_ADDONS -split ' ') --out "$env:RUNNER_TEMP\Qt\$env:QT_VERSION\msvc2022_64" --github
 
-      - name: Inno Setup
+      - name: Install Inno Setup
         shell: pwsh
         run: |
           $paths = @("C:\Program Files (x86)\Inno Setup 6", "C:\Program Files\Inno Setup 6")
@@ -83,55 +97,67 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          key: qt-${{ env.QT_VERSION }}
+          key: windows-x86_64-qt-${{ env.QT_VERSION }}
+          save-if: ${{ github.event_name != 'pull_request' }}
 
       - name: cargo test
         shell: pwsh
         run: cargo test --locked --release --workspace
 
-      - name: Сборка, windeployqt, инсталлер
+      - name: Build, windeployqt, installer
         shell: pwsh
         run: ./build_windows.ps1 -QtDir $env:QTDIR -Version $env:VERSION -Portable
 
-      - name: Проверка запуска (снимок окна)
-        continue-on-error: true
+      - name: Smoke test (window screenshot)
         shell: pwsh
         run: |
           $exe = "target\dist\materialfy\materialfy.exe"
           $shot = Join-Path $env:RUNNER_TEMP "shot.png"
           $p = Start-Process $exe -ArgumentList "--new-instance", "--offline", "--screenshot", $shot, "--delay", "3000" -PassThru
-          if (-not $p.WaitForExit(90000)) { $p.Kill(); throw "оболочка не завершилась за 90 с" }
-          if (-not (Test-Path $shot) -or (Get-Item $shot).Length -eq 0) { throw "нет снимка окна" }
+          if (-not $p.WaitForExit(90000)) { $p.Kill(); throw "the app did not exit within 90 s" }
+          if (-not (Test-Path $shot) -or (Get-Item $shot).Length -eq 0) { throw "no window screenshot" }
 
-      - name: Снимок
+      - name: Upload screenshot
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: smoke-windows
+          name: smoke-windows-x86_64
           path: ${{ runner.temp }}/shot.png
           if-no-files-found: ignore
 
       - uses: actions/upload-artifact@v7
         with:
-          name: materialfy-windows
+          name: materialfy-windows-x86_64
           path: |
             target/dist/Materialfy-*-Setup.exe
             target/dist/Materialfy-*-portable.zip
           if-no-files-found: error
 
   linux:
-    name: Linux (AppImage, best effort)
+    name: Linux ${{ matrix.arch }}
     needs: meta
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    timeout-minutes: 90
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+            qt_host: linux
+            qt_dir: gcc_64
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+            qt_host: linux_arm64
+            qt_dir: gcc_arm64
     env:
       VERSION: ${{ needs.meta.outputs.version }}
     steps:
       - uses: actions/checkout@v7
 
-      # libasound2-dev (cpal), libpulse-dev (librespot pulseaudio-backend) — как в CI spotifast
-      - name: Системные пакеты
+      # libasound2-dev (cpal), libpulse-dev (librespot pulseaudio backend), xcb/GL for Qt and linuxdeploy,
+      # xvfb + mesa for the smoke test
+      - name: Install system packages
         run: |
           sudo apt-get update -q
           sudo apt-get install -y --no-install-recommends \
@@ -141,24 +167,26 @@ jobs:
             libfontconfig1-dev libfreetype-dev libwayland-dev \
             libxcb1-dev libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 \
             libxcb-render-util0 libxcb-shape0 libxcb-xfixes0 libxcb-sync1 libxcb-xkb1 libxcb-xinerama0 \
-            libxcb-glx0 libx11-xcb1
+            libxcb-glx0 libx11-xcb1 \
+            xvfb xauth libgl1-mesa-dri libegl-mesa0 libglx-mesa0
 
-      - name: Кэш Qt
+      - name: Cache Qt
         uses: actions/cache@v6
         with:
-          path: ${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/gcc_64
-          key: qt-${{ env.QT_VERSION }}-linux-${{ hashFiles('.github/scripts/install_qt.py') }}
+          path: ${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/${{ matrix.qt_dir }}
+          key: qt-${{ env.QT_VERSION }}-linux-${{ matrix.arch }}-${{ hashFiles('.github/scripts/install_qt.py') }}
 
-      - name: Qt ${{ env.QT_VERSION }}
+      - name: Install Qt ${{ env.QT_VERSION }}
         run: |
           read -ra addons <<< "$QT_ADDONS"
-          python3 .github/scripts/install_qt.py --host linux --version "$QT_VERSION" \
-            --addons "${addons[@]}" --out "$RUNNER_TEMP/Qt/$QT_VERSION/gcc_64" --github
+          python3 .github/scripts/install_qt.py --host ${{ matrix.qt_host }} --version "$QT_VERSION" \
+            --addons "${addons[@]}" --out "$RUNNER_TEMP/Qt/$QT_VERSION/${{ matrix.qt_dir }}" --github
 
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          key: qt-${{ env.QT_VERSION }}
+          key: linux-${{ matrix.arch }}-qt-${{ env.QT_VERSION }}
+          save-if: ${{ github.event_name != 'pull_request' }}
 
       - name: cargo build
         run: cargo build --locked --release -p materialfy
@@ -166,56 +194,67 @@ jobs:
       - name: cargo test
         env:
           QT_QPA_PLATFORM: offscreen
-          LD_LIBRARY_PATH: ${{ env.QTDIR }}/lib
-        run: cargo test --locked --release --workspace
+        run: |
+          export LD_LIBRARY_PATH="$QTDIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          cargo test --locked --release --workspace
 
-      - name: AppImage и tar.gz
+      - name: Package AppImage and tar.gz
         run: bash .github/scripts/package_linux.sh "$VERSION"
 
-      - name: Проверка запуска (снимок окна)
-        continue-on-error: true
+      - name: Smoke test (window screenshot)
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
         run: |
-          timeout 90 target/dist/AppDir/AppRun --screenshot "$RUNNER_TEMP/shot.png" --offline --new-instance --delay 3000
+          xvfb-run -a -s "-screen 0 1600x1000x24" \
+            timeout 90 target/dist/AppDir/AppRun --screenshot "$RUNNER_TEMP/shot.png" --offline --new-instance --delay 3000
           test -s "$RUNNER_TEMP/shot.png"
 
-      - name: Снимок
+      - name: Upload screenshot
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: smoke-linux
+          name: smoke-linux-${{ matrix.arch }}
           path: ${{ runner.temp }}/shot.png
           if-no-files-found: ignore
 
       - uses: actions/upload-artifact@v7
         with:
-          name: materialfy-linux
+          name: materialfy-linux-${{ matrix.arch }}
           path: |
             target/dist/*.AppImage
             target/dist/*.tar.gz
           if-no-files-found: error
 
   macos:
-    name: macOS (best effort)
+    name: macOS ${{ matrix.arch }}
     needs: meta
-    runs-on: macos-latest
-    continue-on-error: true
-    timeout-minutes: 90
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-latest
+          - arch: x86_64
+            runner: macos-15-intel
     env:
       VERSION: ${{ needs.meta.outputs.version }}
+      MACOSX_DEPLOYMENT_TARGET: "13.0"
     steps:
       - uses: actions/checkout@v7
 
-      # 7-Zip — для распаковки архивов Qt в install_qt.py
-      - name: Homebrew
+      # 7-Zip extracts the Qt archives in install_qt.py
+      - name: Install 7-Zip
         run: brew install sevenzip
 
-      - name: Кэш Qt
+      - name: Cache Qt
         uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/macos
-          key: qt-${{ env.QT_VERSION }}-macos-${{ hashFiles('.github/scripts/install_qt.py') }}
+          key: qt-${{ env.QT_VERSION }}-macos-${{ matrix.arch }}-${{ hashFiles('.github/scripts/install_qt.py') }}
 
-      - name: Qt ${{ env.QT_VERSION }}
+      - name: Install Qt ${{ env.QT_VERSION }}
         run: |
           read -ra addons <<< "$QT_ADDONS"
           python3 .github/scripts/install_qt.py --host mac --version "$QT_VERSION" \
@@ -224,16 +263,39 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          key: qt-${{ env.QT_VERSION }}
+          key: macos-${{ matrix.arch }}-qt-${{ env.QT_VERSION }}
+          save-if: ${{ github.event_name != 'pull_request' }}
 
       - name: cargo build
         run: cargo build --locked --release -p materialfy
 
-      - name: Materialfy.app и dmg
+      - name: cargo test
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: cargo test --locked --release --workspace
+
+      - name: Package Materialfy.app and dmg
+        env:
+          MATERIALFY_ARCH: ${{ matrix.arch }}
         run: bash .github/scripts/package_macos.sh "$VERSION"
+
+      - name: Smoke test (window screenshot)
+        run: |
+          # macOS has no coreutils timeout; the perl alarm kills the app if it hangs
+          perl -e 'alarm 90; exec @ARGV' target/dist/Materialfy.app/Contents/MacOS/materialfy \
+            --screenshot "$RUNNER_TEMP/shot.png" --offline --new-instance --delay 3000
+          test -s "$RUNNER_TEMP/shot.png"
+
+      - name: Upload screenshot
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: smoke-macos-${{ matrix.arch }}
+          path: ${{ runner.temp }}/shot.png
+          if-no-files-found: ignore
 
       - uses: actions/upload-artifact@v7
         with:
-          name: materialfy-macos
+          name: materialfy-macos-${{ matrix.arch }}
           path: target/dist/*.dmg
           if-no-files-found: error
