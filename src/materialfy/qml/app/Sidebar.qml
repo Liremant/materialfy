@@ -318,6 +318,13 @@ Item {
 
         Item { Layout.fillHeight: true; visible: !playlistList.visible }
 
+        // Доступное обновление и ход загрузки (окно обновления — UpdateSheet в Main.qml)
+        UpdatePill {
+            Layout.fillWidth: true
+            rail: root.rail
+            onClicked: { root.closeDrawer(); Updater.showSheet() }
+        }
+
         // В рейле настройки — отдельным пунктом; в развёрнутом виде — кнопкой в карточке аккаунта
         NavItem {
             visible: root.rail

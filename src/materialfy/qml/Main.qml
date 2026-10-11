@@ -573,6 +573,9 @@ Window {
         id: newPlaylistDialog
         z: 2100
     }
+    UpdateSheet {
+        z: 2150
+    }
     Snackbar {
         id: snackbar
         anchors.fill: parent

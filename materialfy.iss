@@ -93,6 +93,21 @@ Name: "{userstartup}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: startu
 [Run]
 ; Offer to launch Materialfy after installation
 Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
+; Update from inside the app (Setup.exe /SILENT ... /RELAUNCH): start the new version once the files are in place.
+; Without /RELAUNCH (a regular or a scripted silent install) nothing changes.
+Filename: "{app}\{#AppExeName}"; Flags: nowait; Check: IsAppRelaunch
 
 [UninstallDelete]
 ; Settings, sign-in (Windows Credential Manager) and cache are kept on uninstall; "Sign out" in the app clears them
+
+[Code]
+// /RELAUNCH on the command line: the app started its own update and wants to be back afterwards
+function IsAppRelaunch: Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  for I := 1 to ParamCount do
+    if CompareText(ParamStr(I), '/RELAUNCH') = 0 then
+      Result := True;
+end;

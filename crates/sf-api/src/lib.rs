@@ -31,4 +31,6 @@ impl fmt::Display for ApiSource {
 pub use client::{ApiClient, ApiError, NetActivity, PlayRequest, TokenProvider, WebTokens};
 pub use gateway::{AccountId, ApiGateway, Operation, PlaylistAccess, PlaylistId, SessionState};
 pub use http::Http;
+/// SHA-256 for callers without their own dependency (update checksums in sf-services).
+pub use sha2;
 pub use limits::{LimitKind, Priority, WebApiLimits};

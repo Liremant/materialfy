@@ -96,6 +96,13 @@ pub enum SettingKey {
     // Поведение
     CloseToTray,
     WheelStep,
+    // Updates
+    /// check GitHub Releases for a new version on startup and every 6 h (no network when off)
+    AutoUpdateCheck,
+    /// "stable" | "beta" (beta also offers pre-releases)
+    UpdateChannel,
+    /// version the user chose to skip ("0.2.0"); "" — none
+    SkippedVersion,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -115,7 +122,7 @@ pub enum SettingType {
 }
 
 impl SettingKey {
-    pub const ALL: [SettingKey; 48] = [
+    pub const ALL: [SettingKey; 51] = [
         SettingKey::ThemeMode,
         SettingKey::SchemeVariant,
         SettingKey::AccentFromCover,
@@ -164,6 +171,9 @@ impl SettingKey {
         SettingKey::RadioSeeds,
         SettingKey::CloseToTray,
         SettingKey::WheelStep,
+        SettingKey::AutoUpdateCheck,
+        SettingKey::UpdateChannel,
+        SettingKey::SkippedVersion,
     ];
 
     /// Имя ключа в хранилище и в QML ("themeMode", …).
@@ -218,6 +228,9 @@ impl SettingKey {
             RadioSeeds => "radioSeeds",
             CloseToTray => "closeToTray",
             WheelStep => "wheelStep",
+            AutoUpdateCheck => "autoUpdateCheck",
+            UpdateChannel => "updateChannel",
+            SkippedVersion => "skippedVersion",
         }
     }
 
@@ -286,6 +299,9 @@ impl SettingKey {
             RadioSeeds => Str(String::new()),
             CloseToTray => Bool(true),
             WheelStep => Int(150),
+            AutoUpdateCheck => Bool(true),
+            UpdateChannel => Str("stable".into()),
+            SkippedVersion => Str(String::new()),
         }
     }
 
@@ -308,6 +324,9 @@ impl SettingKey {
                 SettingValue::Float(((speed.clamp(0.5, 2.0) * 20.0).round() / 20.0).clamp(0.5, 2.0))
             }
             (SettingKey::Crossfade, SettingValue::Int(seconds)) => SettingValue::Int(seconds.clamp(0, CROSSFADE_MAX_S)),
+            (SettingKey::UpdateChannel, SettingValue::Str(channel)) => {
+                SettingValue::Str(if channel.trim().eq_ignore_ascii_case("beta") { "beta" } else { "stable" }.into())
+            }
             (_, value) => value,
         }
     }
@@ -913,7 +932,7 @@ mod tests {
 
     #[test]
     fn schema() {
-        assert_eq!(SettingKey::ALL.len(), 48);
+        assert_eq!(SettingKey::ALL.len(), 51);
         for key in SettingKey::ALL {
             assert_eq!(SettingKey::from_name(key.name()), Some(key));
             assert_eq!(key.default_value().value_type(), key.value_type());
@@ -1162,6 +1181,23 @@ mod tests {
     }
 
     #[test]
+    fn update_settings() {
+        let store = SettingsStore::in_memory();
+        assert!(store.get_bool(SettingKey::AutoUpdateCheck));
+        assert_eq!(store.get_str(SettingKey::UpdateChannel), "stable");
+        assert_eq!(store.get_str(SettingKey::SkippedVersion), "");
+        assert!(store.set(SettingKey::UpdateChannel, SettingValue::Str("Beta".into())));
+        assert_eq!(store.get_str(SettingKey::UpdateChannel), "beta");
+        // anything else falls back to stable
+        assert!(store.set(SettingKey::UpdateChannel, SettingValue::Str("nightly".into())));
+        assert_eq!(store.get_str(SettingKey::UpdateChannel), "stable");
+        assert!(store.set(SettingKey::AutoUpdateCheck, SettingValue::Bool(false)));
+        assert!(!store.get_bool(SettingKey::AutoUpdateCheck));
+        assert!(store.set(SettingKey::SkippedVersion, SettingValue::Str("0.2.0".into())));
+        assert_eq!(store.get_str(SettingKey::SkippedVersion), "0.2.0");
+    }
+
+    #[test]
     fn qml_names() {
         // name() = имя свойства QML; служебные pins/hiddenTracks свойств не имеют
         let names: Vec<&str> = SettingKey::ALL.iter().map(|k| k.name()).collect();
@@ -1172,7 +1208,8 @@ mod tests {
             "windowHeight", "windowX", "windowY", "windowMaximized", "closeToTray", "wheelStep", "libraryView",
             "librarySort", "homeHidden", "bitrate", "normalisation", "gapless", "autoplay", "volume", "audioDevice",
             "audioCache", "audioCacheMb", "playbackAuthorized", "deviceName", "webClientId", "proxyMode", "proxyHost",
-            "proxyPort", "proxyUsername", "pins", "hiddenTracks", "radioSeeds", "language",
+            "proxyPort", "proxyUsername", "pins", "hiddenTracks", "radioSeeds", "language", "autoUpdateCheck",
+            "updateChannel", "skippedVersion",
         ] {
             assert!(names.contains(&name), "{name}");
         }

@@ -21,6 +21,8 @@ pub mod library;
 pub mod lyrics;
 /// «Новинки»: «Радар новинок» и свежие релизы исполнителей
 pub mod releases;
+/// auto-update from GitHub Releases
+pub mod update;
 pub mod wave;
 
 use std::sync::{Arc, Mutex};
@@ -42,6 +44,7 @@ pub use library::{FeedbackKind, LibraryEvent, LibraryKind, LibraryService, Playl
 pub use lyrics::{LyricsService, LyricsSnapshot, LyricsStatus};
 pub use md3_model::{ListChange, PlaylistId};
 pub use releases::{NewRelease, ReleasesService, ReleasesSnapshot};
+pub use update::{UpdateService, UpdateSnapshot, UpdateState};
 pub use wave::{WaveService, WaveSnapshot};
 
 #[derive(Debug, thiserror::Error)]
@@ -85,6 +88,8 @@ pub struct Services {
     pub lyrics: Arc<LyricsService>,
     pub history: Arc<HistoryService>,
     pub devices: Arc<DevicesService>,
+    /// auto-update (checks start from the Updater bridge, not here)
+    pub update: Arc<update::UpdateService>,
     pub player: PlayerHandle,
     app_requests: broadcast::Sender<AppRequest>,
     media: Arc<Mutex<Option<glue::MediaStop>>>,
@@ -143,6 +148,7 @@ impl Services {
         glue::spawn_settings_glue(rt, settings.clone(), player.clone());
 
         let (app_requests, _) = broadcast::channel(16);
+        let update = update::UpdateService::new(rt.clone(), settings.clone(), http.clone(), app_requests.clone());
         let media = if options.enable_media {
             glue::start_media_controls(rt, settings.clone(), player.clone(), app_requests.clone())
         } else {
@@ -161,6 +167,7 @@ impl Services {
             lyrics,
             history,
             devices,
+            update,
             player,
             app_requests,
             media: Arc::new(Mutex::new(media)),

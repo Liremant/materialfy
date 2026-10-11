@@ -13,6 +13,7 @@ pub mod releases;
 pub mod settings;
 pub mod theme;
 pub mod translations;
+pub mod updater;
 
 use std::pin::Pin;
 use std::time::{Duration, Instant};

@@ -19,6 +19,7 @@
 #include "materialfy/src/bridges/settings.cxxqt.h"
 #include "materialfy/src/bridges/theme.cxxqt.h"
 #include "materialfy/src/bridges/translations.cxxqt.h"
+#include "materialfy/src/bridges/updater.cxxqt.h"
 #include "materialfy/src/icons.cxxqt.h"
 #include "materialfy/src/models/list_model.cxxqt.h"
 #include "materialfy/src/models/track_filter.cxxqt.h"
@@ -55,6 +56,7 @@ register_qml_types()
   singleton<Releases>("Releases");
   singleton<Catalog>("Catalog");
   singleton<Lyrics>("Lyrics");
+  singleton<Updater>("Updater");
 
   qmlRegisterType<TrackFilter>(URI, 1, 0, "TrackFilter");
   qmlRegisterUncreatableType<DictListModel>(URI, 1, 0, "DictListModel", QStringLiteral("the model is created in Rust"));

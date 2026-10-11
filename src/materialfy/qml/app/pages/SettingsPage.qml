@@ -22,7 +22,8 @@ Page {
         { key: "connect", text: "Spotify Connect", icon: "speaker_group" },
         { key: "network", text: I18n.t("Network"), icon: "lan" },
         { key: "storage", text: I18n.t("Storage"), icon: "database" },
-        { key: "appearance", text: I18n.t("Appearance"), icon: "palette" }
+        { key: "appearance", text: I18n.t("Appearance"), icon: "palette" },
+        { key: "updates", text: I18n.t("Updates"), icon: "download" }
     ]
     property string currentSection: "account"
 
@@ -60,6 +61,7 @@ Page {
         case "network": return networkCard
         case "storage": return storageCard
         case "appearance": return appearanceCard
+        case "updates": return updatesCard
         }
         return null
     }
@@ -1126,6 +1128,12 @@ Page {
                 onMoved: v => Settings.wheelStep = Math.round(v)
             }
         }
+    }
+
+    // ================= Обновления (app/UpdatesCard.qml) =================
+    UpdatesCard {
+        id: updatesCard
+        compact: page.compact
     }
 
     SettingsCard {
