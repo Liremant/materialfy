@@ -1,7 +1,7 @@
 //! GitHub Releases: parsing the API answer, picking the release for a channel, the asset for this
 //! platform and install kind, and SHA256SUMS.txt. All pure functions (tested without a network).
 use std::collections::HashMap;
-use std::path::{Component, Path};
+use std::path::Path;
 
 use serde::Deserialize;
 
@@ -108,12 +108,12 @@ pub struct Probe<'a> {
 }
 
 fn is_dev_build(exe: &Path) -> bool {
+    // split on both separators, so a Windows path reads the same whatever OS the check runs on
     let parts: Vec<String> = exe
-        .components()
-        .filter_map(|c| match c {
-            Component::Normal(part) => Some(part.to_string_lossy().to_ascii_lowercase()),
-            _ => None,
-        })
+        .to_string_lossy()
+        .split(['/', '\\'])
+        .filter(|part| !part.is_empty())
+        .map(str::to_ascii_lowercase)
         .collect();
     parts.windows(2).any(|w| w[0] == "target" && matches!(w[1].as_str(), "release" | "debug"))
         || parts.windows(3).any(|w| w[0] == "target" && matches!(w[2].as_str(), "release" | "debug"))
