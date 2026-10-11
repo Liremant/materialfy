@@ -94,3 +94,52 @@ impl qobject::IconMetrics {
         result
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    /// Every icon name QML asks for must be in the subset font (assets/fonts/icons.json), otherwise it
+    /// renders as nothing. After adding an icon run `python tools/subset_fonts.py`.
+    #[test]
+    fn every_icon_used_in_qml_is_in_the_font() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../src/materialfy");
+        let json = std::fs::read_to_string(root.join("assets/fonts/icons.json")).unwrap();
+        let font: std::collections::HashMap<String, serde_json::Value> = serde_json::from_str(&json).unwrap();
+        let mut missing = Vec::new();
+        let mut stack = vec![root.join("qml")];
+        while let Some(dir) = stack.pop() {
+            for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    stack.push(path);
+                    continue;
+                }
+                if path.extension().is_none_or(|ext| ext != "qml") {
+                    continue;
+                }
+                let text = std::fs::read_to_string(&path).unwrap();
+                for (number, line) in text.lines().enumerate() {
+                    let code = line.split("//").next().unwrap_or("");
+                    let Some(at) = code.find("icon:").or_else(|| code.find("Icon:")) else { continue };
+                    // property bindings like `icon: "name"` or `icon: cond ? "a" : "b"`, up to the next property
+                    let binding = code[at..].split([';', '}']).next().unwrap_or("");
+                    let parts: Vec<&str> = binding.split('"').collect();
+                    for (index, name) in parts.iter().enumerate().skip(1).step_by(2) {
+                        // operands of comparisons and call arguments are not icons: `x === "one" ? …`
+                        let before = parts[index - 1].trim_end();
+                        if before.ends_with('=') || before.ends_with('(') || before.ends_with(',') {
+                            continue;
+                        }
+                        let looks_like_icon = !name.is_empty()
+                            && name.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_');
+                        if looks_like_icon && !font.contains_key(*name) {
+                            missing.push(format!("{}:{}: {name}", path.display(), number + 1));
+                        }
+                    }
+                }
+            }
+        }
+        assert!(missing.is_empty(), "icons missing from the subset font (run tools/subset_fonts.py):\n{}", missing.join("\n"));
+    }
+}
