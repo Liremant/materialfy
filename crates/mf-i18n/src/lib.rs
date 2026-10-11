@@ -51,6 +51,50 @@ pub fn parse_lang(s: &str) -> Lang {
     if s == "ru" || s.starts_with("ru-") || s.starts_with("ru_") { Lang::Ru } else { Lang::En }
 }
 
+/// The Language setting: follow the OS UI language, or one fixed language.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+pub enum LangSetting {
+    #[default]
+    System,
+    Fixed(Lang),
+}
+
+impl LangSetting {
+    /// Settings code: "system", "en" or "ru".
+    pub fn code(self) -> &'static str {
+        match self {
+            LangSetting::System => "system",
+            LangSetting::Fixed(lang) => lang.code(),
+        }
+    }
+
+    /// The language to show: a fixed one as is; System — from the OS UI languages (most preferred first).
+    pub fn resolve<S: AsRef<str>>(self, os_languages: &[S]) -> Lang {
+        match self {
+            LangSetting::System => system_lang(os_languages),
+            LangSetting::Fixed(lang) => lang,
+        }
+    }
+}
+
+/// The `language` setting value: "en"/"ru" (any case, with a region) → that language; "system", empty or
+/// anything unknown → System.
+pub fn parse_setting(s: &str) -> LangSetting {
+    let code = s.trim().to_ascii_lowercase();
+    let primary = code.split(['-', '_']).next().unwrap_or("");
+    match primary {
+        "en" => LangSetting::Fixed(Lang::En),
+        "ru" => LangSetting::Fixed(Lang::Ru),
+        _ => LangSetting::System,
+    }
+}
+
+/// The app language for the OS UI languages (BCP 47 tags, most preferred first, as QLocale::uiLanguages gives
+/// them): Russian when the OS UI language is Russian, English otherwise (also for an empty list).
+pub fn system_lang<S: AsRef<str>>(os_languages: &[S]) -> Lang {
+    os_languages.first().map_or(Lang::En, |first| parse_lang(first.as_ref()))
+}
+
 /// The merged Russian dictionary as a JSON object string (for the QML side).
 pub const RU_JSON: &str = include_str!(concat!(env!("OUT_DIR"), "/ru.json"));
 
@@ -193,6 +237,48 @@ mod tests {
         assert_eq!(parse_lang(""), Lang::En);
         assert_eq!(parse_lang("de"), Lang::En);
         assert_eq!(Lang::Ru.code(), "ru");
+    }
+
+    #[test]
+    fn parse_setting_values() {
+        assert_eq!(parse_setting("system"), LangSetting::System);
+        assert_eq!(parse_setting(" System "), LangSetting::System);
+        assert_eq!(parse_setting(""), LangSetting::System);
+        assert_eq!(parse_setting("de"), LangSetting::System);
+        assert_eq!(parse_setting("english"), LangSetting::System);
+        assert_eq!(parse_setting("en"), LangSetting::Fixed(Lang::En));
+        assert_eq!(parse_setting("EN-us"), LangSetting::Fixed(Lang::En));
+        assert_eq!(parse_setting("ru"), LangSetting::Fixed(Lang::Ru));
+        assert_eq!(parse_setting("ru_RU"), LangSetting::Fixed(Lang::Ru));
+        assert_eq!(LangSetting::default(), LangSetting::System);
+        for setting in [LangSetting::System, LangSetting::Fixed(Lang::En), LangSetting::Fixed(Lang::Ru)] {
+            assert_eq!(parse_setting(setting.code()), setting);
+        }
+    }
+
+    #[test]
+    fn system_language() {
+        let none: [&str; 0] = [];
+        assert_eq!(system_lang(&none), Lang::En);
+        assert_eq!(system_lang(&["ru-RU", "en-US"]), Lang::Ru);
+        assert_eq!(system_lang(&["ru"]), Lang::Ru);
+        assert_eq!(system_lang(&["en-US", "ru-RU"]), Lang::En);
+        assert_eq!(system_lang(&["de-DE", "ru-RU"]), Lang::En);
+        assert_eq!(system_lang(&["uk-UA"]), Lang::En);
+        assert_eq!(system_lang(&["be-BY"]), Lang::En);
+        assert_eq!(system_lang(&["kk-KZ"]), Lang::En);
+        assert_eq!(system_lang(&["rue"]), Lang::En);
+        assert_eq!(system_lang(&[String::from("ru-UA")]), Lang::Ru);
+    }
+
+    #[test]
+    fn resolve_setting() {
+        let russian_os = ["ru-RU", "en-US"];
+        let english_os = ["en-GB"];
+        assert_eq!(parse_setting("system").resolve(&russian_os), Lang::Ru);
+        assert_eq!(parse_setting("system").resolve(&english_os), Lang::En);
+        assert_eq!(parse_setting("en").resolve(&russian_os), Lang::En);
+        assert_eq!(parse_setting("ru").resolve(&english_os), Lang::Ru);
     }
 
     #[test]

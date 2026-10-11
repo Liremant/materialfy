@@ -2,8 +2,10 @@
 
 Materialfy's source language is **English**: every user-visible string is written in English in the code, and that
 English text is also the lookup key. Other languages are dictionaries in this directory. Today there is one:
-Russian (`i18n/ru/*.json`). The language is chosen in Settings → Appearance → Language (setting `language`,
-`"en"` by default) and switches live, without a restart.
+Russian (`i18n/ru/*.json`). The language is chosen in Settings → Appearance → Language (setting `language`:
+`"system"` by default, `"en"` or `"ru"`) and switches live, without a restart. `"system"` resolves to Russian when the
+OS UI language (the first of `QLocale::system().uiLanguages()`) is Russian and to English otherwise; it is evaluated
+at startup (`mf_i18n::parse_setting(..).resolve(..)`), so a change of the OS language applies on the next launch.
 
 ## Layout
 

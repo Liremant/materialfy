@@ -241,6 +241,12 @@ app_set_qt_language(const QString& code)
   delete t;
 }
 
+QStringList
+system_ui_languages()
+{
+  return QLocale::system().uiLanguages(QLocale::TagSeparator::Dash);
+}
+
 void
 copy_to_clipboard(const QString& text)
 {

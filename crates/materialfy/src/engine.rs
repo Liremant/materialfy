@@ -238,8 +238,8 @@ pub fn run(cli: Cli) -> i32 {
     init_tracing();
 
     let settings = SettingsStore::open(config_dir);
-    // UI language before any service or QML produces text (English default; Russian from i18n/ru)
-    crate::bridges::translations::apply_language(crate::bridges::translations::stored_language(&settings));
+    // UI language before any service or QML produces text (default: the OS UI language — Russian or English)
+    crate::bridges::translations::apply_language(crate::bridges::translations::effective_language(&settings));
     let options = ServicesOptions {
         // Снимки — без сессии, кроме явного файла для тестов
         persist_session: cli.screenshot.is_none() || env_set("MATERIALFY_SESSION_FILE"),

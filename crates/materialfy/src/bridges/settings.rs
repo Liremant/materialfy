@@ -38,7 +38,7 @@ pub mod qobject {
         #[qproperty(bool, cover_pulse, cxx_name = "coverPulse", READ, WRITE = set_cover_pulse, NOTIFY = cover_pulse_changed)]
         #[qproperty(bool, calm_when_inactive, cxx_name = "calmWhenInactive", READ, WRITE = set_calm_when_inactive, NOTIFY = calm_when_inactive_changed)]
         #[qproperty(QString, animations, READ, WRITE = set_animations, NOTIFY = animations_changed)]
-        /// "en" | "ru"; the applied language and the dictionary — Translations (Md3/I18n.qml)
+        /// "system" | "en" | "ru"; the applied language and the dictionary — Translations (Md3/I18n.qml)
         #[qproperty(QString, language, READ, WRITE = set_language, NOTIFY = language_changed)]
         #[qproperty(bool, right_panel_open, cxx_name = "rightPanelOpen", READ, WRITE = set_right_panel_open, NOTIFY = right_panel_open_changed)]
         #[qproperty(QString, right_panel_tab, cxx_name = "rightPanelTab", READ, WRITE = set_right_panel_tab, NOTIFY = right_panel_tab_changed)]

@@ -29,6 +29,9 @@ int app_add_font(const QString& path);
 // Qt's own strings (dialogs, context menus): qtbase_<code>.qm from translations/ next to the exe or Qt's
 // TranslationsPath; "en" removes the translator. Also sets the default QLocale.
 void app_set_qt_language(const QString& code);
+// The OS UI languages, most preferred first (QLocale::system().uiLanguages(), BCP 47: "ru-RU", "en-US"…).
+// Not affected by app_set_qt_language (QLocale::setDefault).
+QStringList system_ui_languages();
 
 // Буфер обмена (Auth.copyToClipboard, Catalog.copyLink)
 void copy_to_clipboard(const QString& text);

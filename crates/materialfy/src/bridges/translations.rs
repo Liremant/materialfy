@@ -2,7 +2,9 @@
 // dictionary from mf-i18n (i18n/ru/*.json). The SettingKey::Language setting is the source of truth: a change from any
 // place (Settings.language in QML) arrives through the store subscription, switches mf_i18n, Qt's own translator
 // (file dialogs, context menus), then `language` here — QML bindings over I18n re-evaluate on languageChanged.
+// The setting "system" (default) follows the OS UI language, read once per run (no live tracking of OS changes).
 use std::pin::Pin;
+use std::sync::OnceLock;
 
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QString, QVariant};
@@ -25,7 +27,7 @@ pub mod qobject {
 
     unsafe extern "RustQt" {
         #[qobject]
-        /// "en" | "ru" — the language applied right now (follows Settings.language)
+        /// "en" | "ru" — the language applied right now (follows Settings.language; "system" resolved)
         #[qproperty(QString, language, READ, NOTIFY = language_changed)]
         /// English source → Russian; plural keys "one|many" → "one|few|many"
         #[qproperty(QMap_QString_QVariant, ru, READ, CONSTANT)]
@@ -65,9 +67,20 @@ pub fn apply_language(lang: Lang) {
     crate::qt::ffi::ffi::app_set_qt_language(&QString::from(lang.code()));
 }
 
-/// Language stored in the settings (default English).
-pub fn stored_language(store: &mf_platform::SettingsStore) -> Lang {
-    mf_i18n::parse_lang(&store.get_str(SettingKey::Language))
+/// The OS UI languages (most preferred first), read from Qt once per run. GUI thread (after app_create).
+fn os_languages() -> &'static [String] {
+    static LIST: OnceLock<Vec<String>> = OnceLock::new();
+    LIST.get_or_init(|| {
+        let list = crate::qt::ffi::ffi::system_ui_languages();
+        let list: Vec<String> = list.iter().map(|s| s.to_string()).collect();
+        tracing::debug!("OS UI languages: {list:?}");
+        list
+    })
+}
+
+/// The language to show for the stored setting: "en"/"ru" as is, "system" (default) from the OS UI language.
+pub fn effective_language(store: &mf_platform::SettingsStore) -> Lang {
+    mf_i18n::parse_setting(&store.get_str(SettingKey::Language)).resolve(os_languages())
 }
 
 impl qobject::Translations {
@@ -79,7 +92,7 @@ impl qobject::Translations {
         if matches!(delivery, Delivery::Event(key) if key != SettingKey::Language) {
             return;
         }
-        let lang = stored_language(&ctx().services.settings);
+        let lang = effective_language(&ctx().services.settings);
         let code = QString::from(lang.code());
         if self.language == code {
             return;

@@ -26,8 +26,8 @@ Windows and Linux; macOS is experimental.
 Materialfy replaces the official Spotify desktop app for listening to music in a regular native window. The
 interface is written in QML (Qt 6.12) with no browser engine, and the logic is in Rust. Audio is played by
 [librespot](https://github.com/librespot-org/librespot) inside the app's own process, so playback on the computer
-requires Spotify Premium. Interface colors follow the cover of the current track. The interface is in English by
-default; Russian can be selected in Settings → Language.
+requires Spotify Premium. Interface colors follow the cover of the current track. The interface follows the system
+language: Russian on a Russian system, English otherwise; Settings → Language can fix either one.
 
 The project is assembled from two MIT-licensed projects: the Spotify side comes from
 [spotifast](https://github.com/crmne/spotifast) (crmne), the interface from
@@ -97,7 +97,7 @@ Taken with a Premium account and music playing; the colours follow the cover of 
   (not available on Wayland).
 - Media keys, the SMTC tile on Windows and MPRIS on Linux, a tray icon with minimize-on-close, single running
   instance.
-- Interface in English or Russian, switched in Settings → Language.
+- Interface in English or Russian. By default it follows the system language; Settings → Language switches it.
 - Proxy: system, HTTP or SOCKS5, with username and password. Sign-in, Web API, playback, lyrics and images all
   go through it.
 

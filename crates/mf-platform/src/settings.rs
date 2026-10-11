@@ -40,7 +40,7 @@ pub enum SettingKey {
     CalmWhenInactive,
     /// "system" | "full" | "reduced" → Theme.reducedMotion
     Animations,
-    /// язык интерфейса: "en" | "ru" (mf_i18n::parse_lang); меняется на лету
+    /// язык интерфейса: "system" (как в ОС) | "en" | "ru" (mf_i18n::parse_setting); меняется на лету
     Language,
     // Раскладка
     RightPanelOpen,
@@ -252,7 +252,7 @@ impl SettingKey {
             CoverPulse => Bool(true),
             CalmWhenInactive => Bool(true),
             Animations => Str("system".into()),
-            Language => Str("en".into()),
+            Language => Str("system".into()),
             RightPanelOpen => Bool(false),
             RightPanelTab => Str("queue".into()),
             SidebarCollapsed => Bool(false),
@@ -1148,6 +1148,19 @@ mod tests {
     }
 
     #[test]
+    fn language_follows_system_by_default() {
+        let store = SettingsStore::in_memory();
+        assert_eq!(store.get_str(SettingKey::Language), "system");
+        // an explicit English differs from the default now, so it is stored and kept
+        assert!(store.set(SettingKey::Language, SettingValue::Str("en".into())));
+        assert_eq!(store.get_str(SettingKey::Language), "en");
+        assert!(store.set(SettingKey::Language, SettingValue::Str("ru".into())));
+        assert!(store.set(SettingKey::Language, SettingValue::Str("system".into())));
+        assert!(!store.set(SettingKey::Language, SettingValue::Str("system".into())));
+        assert_eq!(store.get_str(SettingKey::Language), "system");
+    }
+
+    #[test]
     fn qml_names() {
         // name() = имя свойства QML; служебные pins/hiddenTracks свойств не имеют
         let names: Vec<&str> = SettingKey::ALL.iter().map(|k| k.name()).collect();
@@ -1164,7 +1177,7 @@ mod tests {
         }
         assert_eq!(SettingKey::CustomSeed.default_value(), SettingValue::Str("#8C6DFF".into()));
         assert_eq!(SettingKey::Animations.default_value(), SettingValue::Str("system".into()));
-        assert_eq!(SettingKey::Language.default_value(), SettingValue::Str("en".into()));
+        assert_eq!(SettingKey::Language.default_value(), SettingValue::Str("system".into()));
         assert_eq!(SettingKey::ProxyPort.value_type(), SettingType::Str);
         assert_eq!(SettingKey::AudioCacheMb.value_type(), SettingType::Int);
         assert_eq!(SettingKey::Normalisation.value_type(), SettingType::Bool);

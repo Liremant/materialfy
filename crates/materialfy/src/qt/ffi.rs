@@ -27,6 +27,8 @@ pub mod ffi {
         fn app_add_font(path: &QString) -> i32;
         /// "en" — no translator; otherwise qtbase_<code>.qm (Qt's own dialogs and menus) + QLocale default
         fn app_set_qt_language(code: &QString);
+        /// OS UI languages, most preferred first ("ru-RU", "en-US"…); QLocale::setDefault does not change them
+        fn system_ui_languages() -> QStringList;
 
         fn copy_to_clipboard(text: &QString);
         unsafe fn set_cpp_ownership(object: *mut QObject);
