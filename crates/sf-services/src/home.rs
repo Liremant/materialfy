@@ -20,7 +20,7 @@ use mf_platform::{SettingKey, SettingsStore};
 
 use crate::ServiceError;
 use crate::auth::{AuthEvent, AuthService};
-use crate::data::{home_feed, route};
+use crate::data::{home_cache, home_feed, route};
 use crate::extra::feed;
 use crate::extra::shelves::{self, Play};
 use crate::history::{HistoryEvent, HistoryService};
@@ -63,6 +63,18 @@ struct HomeData {
     podcasts: Vec<EpisodeItem>,
     top_artists: Vec<ArtistItem>,
     top_tracks: Vec<TrackItem>,
+}
+
+impl HomeData {
+    /// Ничего из сети ещё не приходило: полкам из кэша ещё есть место.
+    fn is_empty(&self) -> bool {
+        self.made_for_you.is_empty()
+            && self.feed.is_empty()
+            && self.favorite_artists.is_empty()
+            && self.podcasts.is_empty()
+            && self.top_artists.is_empty()
+            && self.top_tracks.is_empty()
+    }
 }
 
 pub struct HomeService {
@@ -134,8 +146,66 @@ impl HomeService {
         });
         self.publish();
         self.history.refresh();
+        self.hydrate();
         let Some(me) = self.me.upgrade() else { return };
         self.rt.spawn(async move { me.load(generation).await });
+    }
+
+    /// Пока сессия поднимается (это может занять десятки секунд), показать прошлые полки с диска.
+    /// Свежие придут следом и заменят их; если что-то уже загружено, кэш не трогаем.
+    fn hydrate(&self) {
+        let Some(account) = self.auth.account_id() else { return };
+        if !lock(&self.data).is_empty() {
+            return;
+        }
+        let file = mf_platform::dirs::home_cache_file(account.as_str());
+        let Some(me) = self.me.upgrade() else { return };
+        self.rt.spawn(async move {
+            let cached = tokio::task::spawn_blocking(move || home_cache::read(&file)).await.ok().flatten();
+            let Some(cached) = cached else { return };
+            me.adopt_cached(cached);
+        });
+    }
+
+    /// Принять кэш: те же поля, что заполняет сеть, — полки строит обычный publish.
+    fn adopt_cached(&self, cached: home_cache::CachedHome) {
+        {
+            let mut data = lock(&self.data);
+            // свежие ответы успели первыми — кэш не нужен
+            if !data.is_empty() {
+                return;
+            }
+            data.made_for_you = cached.made_for_you;
+            data.feed = cached.feed;
+            data.favorite_artists = cached.favorite_artists;
+            data.podcasts = cached.podcasts;
+            data.top_artists = cached.top_artists;
+            data.top_tracks = cached.top_tracks;
+        }
+        self.publish();
+    }
+
+    /// Полки — на диск: следующий запуск показывает их, не дожидаясь сессии.
+    fn save_cache(&self) {
+        let Some(account) = self.auth.account_id() else { return };
+        let cached = {
+            let data = lock(&self.data);
+            home_cache::CachedHome::new(
+                data.made_for_you.clone(),
+                data.feed.clone(),
+                data.favorite_artists.clone(),
+                data.podcasts.clone(),
+                data.top_artists.clone(),
+                data.top_tracks.clone(),
+            )
+        };
+        if cached.is_empty() {
+            return;
+        }
+        let file = mf_platform::dirs::home_cache_file(account.as_str());
+        self.rt.spawn(async move {
+            let _ = tokio::task::spawn_blocking(move || home_cache::write(&file, &cached)).await;
+        });
     }
 
     pub fn snapshot(&self) -> HomeSnapshot {
@@ -424,6 +494,8 @@ impl HomeService {
             s.loading = false;
             s.error_text = error.unwrap_or_default();
         });
+        // полки — на диск: следующий запуск покажет их, не дожидаясь сессии
+        self.save_cache();
         // сессия встала, пока шло обновление без неё, — обновить через неё (без квоты Web API)
         let again = {
             let mut data = lock(&self.data);
