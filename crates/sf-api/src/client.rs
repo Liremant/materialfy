@@ -94,8 +94,7 @@ impl std::fmt::Display for ApiError {
 /// или английский ключ словаря. Такие тексты показываются как есть (через перевод), без «HTTP …» в `{:#}`.
 fn is_own_text(text: &str) -> bool {
     !text.is_empty()
-        && (text.chars().any(|c| matches!(c, 'А'..='я' | 'ё' | 'Ё'))
-            || mf_i18n::dictionary(mf_i18n::Lang::Ru).is_some_and(|ru| ru.contains_key(text)))
+        && (text.chars().any(|c| matches!(c, 'А'..='я' | 'ё' | 'Ё')) || mf_i18n::in_any_dictionary(text))
 }
 
 impl From<reqwest::Error> for ApiError {

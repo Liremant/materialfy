@@ -956,11 +956,11 @@ Page {
             title: I18n.t("Language")
             // "system" (default) follows the OS UI language; the language names stay in their own language
             ButtonGroup {
-                model: [I18n.t("System default"), "English", "Русский"]
+                model: [I18n.t("System default"), "English", "Русский", "Português"]
                 autoSelect: false
                 size: page.compact ? "xs" : "s"
-                currentIndex: Settings.language === "en" ? 1 : Settings.language === "ru" ? 2 : 0
-                onActivated: i => Settings.language = ["system", "en", "ru"][i]
+                currentIndex: Math.max(0, ["system", "en", "ru", "pt"].indexOf(Settings.language))
+                onActivated: i => Settings.language = ["system", "en", "ru", "pt"][i]
             }
         }
 
