@@ -292,5 +292,5 @@
   "Closing the window hides it in the tray and the music keeps playing. Quit from the tray menu or with Ctrl+Q": "Закрытое окно прячется в значок в трее, музыка играет дальше. Выход — из меню значка или Ctrl+Q",
   "Mouse wheel scroll step": "Шаг прокрутки колесом",
   "About the app": "О программе",
-  "Based on spotifast (crmne, MIT) and yamusic-md3 (yaskorinov, MIT); not affiliated with Spotify AB. Playback: librespot (MIT). Fonts: Google Sans (OFL), Material Symbols (Apache 2.0).": "Основан на spotifast (crmne, MIT) и yamusic-md3 (yaskorinov, MIT); не связан со Spotify AB. Воспроизведение — librespot (MIT). Шрифты: Google Sans (OFL), Material Symbols (Apache 2.0)."
+  "Free software under GPL-3.0-or-later. Based on spotifast (crmne, MIT) and yamusic-md3 (yaskorinov, MIT); not affiliated with Spotify AB. Playback: librespot (MIT). Fonts: Google Sans (OFL), Material Symbols (Apache 2.0).": "Свободная программа под GPL-3.0-or-later. Основан на spotifast (crmne, MIT) и yamusic-md3 (yaskorinov, MIT); не связан со Spotify AB. Воспроизведение — librespot (MIT). Шрифты: Google Sans (OFL), Material Symbols (Apache 2.0)."
 }

@@ -442,7 +442,10 @@ Third-party components: [librespot](https://github.com/librespot-org/librespot) 
 dynamically), the Google Sans font (SIL Open Font License 1.1) and Material Symbols Rounded icons (Apache License
 2.0).
 
-The code is distributed under the MIT license; the text is in [LICENSE](LICENSE). Authors, sources and dependency
+Materialfy is licensed under the GNU General Public License, version 3 or any later version
+(GPL-3.0-or-later); the text is in [LICENSE](LICENSE). Releases up to and including 0.3.0 were published under the
+MIT License, and the code taken from spotifast and yamusic-md3 keeps its MIT notice in
+[LICENSES/MIT.txt](LICENSES/MIT.txt). Authors, sources and dependency
 licenses are listed in [NOTICE](NOTICE). The "Wave-M" logo is in [`docs/brand/`](docs/brand/).
 
 <br>

@@ -1,8 +1,14 @@
 Materialfy
 ==========
 
-Materialfy is based on spotifast (crmne, MIT) and yamusic-md3 (yaskorinov, MIT).
-The license texts are preserved; authorship and what came from where are listed below.
+Copyright (C) 2026 Materialfy contributors
+
+Materialfy is free software: you can redistribute it and/or modify it under the terms of the GNU General
+Public License as published by the Free Software Foundation, either version 3 of the License, or (at your
+option) any later version (LICENSE). Releases up to and including 0.3.0 were published under the MIT License.
+
+Materialfy is based on spotifast (crmne, MIT) and yamusic-md3 (yaskorinov, MIT). Their copyright notices and
+the MIT License text are kept in LICENSES/MIT.txt; authorship and what came from where are listed below.
 
 1. spotifast (crmne) - Spotify logic
    https://github.com/crmne/spotifast

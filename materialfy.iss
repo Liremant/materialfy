@@ -20,6 +20,7 @@
 #define AppExeName "materialfy.exe"
 
 [Setup]
+LicenseFile=LICENSE
 ; Do not change AppId: a new version installs over the old one by it. Does not collide with YaMusic (yamusic-md3).
 AppId={{A5260B19-41AE-4D9D-9841-204E686F2ADD}
 AppName={#AppName}

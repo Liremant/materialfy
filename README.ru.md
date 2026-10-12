@@ -440,7 +440,9 @@ Materialfy основан на двух проектах под лицензие
 [cxx-qt](https://github.com/KDAB/cxx-qt) (MIT или Apache-2.0), [Qt 6](https://www.qt.io) (LGPL-3.0, подключается
 динамически), шрифт Google Sans (SIL Open Font License 1.1) и иконки Material Symbols Rounded (Apache License 2.0).
 
-Код распространяется по лицензии MIT, текст в [LICENSE](LICENSE). Авторы, источники и лицензии зависимостей
+Materialfy распространяется по лицензии GNU GPL версии 3 или любой более поздней (GPL-3.0-or-later), текст в
+[LICENSE](LICENSE). Версии до 0.3.0 включительно вышли под MIT, а код из spotifast и yamusic-md3 сохраняет
+уведомление MIT в [LICENSES/MIT.txt](LICENSES/MIT.txt). Авторы, источники и лицензии зависимостей
 перечислены в [NOTICE](NOTICE). Логотип «Волна-M» лежит в [`docs/brand/`](docs/brand/).
 
 <br>

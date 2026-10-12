@@ -1201,7 +1201,7 @@ Page {
         }
         Label {
             Layout.fillWidth: true
-            text: I18n.t("Based on spotifast (crmne, MIT) and yamusic-md3 (yaskorinov, MIT); not affiliated with Spotify AB. Playback: librespot (MIT). Fonts: Google Sans (OFL), Material Symbols (Apache 2.0).")
+            text: I18n.t("Free software under GPL-3.0-or-later. Based on spotifast (crmne, MIT) and yamusic-md3 (yaskorinov, MIT); not affiliated with Spotify AB. Playback: librespot (MIT). Fonts: Google Sans (OFL), Material Symbols (Apache 2.0).")
             type: "bodySmall"
             color: Theme.fgSurfaceVariant
             wrapMode: Text.WordWrap
