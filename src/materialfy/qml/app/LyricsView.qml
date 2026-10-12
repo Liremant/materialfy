@@ -15,7 +15,14 @@ Item {
     // масштабирует его. Всё остальное (высота строки, отступы, фигуры пауз) считается от fontSize.
     property real baseFontSize: 34
     property real fontSize: baseFontSize * Settings.lyricsFontScale
-    property real anchorPos: 0.33
+    property real anchorPos: Settings.lyricsAnchor
+    // Сколько строк видно: "all" — весь текст; "three" — активная и ±1; "one" — только активная
+    readonly property string linesMode: Settings.lyricsLines
+    // Режим заливки текста: "word" — по словам; "line" — строка целиком; "off" — без заливки
+    readonly property string fillMode: Settings.lyricsFill
+    // Подложка под текстом: "none" — прозрачно; "soft" | "strong" — затемнение в цвет темы
+    readonly property string scrimMode: Settings.lyricsScrim
+    readonly property real scrimAlpha: scrimMode === "strong" ? 0.6 : (scrimMode === "soft" ? 0.28 : 0)
     // Как выглядит колонка: "normal" — как было; "simple" — без размытия, приглушение ровное;
     // "karaoke" — поющаяся строка крупнее соседних.
     readonly property string mode: Settings.lyricsMode
@@ -255,6 +262,21 @@ Item {
         visible: Lyrics.status === "loading" || (root.stale && Player.hasTrack)
     }
 
+    // ── подложка под текст ──────────────────────────────────────────────────
+    Rectangle {
+        id: scrimRect
+        anchors.fill: parent
+        anchors.topMargin: 8
+        anchors.bottomMargin: 8
+        anchors.leftMargin: Math.max(4, root.sidePad * 0.25)
+        anchors.rightMargin: Math.max(4, root.sidePad * 0.25)
+        radius: Theme.shape.extraLarge
+        color: Theme.surface
+        opacity: root.lines.length > 0 && !root.stale ? root.scrimAlpha : 0
+        visible: opacity > 0
+        Behavior on opacity { NumberAnimation { duration: root.motion ? 260 : 0 } }
+    }
+
     // ── текст ───────────────────────────────────────────────────────────────
     Item {
         id: viewport
@@ -477,6 +499,10 @@ Item {
         // «Караоке»: поющаяся строка крупнее соседних — размер у строки свой, и высота считается по нему
         readonly property real lineSize: root.fontSize * (root.karaoke ? (isActive ? 1.16 : 0.94) : 1)
         readonly property real rowH: lineSize * 1.22
+        // Фильтр видимости строк: "all" — все; "three" — активная и ±1; "one" — только активная
+        readonly property bool inLineRange: root.linesMode === "one"
+            ? (line.isActive || (root.activeIndex < 0 && index === 0))
+            : (root.linesMode === "three" ? (line.dist <= 1) : true)
 
         width: col.width
         // Свёрнутая пауза сохраняет волосок высоты: Column не расставляет элементы нулевого размера
@@ -492,9 +518,13 @@ Item {
             }
         }
 
-        // Появление нового текста: строки выплывают снизу волной, начиная от активной
+        // Появление нового текста: строки выплывают снизу волной, начиная от активной.
+        // Непопадающие в диапазон строки мягко растворяются до 0, сохраняя раскладку.
         property real appear: 0
-        opacity: appear
+        opacity: appear * (inLineRange ? 1 : 0)
+        Behavior on opacity {
+            NumberAnimation { duration: root.motion ? 260 : 0; easing.type: Easing.OutCubic }
+        }
         transform: [
             Translate { id: shift },
             Translate { y: (1 - line.appear) * root.fontSize * 1.1 }
@@ -579,7 +609,7 @@ Item {
             property real fadeOpacity: line.filling ? 1 : Math.max(0.22, root.dimAlpha * (line.hovered ? 1.9 : (root.plain ? 1 : (1 - 0.1 * Math.max(0, line.dist - 1)))))
             Behavior on fadeOpacity { NumberAnimation { duration: root.motion ? 380 : 0; easing.type: Easing.OutCubic } }
 
-            readonly property bool blurred: root.blurInactive && !root.plain && !line.filling && !line.hovered && line.dist < 8
+            readonly property bool blurred: root.blurInactive && !root.plain && !line.filling && !line.hovered && line.dist < 8 && line.inLineRange
             layer.enabled: blurred
             layer.effect: MultiEffect {
                 blurEnabled: true
@@ -665,11 +695,11 @@ Item {
         // Обработчики, а не MouseArea: MouseArea забрала бы нажатие, и перетаскивание текста не началось бы
         HoverHandler {
             id: hover
-            enabled: !line.isGap
+            enabled: !line.isGap && line.inLineRange
             cursorShape: Qt.PointingHandCursor
         }
         TapHandler {
-            enabled: !line.isGap
+            enabled: !line.isGap && line.inLineRange
             onTapped: {
                 root.seekTo(line.modelData.t)
                 root.resumeFollowing()
@@ -715,20 +745,20 @@ Item {
             scale: 1 + 0.045 * word.glow
 
             transform: Translate {
-                y: word.lineActive ? -root.liftPx * root.easeOut(word.progress * 1.6) : 0
+                y: word.lineActive && root.fillMode === "word" ? -root.liftPx * root.easeOut(word.progress * 1.6) : 0
                 Behavior on y {
                     enabled: !word.lineActive
                     NumberAnimation { duration: root.motion ? 400 : 0; easing.type: Easing.OutCubic }
                 }
             }
 
-            layer.enabled: word.lineActive
+            layer.enabled: word.lineActive && root.fillMode !== "off"
             layer.effect: ShaderEffect {
                 readonly property real featherPx: word.fontSize * 0.45
                 property real feather: Math.min(0.5, featherPx / Math.max(1, label.width) / 2)
-                property real progress: -feather + word.progress * (1 + 2 * feather)
+                property real progress: root.fillMode === "line" ? (1.0 + feather) : (-feather + word.progress * (1 + 2 * feather))
                 property real dimAlpha: root.dimAlpha
-                property real glow: word.glow
+                property real glow: root.fillMode === "word" ? word.glow : 0
                 fragmentShader: root.fillShader
             }
         }

@@ -54,6 +54,14 @@ pub enum SettingKey {
     LyricsMotion,
     /// подпись источника под текстом
     LyricsSource,
+    /// положение активной строки по вертикали (0.15…0.55 от верха)
+    LyricsAnchor,
+    /// количество отображаемых строк: "all" | "three" | "one"
+    LyricsLines,
+    /// режим заливки текста: "word" | "line" | "off"
+    LyricsFill,
+    /// затемняющая подложка за текстом: "none" | "soft" | "strong"
+    LyricsScrim,
     /// "system" | "full" | "reduced" → Theme.reducedMotion
     Animations,
     /// режим для слабых ПК: "auto" (сам, когда кадры рисует процессор) | "on" | "off" → Theme.lowPower
@@ -142,7 +150,7 @@ pub enum SettingType {
 }
 
 impl SettingKey {
-    pub const ALL: [SettingKey; 61] = [
+    pub const ALL: [SettingKey; 65] = [
         SettingKey::ThemeMode,
         SettingKey::SchemeVariant,
         SettingKey::AccentFromCover,
@@ -164,6 +172,10 @@ impl SettingKey {
         SettingKey::LyricsSpacing,
         SettingKey::LyricsMotion,
         SettingKey::LyricsSource,
+        SettingKey::LyricsAnchor,
+        SettingKey::LyricsLines,
+        SettingKey::LyricsFill,
+        SettingKey::LyricsScrim,
         SettingKey::Animations,
         SettingKey::LowPowerMode,
         SettingKey::Language,
@@ -231,6 +243,10 @@ impl SettingKey {
             LyricsSpacing => "lyricsSpacing",
             LyricsMotion => "lyricsMotion",
             LyricsSource => "lyricsSource",
+            LyricsAnchor => "lyricsAnchor",
+            LyricsLines => "lyricsLines",
+            LyricsFill => "lyricsFill",
+            LyricsScrim => "lyricsScrim",
             Animations => "animations",
             LowPowerMode => "lowPowerMode",
             Language => "language",
@@ -312,6 +328,10 @@ impl SettingKey {
             LyricsSpacing => Float(1.0),
             LyricsMotion => Bool(true),
             LyricsSource => Bool(true),
+            LyricsAnchor => Float(0.33),
+            LyricsLines => Str("all".into()),
+            LyricsFill => Str("word".into()),
+            LyricsScrim => Str("none".into()),
             Animations => Str("system".into()),
             LowPowerMode => Str("auto".into()),
             Language => Str("system".into()),
@@ -982,7 +1002,7 @@ mod tests {
 
     #[test]
     fn schema() {
-        assert_eq!(SettingKey::ALL.len(), 61);
+        assert_eq!(SettingKey::ALL.len(), 65);
         for key in SettingKey::ALL {
             assert_eq!(SettingKey::from_name(key.name()), Some(key));
             assert_eq!(key.default_value().value_type(), key.value_type());
@@ -1255,7 +1275,7 @@ mod tests {
             "themeMode", "schemeVariant", "accentFromCover", "customSeed", "windowButtons", "trackTransition",
             "backdropMode", "nowPlayingBlur", "nowPlayingDrift", "ambientBackground", "coverSpin", "coverPulse",
             "calmWhenInactive", "lyricsMode", "lyricsFontScale", "lyricsAlign", "lyricsDim", "lyricsBlur",
-            "lyricsSpacing", "lyricsMotion", "lyricsSource", "animations", "lowPowerMode", "rightPanelOpen", "rightPanelTab", "sidebarCollapsed", "windowWidth",
+            "lyricsSpacing", "lyricsMotion", "lyricsSource", "lyricsAnchor", "lyricsLines", "lyricsFill", "lyricsScrim", "animations", "lowPowerMode", "rightPanelOpen", "rightPanelTab", "sidebarCollapsed", "windowWidth",
             "windowHeight", "windowX", "windowY", "windowMaximized", "closeToTray", "wheelStep", "libraryView",
             "librarySort", "homeHidden", "bitrate", "normalisation", "gapless", "autoplay", "volume", "audioDevice",
             "audioCache", "audioCacheMb", "playbackAuthorized", "deviceName", "webClientId", "proxyMode", "proxyHost",

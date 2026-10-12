@@ -1190,6 +1190,32 @@ Page {
             }
         }
         SettingRow {
+            title: I18n.t("Lines shown")
+            description: Settings.lyricsLines === "one" ? I18n.t("Only the singing line")
+                         : Settings.lyricsLines === "three" ? I18n.t("Only the singing line and its neighbours")
+                         : I18n.t("All lines are visible")
+            ButtonGroup {
+                model: [I18n.t("All"), I18n.t("Three"), I18n.t("One")]
+                autoSelect: false
+                size: page.compact ? "xs" : "s"
+                currentIndex: Math.max(0, ["all", "three", "one"].indexOf(Settings.lyricsLines))
+                onActivated: i => Settings.lyricsLines = ["all", "three", "one"][i]
+            }
+        }
+        SettingRow {
+            title: I18n.t("Fill mode")
+            description: Settings.lyricsFill === "line" ? I18n.t("The whole line lights up at once while sung")
+                         : Settings.lyricsFill === "off" ? I18n.t("No sweep animation; the active line stays highlighted")
+                         : I18n.t("Words light up in time with the vocals")
+            ButtonGroup {
+                model: [I18n.t("Word"), I18n.t("Line"), I18n.t("Off")]
+                autoSelect: false
+                size: page.compact ? "xs" : "s"
+                currentIndex: Math.max(0, ["word", "line", "off"].indexOf(Settings.lyricsFill))
+                onActivated: i => Settings.lyricsFill = ["word", "line", "off"][i]
+            }
+        }
+        SettingRow {
             title: I18n.t("Lyrics size")
             description: I18n.t("{0}% of the default size", Math.round(Settings.lyricsFontScale * 100))
             Slider {
@@ -1201,6 +1227,20 @@ Page {
                 value: Settings.lyricsFontScale
                 valueText: v => Math.round(v * 100) + " %"
                 onMoved: v => Settings.lyricsFontScale = Math.round(v * 20) / 20
+            }
+        }
+        SettingRow {
+            title: I18n.t("Position of the singing line")
+            description: I18n.t("Where the line being sung sits in the player: top, middle or bottom")
+            Slider {
+                wheelEnabled: false     // колесо прокручивает страницу, а не меняет настройку
+                width: 220
+                from: 0.15
+                to: 0.55
+                stepSize: 0.01
+                value: Settings.lyricsAnchor
+                valueText: v => Math.round(v * 100) + " %"
+                onMoved: v => Settings.lyricsAnchor = Math.round(v * 100) / 100
             }
         }
         SettingRow {
@@ -1246,6 +1286,19 @@ Page {
             title: I18n.t("Blur inactive lines")
             description: I18n.t("Off keeps the whole text sharp")
             Switch { checked: Settings.lyricsBlur; onToggled: c => Settings.lyricsBlur = c }
+        }
+        SettingRow {
+            title: I18n.t("Background scrim")
+            description: Settings.lyricsScrim === "soft" ? I18n.t("Soft tinted backing behind the lyrics")
+                         : Settings.lyricsScrim === "strong" ? I18n.t("Prominent tinted backing behind the lyrics")
+                         : I18n.t("Transparent: lyrics sit directly over the backdrop")
+            ButtonGroup {
+                model: [I18n.t("None"), I18n.t("Soft"), I18n.t("Strong")]
+                autoSelect: false
+                size: page.compact ? "xs" : "s"
+                currentIndex: Math.max(0, ["none", "soft", "strong"].indexOf(Settings.lyricsScrim))
+                onActivated: i => Settings.lyricsScrim = ["none", "soft", "strong"][i]
+            }
         }
         SettingRow {
             title: I18n.t("Scroll animation")
