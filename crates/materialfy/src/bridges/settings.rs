@@ -40,7 +40,7 @@ pub mod qobject {
         #[qproperty(QString, animations, READ, WRITE = set_animations, NOTIFY = animations_changed)]
         /// "auto" | "on" | "off" — режим для слабых ПК (Theme.lowPower)
         #[qproperty(QString, low_power_mode, cxx_name = "lowPowerMode", READ, WRITE = set_low_power_mode, NOTIFY = low_power_mode_changed)]
-        /// "system" | "en" | "ru"; the applied language and the dictionary — Translations (Md3/I18n.qml)
+        /// "system" | "en" | "ru" | "pt"; the applied language and the dictionary — Translations (Md3/I18n.qml)
         #[qproperty(QString, language, READ, WRITE = set_language, NOTIFY = language_changed)]
         #[qproperty(bool, right_panel_open, cxx_name = "rightPanelOpen", READ, WRITE = set_right_panel_open, NOTIFY = right_panel_open_changed)]
         #[qproperty(QString, right_panel_tab, cxx_name = "rightPanelTab", READ, WRITE = set_right_panel_tab, NOTIFY = right_panel_tab_changed)]

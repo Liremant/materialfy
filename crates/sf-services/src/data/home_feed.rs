@@ -27,7 +27,7 @@ use sf_player::Session;
 use super::persisted;
 
 const URL: &str = "https://api-partner.spotify.com/pathfinder/v2/query";
-/// Язык подписей Spotify — язык интерфейса приложения ("en" | "ru").
+/// Язык подписей Spotify — язык интерфейса приложения ("en" | "ru" | "pt").
 pub fn locale() -> &'static str {
     mf_i18n::lang().code()
 }

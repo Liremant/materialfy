@@ -42,7 +42,7 @@ pub enum SettingKey {
     Animations,
     /// режим для слабых ПК: "auto" (сам, когда кадры рисует процессор) | "on" | "off" → Theme.lowPower
     LowPowerMode,
-    /// язык интерфейса: "system" (как в ОС) | "en" | "ru" (mf_i18n::parse_setting); меняется на лету
+    /// язык интерфейса: "system" (как в ОС) | "en" | "ru" | "pt" (mf_i18n::parse_setting); меняется на лету
     Language,
     // Раскладка
     RightPanelOpen,
