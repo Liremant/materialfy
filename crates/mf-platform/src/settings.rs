@@ -40,6 +40,8 @@ pub enum SettingKey {
     CalmWhenInactive,
     /// "system" | "full" | "reduced" → Theme.reducedMotion
     Animations,
+    /// режим для слабых ПК: "auto" (сам, когда кадры рисует процессор) | "on" | "off" → Theme.lowPower
+    LowPowerMode,
     /// язык интерфейса: "system" (как в ОС) | "en" | "ru" (mf_i18n::parse_setting); меняется на лету
     Language,
     // Раскладка
@@ -124,7 +126,7 @@ pub enum SettingType {
 }
 
 impl SettingKey {
-    pub const ALL: [SettingKey; 52] = [
+    pub const ALL: [SettingKey; 53] = [
         SettingKey::ThemeMode,
         SettingKey::SchemeVariant,
         SettingKey::AccentFromCover,
@@ -139,6 +141,7 @@ impl SettingKey {
         SettingKey::CoverPulse,
         SettingKey::CalmWhenInactive,
         SettingKey::Animations,
+        SettingKey::LowPowerMode,
         SettingKey::Language,
         SettingKey::RightPanelOpen,
         SettingKey::RightPanelTab,
@@ -197,6 +200,7 @@ impl SettingKey {
             CoverPulse => "coverPulse",
             CalmWhenInactive => "calmWhenInactive",
             Animations => "animations",
+            LowPowerMode => "lowPowerMode",
             Language => "language",
             RightPanelOpen => "rightPanelOpen",
             RightPanelTab => "rightPanelTab",
@@ -269,6 +273,7 @@ impl SettingKey {
             CoverPulse => Bool(true),
             CalmWhenInactive => Bool(true),
             Animations => Str("system".into()),
+            LowPowerMode => Str("auto".into()),
             Language => Str("system".into()),
             RightPanelOpen => Bool(false),
             RightPanelTab => Str("queue".into()),
@@ -937,7 +942,7 @@ mod tests {
 
     #[test]
     fn schema() {
-        assert_eq!(SettingKey::ALL.len(), 52);
+        assert_eq!(SettingKey::ALL.len(), 53);
         for key in SettingKey::ALL {
             assert_eq!(SettingKey::from_name(key.name()), Some(key));
             assert_eq!(key.default_value().value_type(), key.value_type());
@@ -1209,7 +1214,7 @@ mod tests {
         for name in [
             "themeMode", "schemeVariant", "accentFromCover", "customSeed", "windowButtons", "trackTransition",
             "backdropMode", "nowPlayingBlur", "nowPlayingDrift", "ambientBackground", "coverSpin", "coverPulse",
-            "calmWhenInactive", "animations", "rightPanelOpen", "rightPanelTab", "sidebarCollapsed", "windowWidth",
+            "calmWhenInactive", "animations", "lowPowerMode", "rightPanelOpen", "rightPanelTab", "sidebarCollapsed", "windowWidth",
             "windowHeight", "windowX", "windowY", "windowMaximized", "closeToTray", "wheelStep", "libraryView",
             "librarySort", "homeHidden", "bitrate", "normalisation", "gapless", "autoplay", "volume", "audioDevice",
             "audioCache", "audioCacheMb", "playbackAuthorized", "deviceName", "webClientId", "proxyMode", "proxyHost",

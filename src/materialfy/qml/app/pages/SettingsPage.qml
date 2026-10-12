@@ -1100,6 +1100,20 @@ Page {
             }
         }
         SettingRow {
+            title: I18n.t("Weak computer mode")
+            description: Settings.lowPowerMode === "on" ? I18n.t("No background motion, shimmer, theme wipe or cover fades, minimal transitions")
+                         : Settings.lowPowerMode === "off" ? I18n.t("All effects, even when graphics are drawn by the processor")
+                         : Theme.lowPower ? I18n.t("On by itself: graphics are drawn by the processor, without the video card")
+                         : I18n.t("Turns on by itself when graphics are drawn by the processor")
+            ButtonGroup {
+                model: [I18n.t("Auto"), I18n.t("On"), I18n.t("Off")]
+                autoSelect: false
+                size: page.compact ? "xs" : "s"
+                currentIndex: ["auto", "on", "off"].indexOf(Settings.lowPowerMode)
+                onActivated: i => Settings.lowPowerMode = ["auto", "on", "off"][i]
+            }
+        }
+        SettingRow {
             title: I18n.t("Player background blur")
             enabled: Settings.backdropMode !== "palette"
             opacity: enabled ? 1 : 0.5

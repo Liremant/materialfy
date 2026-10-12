@@ -443,7 +443,11 @@ Window {
         Component.onCompleted: Theme.wipe = themeWipe
     }
     Binding { target: Theme; property: "wipeDirection"; value: Player.direction }
-    Binding { target: Theme; property: "lowPower"; value: win.softwareRendering }
+    Binding {
+        target: Theme
+        property: "lowPower"
+        value: Settings.lowPowerMode === "on" || (Settings.lowPowerMode !== "off" && win.softwareRendering)
+    }
     // Окно не в фокусе (или свёрнуто) — декоративные анимации стоят
     // закреплённый мини-плеер висит на виду поверх других окон — его анимации не замирают и без фокуса
     Binding {
