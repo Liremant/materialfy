@@ -27,6 +27,8 @@ pub trait LocalEngine: Send + Sync {
     fn command(&self, command: PlayerCommand) -> Result<(), String>;
     /// уровень звука 0..1 для «дыхания» обложки
     fn level(&self) -> f64;
+    /// Гейт уровня: пока false, движок не наполняет tap (AudioTap::set_wanted).
+    fn set_levels_wanted(&self, _wanted: bool) {}
 }
 
 /// Engine + его tap уровня.
@@ -42,6 +44,10 @@ impl LocalEngine for EngineLink {
 
     fn level(&self) -> f64 {
         self.tap.level()
+    }
+
+    fn set_levels_wanted(&self, wanted: bool) {
+        self.tap.set_wanted(wanted);
     }
 }
 

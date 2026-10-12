@@ -1,7 +1,7 @@
 //! Связки без QML (исполнитель «services-extra»): настройки → плеер (autoplay), сборка EngineConfig из настроек,
 //! медиаклавиши и системная панель «Сейчас играет» через fastframe-now-playing: Windows — SMTC (свой поток и
 //! скрытое окно, HWND Qt не нужен), macOS — Now Playing, Linux — MPRIS org.mpris.MediaPlayer2.materialfy.
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use sf_auth::ProxyConfig;
@@ -70,7 +70,7 @@ pub fn engine_config(settings: &SettingsStore, proxy: ProxyConfig) -> EngineConf
         audio_cache_limit: Some(cache_mb * 1024 * 1024),
         buffer_ms: sf_player::engine::sink::DEFAULT_BUFFER_MS,
         tap: sf_player::engine::vis::AudioTap::new(),
-        eq: Arc::new(Mutex::new(sf_player::engine::eq::EqSettings::default())),
+        eq: sf_player::engine::eq::shared(),
         proxy,
     }
 }

@@ -247,6 +247,8 @@ impl Actor {
         match local {
             LocalMsg::Connecting => self.core.handle_playback(LocalPlayback::Connecting),
             LocalMsg::Ready { engine, device_id, name, bitrate, autoplay } => {
+                // движок мог подключиться уже после запроса уровней — синхронизируем гейт tap'а
+                engine.set_levels_wanted(self.core.levels_wanted);
                 self.engine = Some(engine);
                 self.core.local_device_name = name;
                 self.core.bitrate = bitrate;
@@ -325,7 +327,13 @@ impl Actor {
             Command::SetRepeat(repeat) => core.set_repeat(repeat.to_engine()),
             Command::SetShuffle(value) => core.set_shuffle(value),
             Command::SetVolume(value) => core.set_volume(crate::volume_to_u16(value)),
-            Command::SetLevelsWanted(value) => core.levels_wanted = value,
+            Command::SetLevelsWanted(value) => {
+                core.levels_wanted = value;
+                // движок узнаёт о гейте сразу: буфер tap'а не наполняется, пока уровень не нужен
+                if let Some(engine) = &self.engine {
+                    engine.set_levels_wanted(value);
+                }
+            }
             Command::SetAutoplay(value) => core.autoplay = value,
             Command::TransferHere(play) => core.transfer_here(play),
             Command::TransferTo(device, play) => core.transfer_to(device, play),
