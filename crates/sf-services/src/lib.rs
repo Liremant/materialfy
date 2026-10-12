@@ -9,6 +9,7 @@
 
 pub mod auth;
 pub mod catalog;
+pub mod cover_fallback;
 /// внутреннее «services-core»
 pub mod data;
 pub mod devices;

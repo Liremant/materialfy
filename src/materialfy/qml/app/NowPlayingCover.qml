@@ -1,4 +1,5 @@
 import QtQuick
+import Materialfy.Core
 import Md3
 
 // Обложка полноэкранного плеера. Смена трека — морф через фигуру: старая обложка, вращаясь,
@@ -70,6 +71,9 @@ Item {
         required property int index
         anchors.fill: parent
         eager: true                        // закрытый плеер держит обложку готовой: раскрытие без подгрузки
+        fallbackKind: Player.album !== "" ? "album" : "track"
+        fallbackArtist: Player.artist.split(", ")[0]
+        fallbackTitle: Player.album !== "" ? Player.album : Player.title
         duration: Theme.motion.spatialSlow
         shape: root.restShape
         pulse: index === root._front ? root.pulse : 0

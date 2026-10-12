@@ -430,6 +430,9 @@ Page {
                         readonly property var e: parent ? parent.modelData : ({})
                         size: 168
                         cover: e.cover ?? ""
+                        coverKind: e.kind === "album" || e.kind === "artist" ? e.kind : ""
+                        coverArtist: e.kind === "artist" ? (e.title ?? "") : (e.subtitle ?? "").split(", ")[0]
+                        coverTitle: e.kind === "album" ? (e.title ?? "") : ""
                         title: e.title ?? ""
                         subtitle: e.subtitle ?? ""
                         round: e.kind === "artist"
@@ -450,6 +453,8 @@ Page {
                         size: 148
                         round: true
                         cover: a.cover ?? ""
+                        coverKind: "artist"
+                        coverArtist: a.name ?? ""
                         title: a.name ?? ""
                         subtitle: I18n.t("Artist")
                         placeholderIcon: "person"

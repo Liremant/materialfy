@@ -103,6 +103,9 @@ Item {
             visible: Player.cover !== ""
             // крупная карточка — обложка 640 px, полоска — обычная
             source: cover.size > 160 && Player.coverLarge !== "" ? Player.coverLarge : Player.cover
+            fallbackKind: Player.album !== "" ? "album" : "track"
+            fallbackArtist: Player.artist.split(", ")[0]
+            fallbackTitle: Player.album !== "" ? Player.album : Player.title
             shape: Player.playing ? "cookie12" : "softSquare"
             pulse: Settings.coverPulse && Player.isLocal === true ? root.beat : 0
             MaskSpin { target: img; spinning: Settings.coverSpin && Player.playing && Player.isLocal === true }

@@ -137,6 +137,8 @@ Page {
                 Layout.preferredHeight: Layout.preferredWidth
                 Behavior on Layout.preferredWidth { NumberAnimation { duration: Theme.motion.spatialDefault; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.motion.emphasized } }
                 source: page.info.coverLarge || page.info.cover || ""
+                fallbackKind: "artist"
+                fallbackArtist: page.info.name ?? ""
                 shape: page.playingHere && Player.playing ? "cookie12" : "circle"
                 duration: Theme.motion.spatialSlow
             }
@@ -289,6 +291,9 @@ Page {
                 visible: active
                 sourceComponent: MediaTile {
                     cover: slot.model.cover
+                    coverKind: "album"
+                    coverArtist: page.info.name ?? ""
+                    coverTitle: slot.model.title
                     title: slot.model.title
                     subtitle: [slot.model.year || "", slot.model.kind ? I18n.any(slot.model.kind) : ""].filter(x => x).join(" · ")
                     explicit: slot.model.explicit
@@ -320,6 +325,9 @@ Page {
                 visible: active
                 sourceComponent: MediaTile {
                     cover: slot.model.cover
+                    coverKind: "album"
+                    coverArtist: (slot.model.artists ?? "").split(", ")[0]
+                    coverTitle: slot.model.title
                     title: slot.model.title
                     subtitle: slot.model.artists
                     explicit: slot.model.explicit
@@ -393,6 +401,8 @@ Page {
                     round: true
                     placeholderIcon: "person"
                     cover: slot.model.cover
+                    coverKind: "artist"
+                    coverArtist: slot.model.name
                     title: slot.model.name
                     onClicked: Catalog.openArtist(slot.model.artistId)
                 }

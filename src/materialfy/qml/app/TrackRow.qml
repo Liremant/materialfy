@@ -202,6 +202,9 @@ Item {
             Layout.preferredWidth: 48
             Layout.preferredHeight: 48
             source: root.cover
+            fallbackKind: root.album !== "" ? "album" : "track"
+            fallbackArtist: root.artists.split(", ")[0]
+            fallbackTitle: root.album !== "" ? root.album : root.title
             shape: root.current && !root.editable ? "cookie9" : "softSquare"
         }
 

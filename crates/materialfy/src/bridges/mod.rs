@@ -2,6 +2,7 @@
 //! подхватывается build.rs автоматически; здесь — объявления модулей и общие помощники мостов.
 pub mod auth;
 pub mod catalog;
+pub mod covers;
 pub mod data;
 pub mod devices;
 pub mod home;

@@ -14,6 +14,10 @@ Item {
     property bool round: false          // исполнитель
     property bool explicit: false
     property string placeholderIcon: "album"
+    // что на обложке — для запасной обложки не со Spotify (MorphImage.fallbackKind/Artist/Title)
+    property string coverKind
+    property string coverArtist
+    property string coverTitle
     property real size: 168
     property var shape: round ? "circle" : "softSquare"
     property var hoverShape: round ? "cookie12" : "cookie9"
@@ -43,6 +47,9 @@ Item {
                 anchors.fill: parent
                 visible: root.cover !== ""
                 source: root.cover
+                fallbackKind: root.coverKind
+                fallbackArtist: root.coverArtist
+                fallbackTitle: root.coverTitle
                 shape: root.hovered ? root.hoverShape : root.shape
                 duration: Theme.motion.spatialDefault
             }
