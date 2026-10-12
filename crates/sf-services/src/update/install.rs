@@ -30,13 +30,14 @@ fn io_text(error: std::io::Error) -> String {
     error.to_string()
 }
 
+/// A hidden console process that outlives the app. Not DETACHED_PROCESS: powershell.exe without a console
+/// exits at once without running the script (0.2.1 and 0.3.0 portable updates just closed the app).
 #[cfg(windows)]
 fn detached(command: &mut Command) -> &mut Command {
     use std::os::windows::process::CommandExt;
-    const DETACHED_PROCESS: u32 = 0x0000_0008;
     const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    command.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW)
+    command.creation_flags(CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW)
 }
 
 #[cfg(not(windows))]
@@ -70,7 +71,9 @@ pub fn app_root(extracted: &Path, exe_name: &str) -> Option<PathBuf> {
 }
 
 /// PowerShell helper of a portable update: waits for the app to exit, copies the new files over the old
-/// ones (qml\ is mirrored so files dropped in the new version go away), starts the app, cleans up.
+/// ones (qml\ is replaced whole so files dropped in the new version go away), starts the app, cleans up.
+/// Copy-Item rather than robocopy: robocopy skips a changed file of the same size and time unless given
+/// /IM, which older Windows 10 doesn't know.
 pub const PORTABLE_HELPER: &str = r#"param([int]$ProcId, [string]$Source, [string]$Target, [string]$Exe, [string]$Log)
 $ErrorActionPreference = 'Continue'
 function Write-Log($text) { Add-Content -LiteralPath $Log -Value ("{0:u} {1}" -f (Get-Date), $text) }
@@ -79,12 +82,17 @@ try { Wait-Process -Id $ProcId -Timeout 60 -ErrorAction SilentlyContinue } catch
 Start-Sleep -Milliseconds 500
 $ok = $false
 for ($i = 0; $i -lt 30 -and -not $ok; $i++) {
-    & robocopy.exe $Source $Target /E /R:2 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
-    $code = $LASTEXITCODE
-    if ($code -lt 8) { $ok = $true } else { Write-Log "robocopy exit $code, retrying"; Start-Sleep -Seconds 1 }
-}
-if ($ok -and (Test-Path -LiteralPath (Join-Path $Source 'qml'))) {
-    & robocopy.exe (Join-Path $Source 'qml') (Join-Path $Target 'qml') /MIR /R:2 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
+    try {
+        $qml = Join-Path $Target 'qml'
+        if ((Test-Path -LiteralPath (Join-Path $Source 'qml')) -and (Test-Path -LiteralPath $qml)) {
+            Remove-Item -LiteralPath $qml -Recurse -Force -ErrorAction Stop
+        }
+        Get-ChildItem -LiteralPath $Source -Force | Copy-Item -Destination $Target -Recurse -Force -ErrorAction Stop
+        $ok = $true
+    } catch {
+        Write-Log ("copy: " + $_.Exception.Message + ", retrying")
+        Start-Sleep -Seconds 1
+    }
 }
 Write-Log ("update: copy " + $(if ($ok) { 'done' } else { 'FAILED' }))
 Start-Process -FilePath $Exe -WorkingDirectory $Target
@@ -237,5 +245,63 @@ mod tests {
         assert!(SETUP_ARGS.contains(&"/RELAUNCH"));
         assert!(!SETUP_ARGS.contains(&"/VERYSILENT"));
         assert!(PORTABLE_HELPER.contains("Wait-Process -Id $ProcId"));
+    }
+
+    /// The helper started the way the app starts it: it must run, replace changed files (also of the same
+    /// size), drop files gone from qml\, keep the rest and launch the exe.
+    #[cfg(windows)]
+    #[test]
+    fn portable_helper_replaces_files_and_relaunches() {
+        let base = std::env::temp_dir().join(format!("mf-portable-helper-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let (source, target) = (base.join("new"), base.join("app"));
+        for dir in [source.join("qml"), target.join("qml")] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        std::fs::write(source.join("data.txt"), "v2").unwrap();
+        std::fs::write(source.join("qml").join("Main.qml"), "new").unwrap();
+        std::fs::write(target.join("data.txt"), "v1").unwrap();
+        std::fs::write(target.join("qml").join("Main.qml"), "old").unwrap();
+        std::fs::write(target.join("qml").join("Gone.qml"), "x").unwrap();
+        std::fs::write(target.join("settings.ini"), "keep").unwrap();
+        // the "app": a cmd that writes a marker, so the relaunch is visible
+        let marker = base.join("relaunched.txt");
+        let exe = base.join("app.cmd");
+        std::fs::write(&exe, format!("@echo ok> \"{}\"\r\n", marker.display())).unwrap();
+        let script = base.join("helper.ps1");
+        std::fs::write(&script, PORTABLE_HELPER).unwrap();
+        let log = base.join("update.log");
+
+        let mut app = Command::new("cmd").args(["/c", "ping -n 2 127.0.0.1 >nul"]).spawn().unwrap();
+        let mut command = Command::new(system_tool("WindowsPowerShell\\v1.0\\powershell.exe", "powershell.exe"));
+        command
+            .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File"])
+            .arg(&script)
+            .arg("-ProcId")
+            .arg(app.id().to_string())
+            .args(["-Source".as_ref(), source.as_os_str(), "-Target".as_ref(), target.as_os_str()])
+            .args(["-Exe".as_ref(), exe.as_os_str(), "-Log".as_ref(), log.as_os_str()])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let status = detached(&mut command).status().unwrap();
+        let _ = app.wait();
+        for _ in 0..50 {
+            if marker.is_file() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        let read = |p: PathBuf| std::fs::read_to_string(p).unwrap_or_default();
+        let log_text = read(log.clone());
+        assert!(status.success(), "{log_text}");
+        assert!(log_text.contains("copy done"), "{log_text}");
+        assert_eq!(read(target.join("data.txt")), "v2");
+        assert_eq!(read(target.join("qml").join("Main.qml")), "new");
+        assert!(!target.join("qml").join("Gone.qml").exists());
+        assert_eq!(read(target.join("settings.ini")), "keep");
+        assert!(marker.is_file(), "the app was not started again");
+        assert!(!source.exists());
+        let _ = std::fs::remove_dir_all(&base);
     }
 }
