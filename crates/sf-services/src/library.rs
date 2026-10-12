@@ -22,7 +22,7 @@ use crate::data::liked::{self, LikedSongs};
 use crate::data::paged::PagedList;
 use crate::data::text::list_change;
 use crate::data::collection_session::{self, LikedFeed};
-use crate::data::{known, playlist_cache, playlist_session, podcast_session, route};
+use crate::data::{known, library_cache, playlist_cache, playlist_session, podcast_session, route};
 use sf_player::engine::session_playlists::Change;
 use crate::history::HistoryService;
 use crate::lock;
@@ -748,6 +748,7 @@ impl LibraryService {
         };
         self.send(events);
         if account.is_some() {
+            self.hydrate_from_cache();
             self.load_all(false);
         }
     }
@@ -1205,7 +1206,7 @@ impl LibraryService {
     /// Принять список из rootlist: чего у сессии нет (имя владельца, коллаж), берётся из прежних шапок;
     /// затем коллажи для плейлистов без своей обложки.
     fn adopt_library(&self, library: playlist_session::Library, generation: u64) {
-        let (events, coverless) = {
+        let (events, coverless, cached) = {
             let mut state = lock(&self.state);
             if state.generation != generation {
                 return;
@@ -1220,6 +1221,11 @@ impl LibraryService {
             let coverless: Vec<String> =
                 raw.iter().filter(|pl| pl.images.is_empty() && pl.track_total() > 0).map(|pl| pl.id.clone()).collect();
             state.playlists_raw = raw;
+            // дерево уходит на диск: когда сессия в следующий раз будет подниматься, библиотека уже видна
+            let cached = library_cache::CachedLibrary::new(
+                library.rootlist.entries.clone(),
+                state.playlists_raw.clone(),
+            );
             state.rootlist = Some(library.rootlist);
             state.rootlist_loading = false;
             state.session_list = true;
@@ -1232,12 +1238,55 @@ impl LibraryService {
             events.extend([LibraryEvent::EntriesChanged, LibraryEvent::SavedChanged]);
             let ids: Vec<PlaylistId> = state.pages.keys().cloned().collect();
             events.extend(ids.into_iter().map(LibraryEvent::PlaylistInfo));
-            (events, coverless)
+            (events, coverless, cached)
         };
         self.send(events);
         if !coverless.is_empty() {
             self.spawn(move |service| async move { service.fill_mosaics(coverless, generation).await });
         }
+        self.spawn(move |service| async move {
+            let Some(account) = lock(&service.state).account.clone() else { return };
+            let file = library_cache::path(&mf_platform::dirs::playlist_cache_dir(&account));
+            let _ = tokio::task::spawn_blocking(move || library_cache::write(&file, &cached)).await;
+        });
+    }
+
+    /// Пока сессия поднимается (это может занять десятки секунд), показать дерево плейлистов с диска.
+    /// Свежий rootlist из сессии придёт позже и заменит его.
+    fn hydrate_from_cache(&self) {
+        let (account, generation) = {
+            let state = lock(&self.state);
+            let Some(account) = state.account.clone() else { return };
+            if state.rootlist.is_some() {
+                return;
+            }
+            (account, state.generation)
+        };
+        let file = library_cache::path(&mf_platform::dirs::playlist_cache_dir(&account));
+        self.spawn(move |service| async move {
+            let cached = tokio::task::spawn_blocking(move || library_cache::read(&file)).await.ok().flatten();
+            let Some(cached) = cached else { return };
+            service.adopt_cached(cached, generation);
+        });
+    }
+
+    /// Принять кэш как список из сессии: те же события, дерево без прав на добавление (их даёт сессия).
+    fn adopt_cached(&self, cached: library_cache::CachedLibrary, generation: u64) {
+        let events = {
+            let mut state = lock(&self.state);
+            // сессия успела ответить первой — её список свежее кэша
+            if state.generation != generation || state.rootlist.is_some() {
+                return;
+            }
+            let playlists = cached.playlists;
+            self.auth.api().observe_playlists(playlists.iter());
+            state.playlists_raw = playlists;
+            state.rootlist = Some(Rootlist { entries: cached.rootlist, ..Default::default() });
+            let mut events: Vec<LibraryEvent> = state.rebuild_playlists().into_iter().collect();
+            events.push(LibraryEvent::EntriesChanged);
+            events
+        };
+        self.send(events);
     }
 
     /// Коллажи обложек (как у Web API) для плейлистов без своей обложки — через сессию.
