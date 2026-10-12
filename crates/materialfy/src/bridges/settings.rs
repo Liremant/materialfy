@@ -37,6 +37,22 @@ pub mod qobject {
         #[qproperty(bool, cover_spin, cxx_name = "coverSpin", READ, WRITE = set_cover_spin, NOTIFY = cover_spin_changed)]
         #[qproperty(bool, cover_pulse, cxx_name = "coverPulse", READ, WRITE = set_cover_pulse, NOTIFY = cover_pulse_changed)]
         #[qproperty(bool, calm_when_inactive, cxx_name = "calmWhenInactive", READ, WRITE = set_calm_when_inactive, NOTIFY = calm_when_inactive_changed)]
+        /// "normal" | "simple" | "karaoke" — вид колонки текста
+        #[qproperty(QString, lyrics_mode, cxx_name = "lyricsMode", READ, WRITE = set_lyrics_mode, NOTIFY = lyrics_mode_changed)]
+        /// множитель размера шрифта текста
+        #[qproperty(f64, lyrics_font_scale, cxx_name = "lyricsFontScale", READ, WRITE = set_lyrics_font_scale, NOTIFY = lyrics_font_scale_changed)]
+        /// "left" | "center"
+        #[qproperty(QString, lyrics_align, cxx_name = "lyricsAlign", READ, WRITE = set_lyrics_align, NOTIFY = lyrics_align_changed)]
+        /// прозрачность непоющихся строк
+        #[qproperty(f64, lyrics_dim, cxx_name = "lyricsDim", READ, WRITE = set_lyrics_dim, NOTIFY = lyrics_dim_changed)]
+        /// размывать непоющие строки
+        #[qproperty(bool, lyrics_blur, cxx_name = "lyricsBlur", READ, WRITE = set_lyrics_blur, NOTIFY = lyrics_blur_changed)]
+        /// множитель интервала между строками
+        #[qproperty(f64, lyrics_spacing, cxx_name = "lyricsSpacing", READ, WRITE = set_lyrics_spacing, NOTIFY = lyrics_spacing_changed)]
+        /// каскад и анимация прокрутки строк
+        #[qproperty(bool, lyrics_motion, cxx_name = "lyricsMotion", READ, WRITE = set_lyrics_motion, NOTIFY = lyrics_motion_changed)]
+        /// подпись источника под текстом
+        #[qproperty(bool, lyrics_source, cxx_name = "lyricsSource", READ, WRITE = set_lyrics_source, NOTIFY = lyrics_source_changed)]
         #[qproperty(QString, animations, READ, WRITE = set_animations, NOTIFY = animations_changed)]
         /// "auto" | "on" | "off" — режим для слабых ПК (Theme.lowPower)
         #[qproperty(QString, low_power_mode, cxx_name = "lowPowerMode", READ, WRITE = set_low_power_mode, NOTIFY = low_power_mode_changed)]
@@ -100,6 +116,14 @@ pub mod qobject {
         fn set_cover_spin(self: Pin<&mut Settings>, value: bool);
         fn set_cover_pulse(self: Pin<&mut Settings>, value: bool);
         fn set_calm_when_inactive(self: Pin<&mut Settings>, value: bool);
+        fn set_lyrics_mode(self: Pin<&mut Settings>, value: QString);
+        fn set_lyrics_font_scale(self: Pin<&mut Settings>, value: f64);
+        fn set_lyrics_align(self: Pin<&mut Settings>, value: QString);
+        fn set_lyrics_dim(self: Pin<&mut Settings>, value: f64);
+        fn set_lyrics_blur(self: Pin<&mut Settings>, value: bool);
+        fn set_lyrics_spacing(self: Pin<&mut Settings>, value: f64);
+        fn set_lyrics_motion(self: Pin<&mut Settings>, value: bool);
+        fn set_lyrics_source(self: Pin<&mut Settings>, value: bool);
         fn set_animations(self: Pin<&mut Settings>, value: QString);
         fn set_low_power_mode(self: Pin<&mut Settings>, value: QString);
         fn set_language(self: Pin<&mut Settings>, value: QString);
@@ -170,6 +194,30 @@ pub mod qobject {
         #[qsignal]
         #[cxx_name = "calmWhenInactiveChanged"]
         fn calm_when_inactive_changed(self: Pin<&mut Settings>);
+        #[qsignal]
+        #[cxx_name = "lyricsModeChanged"]
+        fn lyrics_mode_changed(self: Pin<&mut Settings>);
+        #[qsignal]
+        #[cxx_name = "lyricsFontScaleChanged"]
+        fn lyrics_font_scale_changed(self: Pin<&mut Settings>);
+        #[qsignal]
+        #[cxx_name = "lyricsAlignChanged"]
+        fn lyrics_align_changed(self: Pin<&mut Settings>);
+        #[qsignal]
+        #[cxx_name = "lyricsDimChanged"]
+        fn lyrics_dim_changed(self: Pin<&mut Settings>);
+        #[qsignal]
+        #[cxx_name = "lyricsBlurChanged"]
+        fn lyrics_blur_changed(self: Pin<&mut Settings>);
+        #[qsignal]
+        #[cxx_name = "lyricsSpacingChanged"]
+        fn lyrics_spacing_changed(self: Pin<&mut Settings>);
+        #[qsignal]
+        #[cxx_name = "lyricsMotionChanged"]
+        fn lyrics_motion_changed(self: Pin<&mut Settings>);
+        #[qsignal]
+        #[cxx_name = "lyricsSourceChanged"]
+        fn lyrics_source_changed(self: Pin<&mut Settings>);
         #[qsignal]
         #[cxx_name = "animationsChanged"]
         fn animations_changed(self: Pin<&mut Settings>);
@@ -462,6 +510,14 @@ settings! {
     cover_spin: bool = CoverSpin, set_cover_spin, cover_spin_changed;
     cover_pulse: bool = CoverPulse, set_cover_pulse, cover_pulse_changed;
     calm_when_inactive: bool = CalmWhenInactive, set_calm_when_inactive, calm_when_inactive_changed;
+    lyrics_mode: QString = LyricsMode, set_lyrics_mode, lyrics_mode_changed;
+    lyrics_font_scale: f64 = LyricsFontScale, set_lyrics_font_scale, lyrics_font_scale_changed;
+    lyrics_align: QString = LyricsAlign, set_lyrics_align, lyrics_align_changed;
+    lyrics_dim: f64 = LyricsDim, set_lyrics_dim, lyrics_dim_changed;
+    lyrics_blur: bool = LyricsBlur, set_lyrics_blur, lyrics_blur_changed;
+    lyrics_spacing: f64 = LyricsSpacing, set_lyrics_spacing, lyrics_spacing_changed;
+    lyrics_motion: bool = LyricsMotion, set_lyrics_motion, lyrics_motion_changed;
+    lyrics_source: bool = LyricsSource, set_lyrics_source, lyrics_source_changed;
     animations: QString = Animations, set_animations, animations_changed;
     low_power_mode: QString = LowPowerMode, set_low_power_mode, low_power_mode_changed;
     language: QString = Language, set_language, language_changed;

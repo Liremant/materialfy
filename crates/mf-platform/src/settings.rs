@@ -38,6 +38,22 @@ pub enum SettingKey {
     CoverSpin,
     CoverPulse,
     CalmWhenInactive,
+    /// текст песни: "normal" (как было) | "simple" (без размытия и каскада) | "karaoke" (текущая строка крупнее)
+    LyricsMode,
+    /// множитель размера шрифта текста (базовый размер задаёт место вызова)
+    LyricsFontScale,
+    /// "left" | "center" — выравнивание строк текста
+    LyricsAlign,
+    /// прозрачность непоющихся строк
+    LyricsDim,
+    /// размывать непоющие строки
+    LyricsBlur,
+    /// множитель интервала между строками
+    LyricsSpacing,
+    /// каскад и анимация прокрутки при смене строки
+    LyricsMotion,
+    /// подпись источника под текстом
+    LyricsSource,
     /// "system" | "full" | "reduced" → Theme.reducedMotion
     Animations,
     /// режим для слабых ПК: "auto" (сам, когда кадры рисует процессор) | "on" | "off" → Theme.lowPower
@@ -126,7 +142,7 @@ pub enum SettingType {
 }
 
 impl SettingKey {
-    pub const ALL: [SettingKey; 53] = [
+    pub const ALL: [SettingKey; 61] = [
         SettingKey::ThemeMode,
         SettingKey::SchemeVariant,
         SettingKey::AccentFromCover,
@@ -140,6 +156,14 @@ impl SettingKey {
         SettingKey::CoverSpin,
         SettingKey::CoverPulse,
         SettingKey::CalmWhenInactive,
+        SettingKey::LyricsMode,
+        SettingKey::LyricsFontScale,
+        SettingKey::LyricsAlign,
+        SettingKey::LyricsDim,
+        SettingKey::LyricsBlur,
+        SettingKey::LyricsSpacing,
+        SettingKey::LyricsMotion,
+        SettingKey::LyricsSource,
         SettingKey::Animations,
         SettingKey::LowPowerMode,
         SettingKey::Language,
@@ -199,6 +223,14 @@ impl SettingKey {
             CoverSpin => "coverSpin",
             CoverPulse => "coverPulse",
             CalmWhenInactive => "calmWhenInactive",
+            LyricsMode => "lyricsMode",
+            LyricsFontScale => "lyricsFontScale",
+            LyricsAlign => "lyricsAlign",
+            LyricsDim => "lyricsDim",
+            LyricsBlur => "lyricsBlur",
+            LyricsSpacing => "lyricsSpacing",
+            LyricsMotion => "lyricsMotion",
+            LyricsSource => "lyricsSource",
             Animations => "animations",
             LowPowerMode => "lowPowerMode",
             Language => "language",
@@ -272,6 +304,14 @@ impl SettingKey {
             CoverSpin => Bool(true),
             CoverPulse => Bool(true),
             CalmWhenInactive => Bool(true),
+            LyricsMode => Str("normal".into()),
+            LyricsFontScale => Float(1.0),
+            LyricsAlign => Str("left".into()),
+            LyricsDim => Float(0.35),
+            LyricsBlur => Bool(true),
+            LyricsSpacing => Float(1.0),
+            LyricsMotion => Bool(true),
+            LyricsSource => Bool(true),
             Animations => Str("system".into()),
             LowPowerMode => Str("auto".into()),
             Language => Str("system".into()),
@@ -942,7 +982,7 @@ mod tests {
 
     #[test]
     fn schema() {
-        assert_eq!(SettingKey::ALL.len(), 53);
+        assert_eq!(SettingKey::ALL.len(), 61);
         for key in SettingKey::ALL {
             assert_eq!(SettingKey::from_name(key.name()), Some(key));
             assert_eq!(key.default_value().value_type(), key.value_type());
@@ -1214,7 +1254,8 @@ mod tests {
         for name in [
             "themeMode", "schemeVariant", "accentFromCover", "customSeed", "windowButtons", "trackTransition",
             "backdropMode", "nowPlayingBlur", "nowPlayingDrift", "ambientBackground", "coverSpin", "coverPulse",
-            "calmWhenInactive", "animations", "lowPowerMode", "rightPanelOpen", "rightPanelTab", "sidebarCollapsed", "windowWidth",
+            "calmWhenInactive", "lyricsMode", "lyricsFontScale", "lyricsAlign", "lyricsDim", "lyricsBlur",
+            "lyricsSpacing", "lyricsMotion", "lyricsSource", "animations", "lowPowerMode", "rightPanelOpen", "rightPanelTab", "sidebarCollapsed", "windowWidth",
             "windowHeight", "windowX", "windowY", "windowMaximized", "closeToTray", "wheelStep", "libraryView",
             "librarySort", "homeHidden", "bitrate", "normalisation", "gapless", "autoplay", "volume", "audioDevice",
             "audioCache", "audioCacheMb", "playbackAuthorized", "deviceName", "webClientId", "proxyMode", "proxyHost",
