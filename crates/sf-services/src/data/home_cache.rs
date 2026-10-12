@@ -1,6 +1,6 @@
 //! Полки главной аккаунта на диске: пока сессия поднимается (на медленной сети это десятки секунд), главная
 //! показывает прошлый выпуск вместо пустого экрана. Свежие ответы перезаписывают кэш.
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use md3_model::{ArtistItem, EpisodeItem, HomeShelf, LibraryEntry, TrackItem};
 use serde::{Deserialize, Serialize};
@@ -70,6 +70,7 @@ pub fn write(path: &Path, cache: &CachedHome) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     fn dir() -> PathBuf {
         std::env::temp_dir().join(format!("sf-home-{:016x}", rand::random::<u64>()))
@@ -84,7 +85,7 @@ mod tests {
         let dir = dir();
         let file = file(&dir);
         let cache = CachedHome::new(
-            vec![LibraryEntry { id: "p".into(), name: "Mix".into(), ..Default::default() }],
+            vec![LibraryEntry { id: "p".into(), title: "Mix".into(), ..Default::default() }],
             Vec::new(),
             vec![ArtistItem { name: "A".into(), ..Default::default() }],
             Vec::new(),
