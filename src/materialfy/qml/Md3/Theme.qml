@@ -147,7 +147,10 @@ Item {
     Connections {
         target: ThemeEngine
         function onSchemeChanged() {
-            if (root.wipe !== null && root.wipe.visible)
+            // программный рендер: сразу, без шторки на всё окно (каждый её кадр процессор рисует целиком)
+            if (root.lowPower)
+                root._applyNow()
+            else if (root.wipe !== null && root.wipe.visible)
                 root.wipe.start(root.wipeDirection, root._applyNow)
             else
                 root._startTransition()

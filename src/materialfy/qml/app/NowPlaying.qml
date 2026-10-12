@@ -76,7 +76,8 @@ Item {
     Behavior on reveal {
         NumberAnimation {
             id: revealAnim
-            duration: Theme.reducedMotion ? Theme.motion.effectsDefault : root.open ? 820 : 620
+            // программный рендер — сразу: кадры раскрытия (два слоя и маска на весь экран) рисует процессор
+            duration: Theme.lowPower ? 0 : Theme.reducedMotion ? Theme.motion.effectsDefault : root.open ? 820 : 620
             easing.type: Easing.Linear     // кривые — у каждой фазы свои, см. blob
         }
     }
