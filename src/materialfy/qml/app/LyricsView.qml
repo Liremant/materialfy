@@ -180,13 +180,11 @@ Item {
             activeIndex = i
     }
 
-    FrameAnimation {
-        running: root.live && root.advancing && !Theme.lowPower
-        onTriggered: root.tick()
-    }
-    // программный рендер: заливка слов — по общим часам Ticker (~30 Гц), а не в каждом кадре монитора
+    // Заливка слов — по общим часам Ticker (~30 Гц), а не в каждом кадре монитора (раньше обычный
+    // рендер гонял FrameAnimation: на 144–280 Гц пересчёт pos перерисовывал всё окно без нужды).
+    // На программном рендере (lowPower) так было с самого начала — ветка та же, но таймер общий.
     TickAnimation {
-        running: root.live && root.advancing && Theme.lowPower
+        running: root.live && root.advancing
         onTriggered: root.tick()
     }
 
@@ -563,7 +561,9 @@ Item {
             property real fadeOpacity: line.filling ? 1 : Math.max(0.22, root.dimAlpha * (line.hovered ? 1.9 : (1 - 0.1 * Math.max(0, line.dist - 1))))
             Behavior on fadeOpacity { NumberAnimation { duration: 380; easing.type: Easing.OutCubic } }
 
-            readonly property bool blurred: root.blurInactive && !line.filling && !line.hovered && line.dist < 8
+            // Размытие — только возле активной строки (MultiEffect с blurMax 16 — слой на всю строку;
+            // в тексте на 40–60 строк хватит пяти), дальние приглушены шейдером заливки и так
+            readonly property bool blurred: root.blurInactive && !line.filling && !line.hovered && line.dist < 5
             layer.enabled: blurred
             layer.effect: MultiEffect {
                 blurEnabled: true
