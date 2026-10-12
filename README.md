@@ -118,7 +118,7 @@ Taken with a Premium account and music playing; the colours follow the cover of 
   drawn by the system; Windows 10 keeps square ones), square corners when maximized.
 - Media keys, the SMTC tile on Windows and MPRIS on Linux, a tray icon with minimize-on-close, single running
   instance.
-- Interface in English or Russian. By default it follows the system language; Settings → Language switches it.
+- Interface in English, Russian or Portuguese (Brazil). By default it follows the system language; Settings → Language switches it.
 - Proxy: system, HTTP or SOCKS5, with username and password. Sign-in, Web API, playback, lyrics and images all
   go through it.
 
@@ -422,7 +422,7 @@ runtime, and the Qt UI thread receives ready-made state snapshots.
 | `mf-theme` | Material You schemes from a cover or a chosen color |
 | `mf-lyrics` | lyrics from several sources, LRC parsing, cache |
 | `mf-platform` | directories, settings, MPRIS, single instance |
-| `mf-i18n` | interface translation: English strings in the code, Russian dictionary from `i18n/ru/*.json` |
+| `mf-i18n` | interface translation: English strings in the code, Russian and Portuguese dictionaries from `i18n/ru/*.json` and `i18n/pt/*.json` |
 | `materialfy` | the executable: QML bridges, command-line flags, image cache, window frame on Windows |
 
 ## Origin and license

@@ -25,6 +25,7 @@
 #include <QtNetwork/QNetworkAccessManager>
 #include <QtNetwork/QNetworkDiskCache>
 #include <QtNetwork/QNetworkProxy>
+#include <QtNetwork/QNetworkReply>
 #include <QtNetwork/QNetworkRequest>
 #include <QtQml/QQmlContext>
 #include <QtQml/QQmlEngine>
@@ -40,8 +41,12 @@
 #include <QtWidgets/QApplication>
 
 #include <algorithm>
+#include <atomic>
+#include <cstdio>
+#include <cwchar>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 #if defined(Q_OS_LINUX)
@@ -87,7 +92,27 @@ int argc_storage = 0;
 QApplication* app = nullptr;
 QPointer<QWindow> main_window;
 
-// Только HTTP/1.1: по HTTP/2 сервер обложек Яндекса отвечает REFUSED_STREAM, когда страница
+// Картинки Spotify: один и тот же путь /image/<id> отдают несколько CDN. Основной i.scdn.co в РФ не открывается
+// или отвечает по 8+ с — его адреса переписываем на зеркала (тот же список — sf_api::image_hosts). Берём текущее
+// рабочее зеркало; таймаут или сетевая ошибка переводят всех на следующее (404 — нет картинки, хост ни при чём).
+const char* const spotify_image_hosts[] = { "image-cdn-fa.spotifycdn.com", "image-cdn-ak.spotifycdn.com",
+                                            "image-cdn.spotifycdn.com", "i2o.scdn.co" };
+constexpr int spotify_image_host_count = 4;
+// и прежние адреса: кэш обложек, скачанных до зеркал, лежит под i.scdn.co
+const char* const spotify_image_known_hosts[] = { "i.scdn.co", "image-cdn-fa.spotifycdn.com", "image-cdn-ak.spotifycdn.com",
+                                                  "image-cdn.spotifycdn.com", "i2o.scdn.co" };
+std::atomic<int> spotify_image_host{ 0 };
+
+bool
+is_spotify_image_host(const QString& host)
+{
+  for (const char* known : spotify_image_known_hosts)
+    if (host == QLatin1String(known))
+      return true;
+  return false;
+}
+
+// Только HTTP/1.1: по HTTP/2 сервер обложек отвечает REFUSED_STREAM, когда страница
 // разом просит десятки картинок, и часть обложек не появляется.
 class Http1Nam : public QNetworkAccessManager
 {
@@ -99,7 +124,53 @@ protected:
   {
     QNetworkRequest copy(request);
     copy.setAttribute(QNetworkRequest::Http2AllowedAttribute, false);
-    return QNetworkAccessManager::createRequest(op, copy, data);
+    // зависшее соединение не держит очередь (на хост их всего шесть): через 10 с — ошибка и повтор в QML
+    copy.setTransferTimeout(10000);
+    QUrl url = copy.url();
+    if (op != GetOperation || !is_spotify_image_host(url.host()) || !url.path().startsWith(QLatin1String("/image/")))
+      return QNetworkAccessManager::createRequest(op, copy, data);
+
+    // проверка запасных обложек: сеть, где ни одно зеркало Spotify не открывается (и кэш не выручает)
+    static const bool no_spotify_images = qEnvironmentVariableIsSet("MATERIALFY_TEST_NO_SPOTIFY_IMAGES");
+    if (no_spotify_images) {
+      url.setHost(QStringLiteral("spotify-images.invalid"));
+      copy.setUrl(url);
+      copy.setAttribute(QNetworkRequest::CacheLoadControlAttribute, QNetworkRequest::AlwaysNetwork);
+      return QNetworkAccessManager::createRequest(op, copy, data);
+    }
+    // картинка по id не меняется: из кэша — без перепроверки; уже скачанное по любому из адресов не качаем
+    copy.setAttribute(QNetworkRequest::CacheLoadControlAttribute, QNetworkRequest::PreferCache);
+    if (QAbstractNetworkCache* disk = cache()) {
+      for (const char* known : spotify_image_known_hosts) {
+        QUrl cached = url;
+        cached.setHost(QLatin1String(known));
+        if (disk->metaData(cached).isValid()) {
+          copy.setUrl(cached);
+          return QNetworkAccessManager::createRequest(op, copy, data);
+        }
+      }
+    }
+    const int host = spotify_image_host.load();
+    url.setHost(QLatin1String(spotify_image_hosts[host]));
+    copy.setUrl(url);
+    QNetworkReply* reply = QNetworkAccessManager::createRequest(op, copy, data);
+    QObject::connect(reply, &QNetworkReply::finished, reply, [reply, host] {
+      const auto error = reply->error();
+      const bool host_failed = error == QNetworkReply::OperationCanceledError // таймаут
+                               || error == QNetworkReply::TimeoutError || error == QNetworkReply::HostNotFoundError
+                               || error == QNetworkReply::ConnectionRefusedError
+                               || error == QNetworkReply::RemoteHostClosedError
+                               || error == QNetworkReply::SslHandshakeFailedError
+                               || error == QNetworkReply::TemporaryNetworkFailureError
+                               || error == QNetworkReply::UnknownNetworkError
+                               || error == QNetworkReply::ServiceUnavailableError
+                               || error == QNetworkReply::InternalServerError;
+      if (host_failed) {
+        int expected = host;
+        spotify_image_host.compare_exchange_strong(expected, (host + 1) % spotify_image_host_count);
+      }
+    });
+    return reply;
   }
 };
 
@@ -195,6 +266,73 @@ void
 app_quit()
 {
   QCoreApplication::quit();
+}
+
+#if defined(Q_OS_WIN)
+namespace {
+wchar_t crash_log_path[MAX_PATH * 2] = {};
+
+// Модуль и смещение адреса: «Qt6Qml.dll+0x1216b7» — как в журнале событий Windows
+void
+describe_address(void* address, char* out, size_t size)
+{
+  HMODULE module = nullptr;
+  wchar_t name[MAX_PATH] = L"?";
+  if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                         reinterpret_cast<LPCWSTR>(address),
+                         &module) &&
+      module) {
+    wchar_t full[MAX_PATH];
+    if (GetModuleFileNameW(module, full, MAX_PATH)) {
+      const wchar_t* base = wcsrchr(full, L'\\');
+      wcsncpy_s(name, base ? base + 1 : full, _TRUNCATE);
+    }
+  }
+  const auto offset = reinterpret_cast<uintptr_t>(address) - reinterpret_cast<uintptr_t>(module);
+  _snprintf_s(out, size, _TRUNCATE, "%ls+0x%llx", name, static_cast<unsigned long long>(offset));
+}
+
+LONG WINAPI
+on_unhandled_exception(EXCEPTION_POINTERS* info)
+{
+  FILE* file = nullptr;
+  if (_wfopen_s(&file, crash_log_path, L"ab") == 0 && file) {
+    char where[MAX_PATH + 32];
+    describe_address(info->ExceptionRecord->ExceptionAddress, where, sizeof where);
+    fprintf(file, "=== native crash · Materialfy · exception 0x%08lx at %s\n",
+            static_cast<unsigned long>(info->ExceptionRecord->ExceptionCode), where);
+    void* frames[48];
+    const USHORT count = RtlCaptureStackBackTrace(0, 48, frames, nullptr);
+    for (USHORT i = 0; i < count; ++i) {
+      describe_address(frames[i], where, sizeof where);
+      fprintf(file, "  %2u %s\n", static_cast<unsigned>(i), where);
+    }
+    fclose(file);
+  }
+  return EXCEPTION_CONTINUE_SEARCH; // дальше — как обычно (отчёт Windows, журнал событий)
+}
+} // namespace
+#endif
+
+void
+install_native_crash_log(const QString& path)
+{
+#if defined(Q_OS_WIN)
+  wcsncpy_s(crash_log_path, reinterpret_cast<const wchar_t*>(path.utf16()), _TRUNCATE);
+  SetUnhandledExceptionFilter(on_unhandled_exception);
+#else
+  Q_UNUSED(path);
+#endif
+}
+
+void
+set_qt_env(const QString& name, const QString& value)
+{
+#if defined(Q_OS_WIN)
+  _wputenv_s(reinterpret_cast<const wchar_t*>(name.utf16()), reinterpret_cast<const wchar_t*>(value.utf16()));
+#else
+  qputenv(name.toUtf8().constData(), value.toUtf8());
+#endif
 }
 
 void
@@ -302,6 +440,129 @@ watch_color_scheme()
   QObject::connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged, qApp, [](Qt::ColorScheme scheme) {
     system_dark_changed(scheme != Qt::ColorScheme::Light);
   });
+}
+
+#if defined(Q_OS_WIN) && defined(_M_X64)
+namespace {
+std::atomic<long long> gui_tick_ms{ 0 };
+HANDLE gui_thread = nullptr;
+
+long long
+monotonic_ms()
+{
+  return static_cast<long long>(GetTickCount64());
+}
+
+// Стек приостановленного потока: адреса возврата по таблицам раскрутки x64 (без dbghelp и без выделения памяти,
+// пока поток стоит — он может держать блокировку кучи)
+USHORT
+capture_thread_stack(HANDLE thread, void** frames, USHORT capacity)
+{
+  CONTEXT context{};
+  context.ContextFlags = CONTEXT_FULL;
+  if (!GetThreadContext(thread, &context))
+    return 0;
+  USHORT count = 0;
+  while (count < capacity && context.Rip) {
+    frames[count++] = reinterpret_cast<void*>(context.Rip);
+    DWORD64 image_base = 0;
+    PRUNTIME_FUNCTION function = RtlLookupFunctionEntry(context.Rip, &image_base, nullptr);
+    if (!function) {
+      // листовая функция: адрес возврата на вершине стека
+      context.Rip = *reinterpret_cast<DWORD64*>(context.Rsp);
+      context.Rsp += 8;
+      continue;
+    }
+    void* handler_data = nullptr;
+    DWORD64 establisher = 0;
+    RtlVirtualUnwind(UNW_FLAG_NHANDLER, image_base, context.Rip, function, &context, &handler_data, &establisher, nullptr);
+  }
+  return count;
+}
+
+// Сторож: GUI-поток не отметился 10 с — окно «не отвечает». Его стек — в crash.log, один раз на зависание.
+void
+watch_gui_thread()
+{
+  bool reported = false;
+  for (;;) {
+    Sleep(2000);
+    const long long silent = monotonic_ms() - gui_tick_ms.load();
+    if (silent < 10000) {
+      reported = false;
+      continue;
+    }
+    if (reported || !gui_thread || !crash_log_path[0])
+      continue;
+    reported = true;
+    // Несколько снимков через полсекунды, пока поток молчит: долгая работа видна в каждом, случайное — в одном
+    constexpr int max_samples = 12;
+    constexpr USHORT depth = 64;
+    static void* samples[max_samples][depth];
+    USHORT counts[max_samples] = {};
+    int taken = 0;
+    while (taken < max_samples && monotonic_ms() - gui_tick_ms.load() >= 10000) {
+      if (SuspendThread(gui_thread) != static_cast<DWORD>(-1)) {
+        counts[taken] = capture_thread_stack(gui_thread, samples[taken], depth);
+        ResumeThread(gui_thread);
+        ++taken;
+      }
+      Sleep(500);
+    }
+    FILE* file = nullptr;
+    if (_wfopen_s(&file, crash_log_path, L"ab") == 0 && file) {
+      fprintf(file, "=== hang · Materialfy · the GUI thread has not responded for %lld s, %d samples\n",
+              (monotonic_ms() - gui_tick_ms.load()) / 1000, taken);
+      char where[MAX_PATH + 32];
+      // сводка: в скольких снимках встречается адрес (верхние 40 по частоте)
+      std::vector<std::pair<void*, int>> hits;
+      for (int s = 0; s < taken; ++s)
+        for (USHORT i = 0; i < counts[s]; ++i) {
+          auto it = std::find_if(hits.begin(), hits.end(), [&](const auto& h) { return h.first == samples[s][i]; });
+          if (it == hits.end())
+            hits.emplace_back(samples[s][i], 1);
+          else if (std::none_of(samples[s], samples[s] + i, [&](void* a) { return a == samples[s][i]; }))
+            ++it->second;
+        }
+      std::stable_sort(hits.begin(), hits.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
+      fprintf(file, "  most frequent frames (samples containing it):\n");
+      for (size_t i = 0; i < hits.size() && i < 40; ++i) {
+        describe_address(hits[i].first, where, sizeof where);
+        fprintf(file, "    %2d/%d %s\n", hits[i].second, taken, where);
+      }
+      for (int s = 0; s < taken; ++s) {
+        fprintf(file, "  sample %d:\n", s);
+        for (USHORT i = 0; i < counts[s]; ++i) {
+          describe_address(samples[s][i], where, sizeof where);
+          fprintf(file, "    %2u %s\n", static_cast<unsigned>(i), where);
+        }
+      }
+      fclose(file);
+    }
+  }
+}
+} // namespace
+#endif
+
+void
+start_gui_heartbeat()
+{
+  auto* timer = new QTimer(qApp);
+  timer->setInterval(1000);
+#if defined(Q_OS_WIN) && defined(_M_X64)
+  QObject::connect(timer, &QTimer::timeout, qApp, [] {
+    gui_tick_ms.store(monotonic_ms());
+    gui_heartbeat();
+  });
+  gui_tick_ms.store(monotonic_ms());
+  DuplicateHandle(GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &gui_thread,
+                  THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION, FALSE, 0);
+  std::thread(watch_gui_thread).detach();
+#else
+  QObject::connect(timer, &QTimer::timeout, qApp, [] { gui_heartbeat(); });
+#endif
+  timer->start();
+  gui_heartbeat();
 }
 
 void

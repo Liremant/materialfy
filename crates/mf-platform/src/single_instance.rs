@@ -6,7 +6,10 @@
 //! [`InstanceListener`] — именованный канал `\\.\pipe\materialfy-Materialfy-<user>` (создаётся как первый экземпляр
 //! канала, т. е. работает и как мьютекс) или unix-сокет `$TMPDIR/materialfy-Materialfy.sock`. Новый процесс подключается,
 //! пишет "raise\n" и выходит; без слушателя (оболочка его не запустила) — false, как раньше.
-//! Протокол: клиент — строка "raise\n", сервер — ответ "ok\n".
+//! Протокол: клиент — строка "raise\n", сервер — ответ "ok\n" или "hung\n": окно не отвечает (GUI-поток не
+//! отметился в [`gui_alive`] за 20 с: подвисание на тяжёлой странице слабого ПК — ещё не зависание). Зависший экземпляр новый процесс завершает (Windows) и запускается сам —
+//! иначе после зависания каждый запуск тихо выходил, «показав» мёртвое окно.
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use tokio::sync::mpsc;
@@ -17,6 +20,31 @@ use crate::PlatformError;
 const REQUEST: &[u8] = b"raise\n";
 #[cfg(any(target_os = "windows", target_os = "macos"))]
 const REPLY: &[u8] = b"ok\n";
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+const HUNG: &[u8] = b"hung\n";
+
+/// Последняя отметка GUI-потока и начало работы слушателя, мс от эпохи (0 — ещё не было).
+static GUI_BEAT_MS: AtomicU64 = AtomicU64::new(0);
+static LISTEN_MS: AtomicU64 = AtomicU64::new(0);
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
+}
+
+/// GUI-поток жив — звать из его таймера раз в секунду.
+pub fn gui_alive() {
+    GUI_BEAT_MS.store(now_ms(), Ordering::Relaxed);
+}
+
+/// Окно отвечает: отметка свежая; до первой отметки (окно ещё грузится) — первые 60 с работы.
+#[cfg_attr(not(any(target_os = "windows", target_os = "macos")), allow(dead_code))]
+fn gui_responsive() -> bool {
+    let now = now_ms();
+    match GUI_BEAT_MS.load(Ordering::Relaxed) {
+        0 => now.saturating_sub(LISTEN_MS.load(Ordering::Relaxed)) < 60_000,
+        beat => now.saturating_sub(beat) < 20_000,
+    }
+}
 const TIMEOUT: Duration = Duration::from_secs(3);
 
 /// true — работающий экземпляр найден и попрошен показать окно.
@@ -42,6 +70,7 @@ impl InstanceListener {
     /// Вызывать внутри tokio-рантайма.
     pub async fn start() -> Result<InstanceListener, PlatformError> {
         let (tx, requests) = mpsc::unbounded_channel();
+        LISTEN_MS.store(now_ms(), Ordering::Relaxed);
         let task = imp::listen(tx).await?;
         Ok(InstanceListener { requests, task })
     }
@@ -83,27 +112,41 @@ where
     });
     let _ = read.await;
     if buf[..len] == *REQUEST {
-        let _ = tx.send(());
-        let _ = stream.write_all(REPLY).await;
+        let reply = if gui_responsive() {
+            let _ = tx.send(());
+            REPLY
+        } else {
+            tracing::warn!("asked to show the window, but the GUI thread does not respond");
+            HUNG
+        };
+        let _ = stream.write_all(reply).await;
         let _ = stream.flush().await;
     }
 }
 
-/// Клиент: отправить просьбу и дождаться ответа. true — запрос доставлен.
+/// Ответ работающего экземпляра.
 #[cfg(any(target_os = "windows", target_os = "macos"))]
-async fn send_request<S>(mut stream: S) -> bool
+#[derive(Debug, PartialEq, Eq)]
+enum Answer {
+    Shown,
+    Hung,
+}
+
+/// Клиент: отправить просьбу и дождаться ответа. None — запрос не ушёл.
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+async fn send_request<S>(mut stream: S) -> Option<Answer>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     if stream.write_all(REQUEST).await.is_err() || stream.flush().await.is_err() {
-        return false;
+        return None;
     }
     let mut reply = [0u8; 8];
     match stream.read(&mut reply).await {
-        Ok(n) if reply[..n] == *REPLY => true,
+        Ok(n) if reply[..n] == *HUNG => Some(Answer::Hung),
         // запрос ушёл, даже если ответ не дошёл — второй экземпляр всё равно не нужен
-        _ => true,
+        _ => Some(Answer::Shown),
     }
 }
 
@@ -179,12 +222,23 @@ mod imp {
                 Err(_) => return false,
             }
         };
-        allow_foreground(&client);
-        super::send_request(client).await
+        let pid = allow_foreground(&client);
+        match super::send_request(client).await {
+            Some(super::Answer::Shown) => true,
+            Some(super::Answer::Hung) => {
+                // окно зависло: завершить тот процесс и запуститься вместо него
+                if let Some(pid) = pid {
+                    terminate(pid).await;
+                }
+                false
+            }
+            None => false,
+        }
     }
 
     /// Разрешить работающему экземпляру вывести окно на передний план (иначе Windows только мигнёт кнопкой).
-    fn allow_foreground(client: &impl AsRawHandle) {
+    /// Возвращает его PID.
+    fn allow_foreground(client: &impl AsRawHandle) -> Option<u32> {
         use windows_sys::Win32::System::Pipes::GetNamedPipeServerProcessId;
         use windows_sys::Win32::UI::WindowsAndMessaging::AllowSetForegroundWindow;
         let mut pid = 0u32;
@@ -192,7 +246,30 @@ mod imp {
         unsafe {
             if GetNamedPipeServerProcessId(client.as_raw_handle(), &mut pid) != 0 && pid != 0 {
                 AllowSetForegroundWindow(pid);
+                return Some(pid);
             }
+        }
+        None
+    }
+
+    /// Завершить зависший экземпляр и дождаться, пока он освободит канал.
+    async fn terminate(pid: u32) {
+        use windows_sys::Win32::Foundation::CloseHandle;
+        use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_TERMINATE, TerminateProcess};
+        tracing::warn!("the running instance (pid {pid}) does not respond: ending it");
+        // SAFETY: дескриптор процесса открыт здесь же и закрыт после вызова
+        unsafe {
+            let process = OpenProcess(PROCESS_TERMINATE, 0, pid);
+            if !process.is_null() {
+                TerminateProcess(process, 1);
+                CloseHandle(process);
+            }
+        }
+        for _ in 0..40 {
+            if ClientOptions::new().open(pipe_name()).is_err() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
         }
     }
 
@@ -240,7 +317,8 @@ mod imp {
 
     pub async fn raise() -> bool {
         match UnixStream::connect(socket_path()).await {
-            Ok(stream) => super::send_request(stream).await,
+            // зависший экземпляр на macOS не завершаем — просто запускаемся
+            Ok(stream) => super::send_request(stream).await == Some(super::Answer::Shown),
             Err(_) => false,
         }
     }
@@ -287,15 +365,38 @@ mod imp {
 
 #[cfg(test)]
 mod tests {
+    /// Отметка окна — общая на процесс: тесты, которые её трогают, идут по очереди
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    static GUI_STATE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     #[tokio::test]
     async fn protocol_roundtrip() {
+        let _serial = GUI_STATE.lock().await;
+        super::gui_alive();
         let (client, server) = tokio::io::duplex(64);
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let served = tokio::spawn(super::serve_client(server, tx));
-        assert!(super::send_request(client).await);
+        assert_eq!(super::send_request(client).await, Some(super::Answer::Shown));
         served.await.unwrap();
         assert_eq!(rx.recv().await, Some(()));
+    }
+
+    /// Окно давно не отмечалось — ответ «завис», просьба показать окно не уходит.
+    #[cfg(any(target_os = "windows", target_os = "macos"))]
+    #[tokio::test]
+    async fn a_hung_window_answers_hung() {
+        use std::sync::atomic::Ordering;
+        let _serial = GUI_STATE.lock().await;
+        super::GUI_BEAT_MS.store(super::now_ms() - 30_000, Ordering::Relaxed);
+        let (client, server) = tokio::io::duplex(64);
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let served = tokio::spawn(super::serve_client(server, tx));
+        assert_eq!(super::send_request(client).await, Some(super::Answer::Hung));
+        served.await.unwrap();
+        assert!(rx.try_recv().is_err());
+        super::gui_alive();
+        assert!(super::gui_responsive());
     }
 
     #[cfg(any(target_os = "windows", target_os = "macos"))]

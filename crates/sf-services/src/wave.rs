@@ -520,7 +520,7 @@ fn kind_label(seed: &str) -> &'static str {
 /// Подпись — заглушка kind_label на любом языке (заглушка сохраняется в настройках «Любой трек», язык мог смениться).
 fn is_kind_placeholder(label: &str, seed: &str) -> bool {
     let en = kind_label(seed);
-    label == en || mf_i18n::dictionary(mf_i18n::Lang::Ru).and_then(|ru| ru.get(en)).is_some_and(|ru| ru == label)
+    label == en || mf_i18n::translated_in_any(en, label)
 }
 
 fn playable(track: &TrackItem, hidden: &dyn Fn(&str) -> bool) -> bool {

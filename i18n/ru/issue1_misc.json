@@ -6,5 +6,14 @@
   "Your library": "Ваша медиатека",
   "Music plays here and this computer shows up in Spotify Connect.": "Музыка играет здесь, а этот компьютер виден в Spotify Connect.",
   "Control playback on your phone or speakers from here.": "Отсюда можно управлять музыкой на телефоне и колонках.",
-  "Open spotify.com": "Открыть spotify.com"
+  "Open spotify.com": "Открыть spotify.com",
+  "Weak computer mode": "Режим для слабых ПК",
+  "No background motion, shimmer, theme wipe or cover fades, minimal transitions": "Без движения фона, переливов, шторки темы и появления обложек, переходы — минимум",
+  "All effects, even when graphics are drawn by the processor": "Все эффекты, даже когда графику рисует процессор",
+  "On by itself: graphics are drawn by the processor, without the video card": "Включился сам: графику рисует процессор, без видеокарты",
+  "Turns on by itself when graphics are drawn by the processor": "Включается сам, когда графику рисует процессор",
+  "Auto": "Авто",
+  "On": "Вкл",
+  "Materialfy closed unexpectedly last time": "В прошлый раз Materialfy закрылась с ошибкой",
+  "Report": "Сообщить"
 }

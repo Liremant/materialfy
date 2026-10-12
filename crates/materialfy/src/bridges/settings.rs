@@ -38,7 +38,9 @@ pub mod qobject {
         #[qproperty(bool, cover_pulse, cxx_name = "coverPulse", READ, WRITE = set_cover_pulse, NOTIFY = cover_pulse_changed)]
         #[qproperty(bool, calm_when_inactive, cxx_name = "calmWhenInactive", READ, WRITE = set_calm_when_inactive, NOTIFY = calm_when_inactive_changed)]
         #[qproperty(QString, animations, READ, WRITE = set_animations, NOTIFY = animations_changed)]
-        /// "system" | "en" | "ru"; the applied language and the dictionary — Translations (Md3/I18n.qml)
+        /// "auto" | "on" | "off" — режим для слабых ПК (Theme.lowPower)
+        #[qproperty(QString, low_power_mode, cxx_name = "lowPowerMode", READ, WRITE = set_low_power_mode, NOTIFY = low_power_mode_changed)]
+        /// "system" | "en" | "ru" | "pt"; the applied language and the dictionary — Translations (Md3/I18n.qml)
         #[qproperty(QString, language, READ, WRITE = set_language, NOTIFY = language_changed)]
         #[qproperty(bool, right_panel_open, cxx_name = "rightPanelOpen", READ, WRITE = set_right_panel_open, NOTIFY = right_panel_open_changed)]
         #[qproperty(QString, right_panel_tab, cxx_name = "rightPanelTab", READ, WRITE = set_right_panel_tab, NOTIFY = right_panel_tab_changed)]
@@ -99,6 +101,7 @@ pub mod qobject {
         fn set_cover_pulse(self: Pin<&mut Settings>, value: bool);
         fn set_calm_when_inactive(self: Pin<&mut Settings>, value: bool);
         fn set_animations(self: Pin<&mut Settings>, value: QString);
+        fn set_low_power_mode(self: Pin<&mut Settings>, value: QString);
         fn set_language(self: Pin<&mut Settings>, value: QString);
         fn set_right_panel_open(self: Pin<&mut Settings>, value: bool);
         fn set_right_panel_tab(self: Pin<&mut Settings>, value: QString);
@@ -170,6 +173,9 @@ pub mod qobject {
         #[qsignal]
         #[cxx_name = "animationsChanged"]
         fn animations_changed(self: Pin<&mut Settings>);
+        #[qsignal]
+        #[cxx_name = "lowPowerModeChanged"]
+        fn low_power_mode_changed(self: Pin<&mut Settings>);
         #[qsignal]
         #[cxx_name = "languageChanged"]
         fn language_changed(self: Pin<&mut Settings>);
@@ -457,6 +463,7 @@ settings! {
     cover_pulse: bool = CoverPulse, set_cover_pulse, cover_pulse_changed;
     calm_when_inactive: bool = CalmWhenInactive, set_calm_when_inactive, calm_when_inactive_changed;
     animations: QString = Animations, set_animations, animations_changed;
+    low_power_mode: QString = LowPowerMode, set_low_power_mode, low_power_mode_changed;
     language: QString = Language, set_language, language_changed;
     right_panel_open: bool = RightPanelOpen, set_right_panel_open, right_panel_open_changed;
     right_panel_tab: QString = RightPanelTab, set_right_panel_tab, right_panel_tab_changed;

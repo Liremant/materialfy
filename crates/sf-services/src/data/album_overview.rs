@@ -103,8 +103,8 @@ fn release_date(date: Option<&Value>) -> String {
     let year = date.get("year").and_then(Value::as_i64).filter(|year| *year > 0);
     let day = iso.get(..10).filter(|day| day.as_bytes().get(4) == Some(&b'-'));
     match (date.get("precision").and_then(Value::as_str).unwrap_or("DAY"), day) {
-        ("YEAR", Some(day)) => day[..4].to_owned(),
-        ("MONTH", Some(day)) => day[..7].to_owned(),
+        ("YEAR", Some(day)) => day.get(..4).unwrap_or(day).to_owned(),
+        ("MONTH", Some(day)) => day.get(..7).unwrap_or(day).to_owned(),
         (_, Some(day)) => day.to_owned(),
         (_, None) => year.map(|year| format!("{year:04}")).unwrap_or_default(),
     }

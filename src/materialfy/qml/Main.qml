@@ -23,12 +23,15 @@ Window {
     width: 1280
     height: 800
     // Меньше обычной раскладки окно уходит в «компактную» (сайдбар — шторкой), ещё меньше — в мини-плеер
-    minimumWidth: 280
+    // мини-режим: обложка, название и «назад / слушать / вперёд» — уже не помещаются
+    minimumWidth: 400
     minimumHeight: 120
     visible: false
     title: Player.hasTrack ? Player.title + " — " + Player.artist + " · Materialfy" : "Materialfy"
     // «Поверх всех окон» (кнопка мини-плеера, меню трека); не запоминается между запусками
     property bool pinnedOnTop: false
+    // закрепление — свойство мини-режима: окно, развёрнутое обратно, поверх всех не висит
+    onLayoutModeChanged: if (layoutMode !== "mini") pinnedOnTop = false
     // Кадры рисует процессор (программный рендер) — ставит mf_shell.cpp, watch_software_rendering
     property bool softwareRendering: false
     // Wayland: протокола «поверх всех окон» нет (GNOME, Weston флаг игнорируют), и окно не знает своих координат
@@ -443,7 +446,11 @@ Window {
         Component.onCompleted: Theme.wipe = themeWipe
     }
     Binding { target: Theme; property: "wipeDirection"; value: Player.direction }
-    Binding { target: Theme; property: "lowPower"; value: win.softwareRendering }
+    Binding {
+        target: Theme
+        property: "lowPower"
+        value: Settings.lowPowerMode === "on" || (Settings.lowPowerMode !== "off" && win.softwareRendering)
+    }
     // Окно не в фокусе (или свёрнуто) — декоративные анимации стоят
     // закреплённый мини-плеер висит на виду поверх других окон — его анимации не замирают и без фокуса
     Binding {
@@ -606,6 +613,18 @@ Window {
         id: snackbar
         anchors.fill: parent
         z: 2200
+    }
+    // Прошлый запуск упал или зависал (в crash.log новые записи) — предложить сообщить, один раз
+    Timer {
+        interval: 2500
+        running: CrashReport.pending
+        onTriggered: {
+            snackbar.show(I18n.t("Materialfy closed unexpectedly last time"), I18n.t("Report"), () => {
+                Qt.openUrlExternally(CrashReport.folder)
+                Qt.openUrlExternally(CrashReport.issueUrl)
+            }, 20000)
+            CrashReport.dismiss()
+        }
     }
 
     ResizeEdges { window: win }

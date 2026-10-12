@@ -22,19 +22,35 @@ pub async fn fetch_cover(http: &sf_api::Http, cover_dir: &Path, url: &str) -> Re
     if tokio::fs::metadata(&path).await.is_ok_and(|meta| meta.is_file() && meta.len() > 0) {
         return Ok(path);
     }
-    let response = http
-        .client()?
-        .get(url)
-        .send()
-        .await
-        .map_err(|error| format!("cover: {}", error.without_url()))?;
-    if !response.status().is_success() {
-        return Err(format!("cover: response {}", response.status()));
+    // картинка Spotify — по очереди с каждого его CDN (i.scdn.co в части сетей не открывается)
+    let client = http.client()?;
+    let mut failure = String::from("cover: no address");
+    let mut fetched = None;
+    for address in sf_api::image_hosts::mirrors(url) {
+        let attempt = async {
+            let response = client
+                .get(&address)
+                .timeout(std::time::Duration::from_secs(10))
+                .send()
+                .await
+                .map_err(|error| format!("cover: {}", error.without_url()))?;
+            if !response.status().is_success() {
+                return Err(format!("cover: response {}", response.status()));
+            }
+            response
+                .bytes()
+                .await
+                .map_err(|error| format!("cover: {}", error.without_url()))
+        };
+        match attempt.await {
+            Ok(bytes) => {
+                fetched = Some(bytes);
+                break;
+            }
+            Err(error) => failure = error,
+        }
     }
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|error| format!("cover: {}", error.without_url()))?;
+    let bytes = fetched.ok_or(failure)?;
     if bytes.is_empty() {
         return Err("cover: empty response".into());
     }

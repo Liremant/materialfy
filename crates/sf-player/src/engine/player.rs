@@ -301,6 +301,9 @@ pub enum PlayerCommand {
     Load(LoadSpec),
     /// Take over the active Connect session, including its queue and position.
     Transfer,
+    /// Fetch the track's audio ahead of time, so starting it does not wait for
+    /// the download (librespot keeps one preloaded track).
+    Preload(String),
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -756,6 +759,7 @@ impl Engine {
                 }
             },
             PlayerCommand::Transfer => spirc.transfer(None)?,
+            PlayerCommand::Preload(uri) => self.player.preload(SpotifyUri::from_uri(&uri)?),
             PlayerCommand::Load(spec) => {
                 let playing_track = spec
                     .offset_uri

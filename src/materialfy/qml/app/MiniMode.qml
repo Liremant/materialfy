@@ -103,6 +103,9 @@ Item {
             visible: Player.cover !== ""
             // крупная карточка — обложка 640 px, полоска — обычная
             source: cover.size > 160 && Player.coverLarge !== "" ? Player.coverLarge : Player.cover
+            fallbackKind: Player.album !== "" ? "album" : "track"
+            fallbackArtist: Player.artist.split(", ")[0]
+            fallbackTitle: Player.album !== "" ? Player.album : Player.title
             shape: Player.playing ? "cookie12" : "softSquare"
             pulse: Settings.coverPulse && Player.isLocal === true ? root.beat : 0
             MaskSpin { target: img; spinning: Settings.coverSpin && Player.playing && Player.isLocal === true }
@@ -148,16 +151,15 @@ Item {
         }
     }
 
-    // Кнопки окна не висят постоянно: пилюля в углу появляется при наведении («свернуть», «развернуть» —
-    // обратно в обычную раскладку, «закрыть»); закреплённое окно всегда показывает булавку — клик открепляет.
-    // «Развернуть» есть и в меню по ПКМ и по двойному клику, «Поверх всех окон» — в меню.
+    // Пилюля в углу: булавка «поверх всех окон» видна всегда (клик закрепляет и открепляет), «свернуть»,
+    // «развернуть» (обратно в обычную раскладку) и «закрыть» — при наведении. «Развернуть» есть и в меню по ПКМ
+    // и по двойному клику, «Поверх всех окон» — и в меню. Где закрепить нельзя (Wayland), пилюля — по наведению.
     HoverHandler { id: hover }
     Rectangle {
         id: chrome
         readonly property bool pinned: root.window.pinnedOnTop === true
-        // с Shift вместо «свернуть/закрыть» — булавка (Shift считывается при движении мыши над окном)
-        readonly property bool shift: hover.hovered && root.window.canPin !== false && (hover.point.modifiers & Qt.ShiftModifier) !== 0
-        readonly property bool shown: hover.hovered || pinned
+        readonly property bool canPin: root.window.canPin !== false
+        readonly property bool shown: hover.hovered || canPin
         anchors.top: parent.top
         anchors.right: parent.right
         anchors.margins: 10               // мимо зоны ресайза у края окна
@@ -177,26 +179,26 @@ Item {
             anchors.centerIn: parent
             spacing: 0
             IconButton {
-                visible: chrome.pinned || chrome.shift
+                visible: chrome.canPin
                 icon: "push_pin"; size: "xs"
                 checkable: true; autoToggle: false; checked: chrome.pinned
                 iconColor: checked ? Theme.fgSecondaryContainer : Theme.fgSurface
                 onClicked: root.window.pinnedOnTop = !chrome.pinned
             }
             IconButton {
-                visible: hover.hovered && !chrome.shift
+                visible: hover.hovered
                 icon: "remove"; size: "xs"; iconColor: Theme.fgSurface
                 Accessible.role: Accessible.Button; Accessible.name: I18n.t("Minimize")
                 onClicked: root.window.showMinimized()
             }
             IconButton {
-                visible: hover.hovered && !chrome.shift
+                visible: hover.hovered
                 icon: "open_in_full"; size: "xs"; iconColor: Theme.fgSurface
                 Accessible.role: Accessible.Button; Accessible.name: I18n.t("Expand")
                 onClicked: root.expandRequested()
             }
             IconButton {
-                visible: hover.hovered && !chrome.shift
+                visible: hover.hovered
                 icon: "close"; size: "xs"; iconColor: hovered ? Theme.error : Theme.fgSurface
                 Accessible.role: Accessible.Button; Accessible.name: I18n.t("Close")
                 onClicked: root.window.close()
@@ -226,13 +228,18 @@ Item {
                 id: cardCover
                 Layout.alignment: Qt.AlignHCenter | Qt.AlignVCenter
                 // «карточка»: обложка забирает всё, что осталось над названием и кнопками
+                // справа колонке нужно не меньше 230 px: название, время и «назад / слушать / вперёд»
                 size: root.landscape
-                      ? Math.max(64, Math.min(card.height - 32, card.width * 0.42))
+                      ? Math.max(64, Math.min(card.height - 32, card.width * 0.42, card.width - 32 - 16 - 230))
                       : Math.max(56, Math.min(card.width - 48, card.height - 40 - 16 - 172, 320))
             }
 
             ColumnLayout {
+                id: cardInfo
                 Layout.fillWidth: true
+                // ровно оставшееся место: длинная подпись или ряд кнопок не распирают колонку за край окна
+                Layout.preferredWidth: 0
+                Layout.minimumWidth: 0
                 Layout.fillHeight: root.landscape
                 Layout.topMargin: root.landscape ? 24 : 0     // под кнопками окна
                 spacing: 6
@@ -259,6 +266,8 @@ Item {
                 RemoteLabel {
                     visible: shown
                     Layout.alignment: root.landscape ? Qt.AlignLeft : Qt.AlignHCenter
+                    Layout.maximumWidth: cardInfo.width
+                    brief: cardInfo.width < 300
                 }
 
                 RowLayout {
@@ -364,15 +373,9 @@ Item {
                     brief: true
                 }
             }
-            IconButton {
-                visible: stripBox.width >= 360
-                icon: "skip_previous"; iconColor: Theme.fgSurface; enabled: Player.hasTrack; onClicked: Player.previous()
-            }
+            IconButton { icon: "skip_previous"; iconColor: Theme.fgSurface; enabled: Player.hasTrack; onClicked: Player.previous() }
             PlayControl { size: 48 }
-            IconButton {
-                visible: stripBox.width >= 300
-                icon: "skip_next"; iconColor: Theme.fgSurface; enabled: Player.hasTrack; onClicked: Player.next()
-            }
+            IconButton { icon: "skip_next"; iconColor: Theme.fgSurface; enabled: Player.hasTrack; onClicked: Player.next() }
             LikeButton { track: Player.track; visible: stripBox.width >= 420 && !Player.isEpisode }
         }
 

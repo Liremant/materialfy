@@ -1,4 +1,5 @@
 import QtQuick
+import Materialfy.Core
 
 // Картинка (обложка), обрезанная по фигуре MD3 с морфингом.
 // Один ShaderEffect (shaders/shapeimage.frag): текстура — сама Image, маска считается аналитически,
@@ -24,6 +25,43 @@ Item {
     // Картинка грузится, когда элемент впервые показан: скрытые плитки (свёрнутые ряды «Все»), закрытые
     // панели не держат декодированные обложки. Показанная однажды не выгружается. eager — грузить сразу.
     property bool eager: false
+
+    // Не загрузилась — ещё попытка (сетевой менеджер к тому времени переходит на другое зеркало Spotify), потом
+    // запасная обложка по названию (Covers: iTunes, Deezer, Яндекс). Повтор — с меткой #rN: Qt помнит неудачную
+    // загрузку адреса и тот же адрес сразу отдал бы ту же ошибку; фрагмент на сервер не уходит. fallbackKind: "album" | "track" |
+    // "artist"; fallbackArtist — первый исполнитель; fallbackTitle — альбом или трек (у исполнителя пусто).
+    property string fallbackKind
+    property string fallbackArtist
+    property string fallbackTitle
+    property int _tries: 0
+    property url _fallback
+    property string _fallbackKey
+    onSourceChanged: {
+        _tries = 0
+        _fallback = ""
+        _fallbackKey = ""
+        retry.stop()
+    }
+    function _failed() {
+        if (_tries < 1) {
+            retry.restart()
+        } else if (fallbackKind !== "" && fallbackArtist !== "" && _fallbackKey === "" && _fallback.toString() === "") {
+            _fallbackKey = Covers.find(fallbackKind, fallbackArtist, fallbackTitle)
+        }
+    }
+    Timer {
+        id: retry
+        interval: 1500
+        onTriggered: root._tries += 1
+    }
+    Connections {
+        target: root._fallbackKey !== "" ? Covers : null
+        function onFound(key, url) {
+            if (key === root._fallbackKey && url !== "")
+                root._fallback = url
+        }
+    }
+
     property bool _shownOnce: false
     onVisibleChanged: if (visible) _shownOnce = true
     Component.onCompleted: if (visible) _shownOnce = true
@@ -49,7 +87,9 @@ Item {
             return Math.max(16, Math.ceil(px / step) * step)
         }
         readonly property bool _sized: root.width > 0 && root.height > 0
-        source: _sized && (root.eager || root._shownOnce) ? root.source : ""
+        source: !_sized || !(root.eager || root._shownOnce) || root.source.toString() === "" ? ""
+              : root._fallback.toString() !== "" ? root._fallback
+              : root._tries > 0 ? root.source + "#r" + root._tries : root.source
         sourceSize: Qt.size(_fit(root.width * Screen.devicePixelRatio), _fit(root.height * Screen.devicePixelRatio))
         retainWhileLoading: true
         smooth: true
@@ -59,6 +99,8 @@ Item {
                 shown = true
             else if (status === Image.Error || status === Image.Null)
                 shown = false
+            if (status === Image.Error)
+                root._failed()
         }
     }
 

@@ -22,6 +22,10 @@ int app_exec();
 void app_destroy();
 void app_quit();
 void app_set_names(const QString& app, const QString& org, const QString& desktop);
+// Переменная окружения, которую видит и Qt (на Windows он читает копию C-рантайма, а не окружение процесса)
+void set_qt_env(const QString& name, const QString& value);
+// Windows: падение в нативном коде (Qt, драйвер) — код, модуль+смещение и цепочка вызовов в файл crash.log
+void install_native_crash_log(const QString& path);
 void app_set_quit_on_last_window_closed(bool value);
 void app_set_window_icon(const QString& path);
 // QFontDatabase::addApplicationFont; -1 — ошибка
@@ -45,6 +49,8 @@ bool system_color_scheme_dark();
 void watch_color_scheme();
 // Подписка на QGuiApplication::applicationStateChanged → Rust app_active_changed(bool) (опрос удалённого плеера)
 void watch_app_state();
+// GUI-поток жив: раз в секунду gui_heartbeat() (single_instance: зависшее окно не «показываем»)
+void start_gui_heartbeat();
 // Каталог в файловом менеджере (Settings.openCacheFolder)
 bool open_local_folder(const QString& path);
 

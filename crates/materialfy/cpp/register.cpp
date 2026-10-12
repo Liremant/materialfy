@@ -8,6 +8,8 @@
 
 #include "materialfy/src/bridges/auth.cxxqt.h"
 #include "materialfy/src/bridges/catalog.cxxqt.h"
+#include "materialfy/src/bridges/covers.cxxqt.h"
+#include "materialfy/src/bridges/crash_report.cxxqt.h"
 #include "materialfy/src/bridges/data.cxxqt.h"
 #include "materialfy/src/bridges/devices.cxxqt.h"
 #include "materialfy/src/bridges/home.cxxqt.h"
@@ -58,6 +60,8 @@ register_qml_types()
   singleton<Releases>("Releases");
   singleton<Social>("Social");
   singleton<Catalog>("Catalog");
+  singleton<Covers>("Covers");
+  singleton<CrashReport>("CrashReport");
   singleton<Lyrics>("Lyrics");
   singleton<Updater>("Updater");
   singleton<WindowShell>("WindowShell");

@@ -141,6 +141,73 @@ fn next_pops_the_queue_head_into_now_playing() {
     assert_eq!(engine_commands(&mut core), [PlayerCommand::Next]);
 }
 
+/// Следующая песня очереди скачивается заранее, пока играет текущая.
+#[test]
+fn the_next_queue_track_is_preloaded_while_the_current_one_plays() {
+    let mut core = headless();
+    playing(&mut core, "spotify:track:a");
+    core.local.position_ms = 4_000;
+    loaded_queue(&mut core, "spotify:track:a", &["spotify:track:b", "spotify:track:c"]);
+    core.tick();
+    assert_eq!(engine_commands(&mut core), [PlayerCommand::Preload("spotify:track:b".into())]);
+    // повторный tick не заказывает ту же песню снова
+    core.tick();
+    assert!(engine_commands(&mut core).is_empty(), "одного заказа на пару треков достаточно");
+}
+
+/// Загрузка вперёд ждёт, пока текущий трек заиграет: сначала качается он сам.
+#[test]
+fn nothing_is_preloaded_before_the_current_track_plays() {
+    let mut core = headless();
+    playing(&mut core, "spotify:track:a");
+    core.local.position_ms = 500;
+    loaded_queue(&mut core, "spotify:track:a", &["spotify:track:b"]);
+    core.tick();
+    assert!(engine_commands(&mut core).is_empty(), "первые секунды трека — его собственные");
+
+    core.local.playback = Playback::Paused;
+    core.local.position_ms = 30_000;
+    core.tick();
+    assert!(engine_commands(&mut core).is_empty(), "на паузе вперёд не качаем");
+
+    core.local.playback = Playback::Playing;
+    core.tick();
+    assert_eq!(engine_commands(&mut core), [PlayerCommand::Preload("spotify:track:b".into())]);
+}
+
+/// Пока движок ещё тянет текущий трек, вперёд не заказываем: полоса нужна ему.
+#[test]
+fn nothing_is_preloaded_while_the_current_track_is_still_loading() {
+    let mut core = headless();
+    playing(&mut core, "spotify:track:a");
+    core.local.position_ms = 30_000;
+    core.local.loading = true;
+    loaded_queue(&mut core, "spotify:track:a", &["spotify:track:b"]);
+    core.tick();
+    assert!(engine_commands(&mut core).is_empty(), "текущий трек ещё качается");
+
+    core.local.loading = false;
+    core.tick();
+    assert_eq!(engine_commands(&mut core), [PlayerCommand::Preload("spotify:track:b".into())]);
+}
+
+/// На новом треке заказ вперёд вооружается заново: следующей становится песня после него.
+#[test]
+fn a_new_track_preloads_its_own_successor() {
+    let mut core = headless();
+    playing(&mut core, "spotify:track:a");
+    core.local.position_ms = 4_000;
+    loaded_queue(&mut core, "spotify:track:a", &["spotify:track:b", "spotify:track:c"]);
+    core.tick();
+    assert_eq!(engine_commands(&mut core), [PlayerCommand::Preload("spotify:track:b".into())]);
+
+    playing(&mut core, "spotify:track:b");
+    core.local.position_ms = 4_000;
+    loaded_queue(&mut core, "spotify:track:b", &["spotify:track:c"]);
+    core.tick();
+    assert_eq!(engine_commands(&mut core), [PlayerCommand::Preload("spotify:track:c".into())]);
+}
+
 /// Плеер-бар называет следующую песню сразу, из строки очереди.
 #[test]
 fn next_shows_the_next_songs_title_before_the_engine_loads_it() {
@@ -194,6 +261,59 @@ fn an_engine_track_report_overrules_the_optimistic_queue_marker() {
     core.handle_local(reported);
     assert_eq!(core.current_track_uri().as_deref(), Some("spotify:track:black-dove"));
     assert!(core.intent_track.is_none());
+}
+
+/// Обновление прежнего трека (догрузились обложка, длительность), пока выбранный ещё грузится, не снимает
+/// намерение: иначе на экране мелькал предыдущий трек и возвращался выбранный.
+#[test]
+fn an_update_of_the_previous_track_keeps_the_chosen_one_on_screen() {
+    let mut core = headless();
+    playing(&mut core, "spotify:track:honey");
+    loaded_queue(&mut core, "spotify:track:honey", &["spotify:track:next"]);
+    core.next();
+    assert_eq!(core.current_track_uri().as_deref(), Some("spotify:track:next"));
+    let mut refreshed = core.local.clone();
+    refreshed.track = local_track("spotify:track:honey");
+    if let Some(track) = refreshed.track.as_mut() {
+        track.duration_ms += 1;
+    }
+    refreshed.track_sequence += 1;
+    core.handle_local(refreshed);
+    assert_eq!(core.current_track_uri().as_deref(), Some("spotify:track:next"));
+    assert!(core.intent_track.is_some());
+}
+
+/// Отказ в ключе — испорченная сессия: переподключиться сразу, но не чаще раза в 30 с.
+#[test]
+fn a_refused_audio_key_reconnects_the_session() {
+    let mut core = headless();
+    playing(&mut core, "spotify:track:honey");
+    core.take_effects();
+    let mut refused = core.local.clone();
+    refused.error = Some(crate::engine::player::AUDIO_KEY_REFUSED.into());
+    core.handle_local(refused.clone());
+    assert!(core.take_effects().iter().any(|effect| matches!(effect, Effect::Reconnect)));
+    let mut again = refused;
+    again.error = None;
+    core.handle_local(again.clone());
+    again.error = Some(crate::engine::player::AUDIO_KEY_REFUSED.into());
+    core.handle_local(again);
+    assert!(!core.take_effects().iter().any(|effect| matches!(effect, Effect::Reconnect)), "not twice in 30 s");
+}
+
+/// Три «недоступно» за 20 с — тоже переподключение (по тексту, который движок пишет на самом деле).
+#[test]
+fn repeated_unavailable_tracks_reconnect_the_session() {
+    let mut core = headless();
+    playing(&mut core, "spotify:track:honey");
+    core.take_effects();
+    for (i, uri) in ["spotify:track:a", "spotify:track:b", "spotify:track:c"].iter().enumerate() {
+        let mut failed = core.local.clone();
+        failed.error = Some(format!("{}: {uri}", crate::engine::player::UNAVAILABLE));
+        core.handle_local(failed);
+        let reconnect = core.take_effects().iter().any(|effect| matches!(effect, Effect::Reconnect));
+        assert_eq!(reconnect, i == 2, "after failure {i}");
+    }
 }
 
 /// Удалённое намерение снимается только опросом, начатым после команды; одно несовпадение терпим.

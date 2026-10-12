@@ -131,8 +131,9 @@ Item {
     // мелкий дрейф подтягивается плавно, перемотка — скачком.
     property real _basePos: 0
     property real _baseTime: 0
-    // пока говорит DJ, трек стоит на месте: позиция не идёт, хотя плеер «играет»
-    readonly property bool advancing: Player.playing && !Player.narrating
+    // пока говорит DJ, трек стоит на месте: позиция не идёт, хотя плеер «играет».
+    // То же, пока трек ещё грузится: «играет» в это время оптимистично, а звука нет.
+    readonly property bool advancing: Player.playing && !Player.narrating && !Player.buffering
     property bool _wasPlaying: advancing
 
     function playerPos() {

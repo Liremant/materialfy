@@ -92,7 +92,7 @@ Item {
                     Player.shuffle = !Player.shuffle
             }
         } }
-        Fold { shown: !root.compact; IconButton { icon: "skip_previous"; iconColor: Theme.fgSurface; enabled: Player.hasTrack; onClicked: Player.previous() } }
+        IconButton { icon: "skip_previous"; iconColor: Theme.fgSurface; enabled: Player.hasTrack; onClicked: Player.previous() }
         Item {
             implicitWidth: 52
             implicitHeight: 52
@@ -158,6 +158,9 @@ Item {
                         anchors.fill: parent
                         visible: Player.cover !== ""
                         source: Player.cover
+                        fallbackKind: Player.album !== "" ? "album" : "track"
+                        fallbackArtist: Player.artist.split(", ")[0]
+                        fallbackTitle: Player.album !== "" ? Player.album : Player.title
                         shape: Player.playing ? "cookie12" : "softSquare"
                         MaskSpin { target: miniCover; spinning: Settings.coverSpin && Player.playing && Player.isLocal === true }
                     }

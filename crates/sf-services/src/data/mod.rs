@@ -11,10 +11,14 @@ pub mod collection_session;
 pub mod fsio;
 /// локальная история прослушиваний (перенос history.rs)
 pub mod journal;
+/// полки главной аккаунта на диске: главная видна, пока сессия поднимается
+pub mod home_cache;
 /// главная, «Для тебя», топ, недавнее и подписи по URI через сессию (GraphQL и spclient), без Web API
 pub mod home_feed;
 /// реестр известных треков и «записей» (ISRC)
 pub mod known;
+/// дерево плейлистов аккаунта на диске: библиотека видна, пока сессия поднимается
+pub mod library_cache;
 /// «Любимые треки»: кэш на диске и оптимистичные намерения (перенос liked.rs)
 pub mod liked;
 /// постраничный список (перенос PagedList из model.rs)

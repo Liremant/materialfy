@@ -41,6 +41,8 @@ const TRACK_CACHE_LIMIT: usize = 2000;
 const KNOWN_CONTEXTS: usize = 200;
 /// Сколько ждать обещанный движок (ключи из хранилища, проверка /me, подключение librespot).
 const LOCAL_EXPECT_HOLD: Duration = Duration::from_secs(45);
+/// Сколько играет текущий трек, прежде чем тянуть следующую песню: сначала пусть скачается он сам.
+const PRELOAD_AFTER_MS: u32 = 3_000;
 /// Опросы без устройства, после которых удалённое устройство считается пропавшим.
 const LOST_AFTER_POLLS: u8 = 2;
 
@@ -252,6 +254,8 @@ pub(crate) struct TrackIntent {
     pub position_ms: u32,
     pub at: Instant,
     pub confirmation: TrackConfirmation,
+    /// что играло здесь, когда трек выбрали: его обновления (догрузилась обложка, длительность) намерение не снимают
+    pub from_uri: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -379,6 +383,8 @@ pub struct Core {
     pub(crate) queue_recheck_at: Option<Instant>,
     pub(crate) queue_stale_retries: u32,
     queue_cleared: Option<(HashSet<String>, Instant)>,
+    /// (трек, который играет, следующая песня) — что уже заказано вперёд: на новом треке вооружаемся заново
+    preloaded: Option<(String, String)>,
     pub(crate) queue_shuffle_pending: Option<QueueShufflePending>,
     pub(crate) queue_reorder_pending: Option<Instant>,
     pub manual_queue: Vec<String>,
@@ -465,6 +471,7 @@ impl Core {
             queue_recheck_at: None,
             queue_stale_retries: 0,
             queue_cleared: None,
+            preloaded: None,
             queue_shuffle_pending: None,
             queue_reorder_pending: None,
             manual_queue: Vec::new(),
@@ -615,14 +622,22 @@ impl Core {
             Target::Local => TrackConfirmation::Local,
             Target::Remote(_) => TrackConfirmation::Remote { after_poll: self.remote_poll_seq, mismatches: 0 },
         };
-        self.intent_track = Some(TrackIntent { uri, position_ms, at: Instant::now(), confirmation });
+        self.intent_track = Some(TrackIntent {
+            uri,
+            position_ms,
+            at: Instant::now(),
+            confirmation,
+            from_uri: self.local.track.as_ref().map(|track| track.uri.clone()),
+        });
     }
 
-    /// Локальный движок — источник истины: настоящая смена трека побеждает догадку очереди.
-    fn reconcile_local_track_intent(&mut self, track_changed: bool, reported: Option<&str>) {
+    /// Локальный движок — источник истины: настоящая смена трека побеждает догадку очереди. Настоящая — это
+    /// выбранный трек или любой другой, кроме игравшего до выбора (Spotify мог подменить трек версией для своего
+    /// рынка). Обновление прежнего трека — не она: иначе на экране мелькал предыдущий трек, пока грузится новый.
+    fn reconcile_local_track_intent(&mut self, reported: Option<&str>) {
         let settled = self.intent_track.as_ref().is_some_and(|intent| {
             matches!(intent.confirmation, TrackConfirmation::Local)
-                && (track_changed || reported == Some(intent.uri.as_str()))
+                && reported.is_some_and(|uri| uri == intent.uri || Some(uri) != intent.from_uri.as_deref())
         });
         if settled {
             self.intent_track = None;
@@ -948,7 +963,7 @@ impl Core {
         if state.playback != self.local.playback {
             self.optimistic_playing = None;
         }
-        self.reconcile_local_track_intent(track_changed, state.track.as_ref().map(|track| track.uri.as_str()));
+        self.reconcile_local_track_intent(state.track.as_ref().map(|track| track.uri.as_str()));
         let held_volume = self.held_local_volume(state.volume);
         if held_volume.is_none() {
             self.volume = state.volume;
@@ -961,13 +976,17 @@ impl Core {
         {
             let text = engine_error_text(error);
             self.notice(text);
-            // несколько «недоступно» подряд — испорченная сессия librespot: лечится новой
-            if error.starts_with("This item isn't available") {
+            // Испорченная сессия librespot лечится новой (воспроизведение подхватывается с той же позиции):
+            // ключ не выдан — сразу (Spotify перестаёт выдавать ключи этой сессии, у новой они есть: в РФ без
+            // VPN — минут через десять); «недоступно» — после трёх подряд (один бывает и по делу: регион).
+            // Раньше проверялся старый текст ошибки, которого движок уже не пишет, — переподключения не было.
+            let key_refused = error == crate::engine::player::AUDIO_KEY_REFUSED;
+            if key_refused || error.starts_with(crate::engine::player::UNAVAILABLE) {
                 let now = Instant::now();
                 self.unavailable_at.retain(|at| now.duration_since(*at) < Duration::from_secs(20));
                 self.unavailable_at.push(now);
-                if self.unavailable_at.len() >= 3
-                    && self.last_unavailable_reconnect.is_none_or(|at| at.elapsed() > Duration::from_secs(60))
+                if (key_refused || self.unavailable_at.len() >= 3)
+                    && self.last_unavailable_reconnect.is_none_or(|at| at.elapsed() > Duration::from_secs(30))
                 {
                     self.unavailable_at.clear();
                     self.last_unavailable_reconnect = Some(now);
@@ -1315,6 +1334,7 @@ impl Core {
         if self.session_dirty && self.last_session_save.elapsed() > SESSION_SAVE_DELAY {
             self.save_session();
         }
+        self.preload_next_track();
         self.check_shown_track();
     }
 
@@ -1331,6 +1351,40 @@ impl Core {
             .map(|now| if now.track.cover_large.is_empty() { now.track.cover } else { now.track.cover_large })
             .unwrap_or_default();
         self.effects.push(Effect::Cover(url));
+    }
+
+    /// Тянет следующую песню очереди заранее, пока играет текущая: переход (или Next) тогда начинается без
+    /// ожидания загрузки — librespot держит впереди только один трек, поэтому заказываем голову очереди, а на
+    /// новом треке вооружаемся заново. На удалённом устройстве загрузкой распоряжается оно само.
+    fn preload_next_track(&mut self) {
+        if !matches!(self.target(), Target::Local) {
+            return;
+        }
+        // движок, а не оптимистичный превью: пока трек ещё качается, «играет» врёт
+        let Some(now) = self.now_playing_live() else {
+            return;
+        };
+        // пока трек сам ещё качается, вперёд не заказываем — иначе следующая песня отбирает полосу
+        // у той, что вот-вот зазвучит, и старт затягивается на ровном месте
+        if !now.playing || now.loading || now.position_ms < PRELOAD_AFTER_MS {
+            return;
+        }
+        let next = self
+            .queue
+            .as_ref()
+            .and_then(|queue| queue.next.first())
+            .map(|item| item.uri().to_owned())
+            .filter(|uri| !uri.is_empty() && *uri != now.track.uri);
+        let Some(next) = next else {
+            return;
+        };
+        let current = now.track.uri.clone();
+        let ordered = self.preloaded.as_ref().is_some_and(|(was, want)| *was == current && *want == next);
+        if ordered {
+            return;
+        }
+        self.preloaded = Some((current, next.clone()));
+        self.engine(PlayerCommand::Preload(next));
     }
 
     pub(crate) fn poll_remote(&mut self) {

@@ -1,6 +1,6 @@
 //! Тексты (исполнитель «services-extra»): по PlayerEvent::TrackChanged с задержкой 350 мс (пролистывание подряд
-//! не запускает поиск на каждый трек) → mf-lyrics: кэш → Spotify первым (ExtraLrc: сессия librespot, color-lyrics →
-//! lrc_from_spotify) → NetEase/Musixmatch/LRCLIB. Выпуски — без текстов. Ответ для сменившегося трека отбрасывается.
+//! не запускает поиск на каждый трек) → mf-lyrics: кэш → Spotify первым (ExtraLrc: сессия librespot, ответ
+//! color-lyrics разбирает mf-lyrics) → NetEase/Musixmatch/LRCLIB. Выпуски — без текстов. Ответ для сменившегося трека отбрасывается.
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::Duration;
@@ -172,7 +172,7 @@ impl LyricsService {
     /// Кэш → Spotify → остальные источники mf-lyrics.
     async fn fetch(&self, track: &TrackItem) -> LyricsResult {
         let query = query_for(track);
-        let extra = spotify_lrc(self.player.clone(), track.play_uri());
+        let extra = spotify_json(self.player.clone(), track.play_uri());
         self.fetcher.fetch_cached(&query, Some(extra)).await
     }
 
@@ -188,8 +188,8 @@ impl LyricsService {
     }
 }
 
-/// Текст Spotify через сессию librespot. Без сессии (играет другое устройство) — «нет текста», не ошибка.
-fn spotify_lrc(player: PlayerHandle, uri: String) -> ExtraLrc {
+/// Ответ color-lyrics Spotify через сессию librespot. Без сессии (играет другое устройство) — «нет текста», не ошибка.
+fn spotify_json(player: PlayerHandle, uri: String) -> ExtraLrc {
     Arc::new(move || {
         let (player, uri) = (player.clone(), uri.clone());
         async move {
@@ -197,7 +197,7 @@ fn spotify_lrc(player: PlayerHandle, uri: String) -> ExtraLrc {
                 return Ok(None);
             }
             match tokio::time::timeout(SPOTIFY_TIMEOUT, player.lyrics_json(&uri)).await {
-                Ok(Ok(json)) => Ok(json.as_ref().and_then(mf_lyrics::lrc_from_spotify)),
+                Ok(Ok(json)) => Ok(json),
                 Ok(Err(e)) => Err(e),
                 Err(_) => Err("Spotify didn’t respond".to_owned()),
             }
