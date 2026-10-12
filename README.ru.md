@@ -1,4 +1,4 @@
-<p align="center"><a href="README.md">English</a> · <b>Русский</b></p>
+<p align="center"><a href="README.md">English</a> · <b>Русский</b> · <a href="README.pt-BR.md">Português</a></p>
 
 <div align="center">
 
