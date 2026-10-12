@@ -43,6 +43,15 @@ pub mod qobject {
         #[qproperty(f64, lyrics_font_scale, cxx_name = "lyricsFontScale", READ, WRITE = set_lyrics_font_scale, NOTIFY = lyrics_font_scale_changed)]
         /// "none" | "soft" | "strong" — затемняющая подложка
         #[qproperty(QString, lyrics_scrim, cxx_name = "lyricsScrim", READ, WRITE = set_lyrics_scrim, NOTIFY = lyrics_scrim_changed)]
+        #[qproperty(QString, lyrics_text_align, cxx_name = "lyricsTextAlign", READ, WRITE = set_lyrics_text_align, NOTIFY = lyrics_text_align_changed)]
+        #[qproperty(QString, lyrics_fill_mode, cxx_name = "lyricsFillMode", READ, WRITE = set_lyrics_fill_mode, NOTIFY = lyrics_fill_mode_changed)]
+        #[qproperty(QString, lyrics_visible_lines, cxx_name = "lyricsVisibleLines", READ, WRITE = set_lyrics_visible_lines, NOTIFY = lyrics_visible_lines_changed)]
+        #[qproperty(f64, lyrics_highlight, cxx_name = "lyricsHighlight", READ, WRITE = set_lyrics_highlight, NOTIFY = lyrics_highlight_changed)]
+        #[qproperty(f64, lyrics_blur_amount, cxx_name = "lyricsBlurAmount", READ, WRITE = set_lyrics_blur_amount, NOTIFY = lyrics_blur_amount_changed)]
+        #[qproperty(f64, lyrics_line_spacing, cxx_name = "lyricsLineSpacing", READ, WRITE = set_lyrics_line_spacing, NOTIFY = lyrics_line_spacing_changed)]
+        #[qproperty(bool, lyrics_animate, cxx_name = "lyricsAnimate", READ, WRITE = set_lyrics_animate, NOTIFY = lyrics_animate_changed)]
+        #[qproperty(bool, lyrics_show_source, cxx_name = "lyricsShowSource", READ, WRITE = set_lyrics_show_source, NOTIFY = lyrics_show_source_changed)]
+        #[qproperty(i32, lyrics_sync_ms, cxx_name = "lyricsSyncMs", READ, WRITE = set_lyrics_sync_ms, NOTIFY = lyrics_sync_ms_changed)]
         #[qproperty(QString, animations, READ, WRITE = set_animations, NOTIFY = animations_changed)]
         /// "auto" | "on" | "off" — режим для слабых ПК (Theme.lowPower)
         #[qproperty(QString, low_power_mode, cxx_name = "lowPowerMode", READ, WRITE = set_low_power_mode, NOTIFY = low_power_mode_changed)]
@@ -109,6 +118,15 @@ pub mod qobject {
         fn set_lyrics_mode(self: Pin<&mut Settings>, value: QString);
         fn set_lyrics_font_scale(self: Pin<&mut Settings>, value: f64);
         fn set_lyrics_scrim(self: Pin<&mut Settings>, value: QString);
+        fn set_lyrics_text_align(self: Pin<&mut Settings>, value: QString);
+        fn set_lyrics_fill_mode(self: Pin<&mut Settings>, value: QString);
+        fn set_lyrics_visible_lines(self: Pin<&mut Settings>, value: QString);
+        fn set_lyrics_highlight(self: Pin<&mut Settings>, value: f64);
+        fn set_lyrics_blur_amount(self: Pin<&mut Settings>, value: f64);
+        fn set_lyrics_line_spacing(self: Pin<&mut Settings>, value: f64);
+        fn set_lyrics_animate(self: Pin<&mut Settings>, value: bool);
+        fn set_lyrics_show_source(self: Pin<&mut Settings>, value: bool);
+        fn set_lyrics_sync_ms(self: Pin<&mut Settings>, value: i32);
         fn set_animations(self: Pin<&mut Settings>, value: QString);
         fn set_low_power_mode(self: Pin<&mut Settings>, value: QString);
         fn set_language(self: Pin<&mut Settings>, value: QString);
@@ -188,6 +206,33 @@ pub mod qobject {
         #[qsignal]
         #[cxx_name = "lyricsScrimChanged"]
         fn lyrics_scrim_changed(self: Pin<&mut Settings>);
+        #[qsignal]
+        #[cxx_name = "lyricsTextAlignChanged"]
+        fn lyrics_text_align_changed(self: Pin<&mut Settings>);
+        #[qsignal]
+        #[cxx_name = "lyricsFillModeChanged"]
+        fn lyrics_fill_mode_changed(self: Pin<&mut Settings>);
+        #[qsignal]
+        #[cxx_name = "lyricsVisibleLinesChanged"]
+        fn lyrics_visible_lines_changed(self: Pin<&mut Settings>);
+        #[qsignal]
+        #[cxx_name = "lyricsHighlightChanged"]
+        fn lyrics_highlight_changed(self: Pin<&mut Settings>);
+        #[qsignal]
+        #[cxx_name = "lyricsBlurAmountChanged"]
+        fn lyrics_blur_amount_changed(self: Pin<&mut Settings>);
+        #[qsignal]
+        #[cxx_name = "lyricsLineSpacingChanged"]
+        fn lyrics_line_spacing_changed(self: Pin<&mut Settings>);
+        #[qsignal]
+        #[cxx_name = "lyricsAnimateChanged"]
+        fn lyrics_animate_changed(self: Pin<&mut Settings>);
+        #[qsignal]
+        #[cxx_name = "lyricsShowSourceChanged"]
+        fn lyrics_show_source_changed(self: Pin<&mut Settings>);
+        #[qsignal]
+        #[cxx_name = "lyricsSyncMsChanged"]
+        fn lyrics_sync_ms_changed(self: Pin<&mut Settings>);
         #[qsignal]
         #[cxx_name = "animationsChanged"]
         fn animations_changed(self: Pin<&mut Settings>);
@@ -483,6 +528,15 @@ settings! {
     lyrics_mode: QString = LyricsMode, set_lyrics_mode, lyrics_mode_changed;
     lyrics_font_scale: f64 = LyricsFontScale, set_lyrics_font_scale, lyrics_font_scale_changed;
     lyrics_scrim: QString = LyricsScrim, set_lyrics_scrim, lyrics_scrim_changed;
+    lyrics_text_align: QString = LyricsTextAlign, set_lyrics_text_align, lyrics_text_align_changed;
+    lyrics_fill_mode: QString = LyricsFillMode, set_lyrics_fill_mode, lyrics_fill_mode_changed;
+    lyrics_visible_lines: QString = LyricsVisibleLines, set_lyrics_visible_lines, lyrics_visible_lines_changed;
+    lyrics_highlight: f64 = LyricsHighlight, set_lyrics_highlight, lyrics_highlight_changed;
+    lyrics_blur_amount: f64 = LyricsBlurAmount, set_lyrics_blur_amount, lyrics_blur_amount_changed;
+    lyrics_line_spacing: f64 = LyricsLineSpacing, set_lyrics_line_spacing, lyrics_line_spacing_changed;
+    lyrics_animate: bool = LyricsAnimate, set_lyrics_animate, lyrics_animate_changed;
+    lyrics_show_source: bool = LyricsShowSource, set_lyrics_show_source, lyrics_show_source_changed;
+    lyrics_sync_ms: i32 = LyricsSyncMs, set_lyrics_sync_ms, lyrics_sync_ms_changed;
     animations: QString = Animations, set_animations, animations_changed;
     low_power_mode: QString = LowPowerMode, set_low_power_mode, low_power_mode_changed;
     language: QString = Language, set_language, language_changed;

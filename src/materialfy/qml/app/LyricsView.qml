@@ -23,28 +23,31 @@ Item {
     // Стиль отображения:
     // "normal" — классический вид: каскад, размытые соседние строки, выравнивание влево;
     // "spicy" — крупная поющаяся строка со сглаженным градиентным заполнением и свечением;
-    // "karaoke" — как классический, но поющаяся строка крупнее соседних.
+    // "karaoke" — караоке: крупная строка с чёткой заливкой по словам и подъёмом без свечения.
     readonly property string mode: Settings.lyricsMode
     readonly property bool spicy: mode === "spicy"
     readonly property bool karaoke: mode === "karaoke"
 
-    // Параметры внешнего вида и поведения, определяемые выбранным стилем
-    readonly property string align: "left"
-    readonly property bool blurInactive: true
-    readonly property string linesMode: "all"
-    readonly property string fillMode: "word"
-    readonly property bool motion: true
-    readonly property real activeScale: spicy ? 1.28 : (karaoke ? 1.18 : 1.0)
-    readonly property real idleScale: karaoke ? 0.94 : 1.0
+    // Параметры внешнего вида и поведения: настройки переопределяют значения по умолчанию стиля
+    readonly property string align: Settings.lyricsTextAlign === "auto" ? "left" : Settings.lyricsTextAlign
+    readonly property real blurAmount: Settings.lyricsBlurAmount
+    readonly property bool blurInactive: blurAmount > 0.001
+    readonly property string linesMode: Settings.lyricsVisibleLines === "auto" ? "all" : Settings.lyricsVisibleLines
+    readonly property string fillMode: Settings.lyricsFillMode === "auto" ? "word" : Settings.lyricsFillMode
+    readonly property bool motion: Settings.lyricsAnimate && !Theme.reducedMotion
+    readonly property real activeScale: spicy ? 1.30 : (karaoke ? 1.20 : 1.0)
+    readonly property real idleScale: spicy ? 0.97 : 1.0
     readonly property real dimAlpha: 0.35
     readonly property bool uniformDim: false
-    readonly property real spacingScale: 1.0
-    property bool showSource: true
+    readonly property real baseSpacingScale: spicy ? 1.08 : 1.0
+    readonly property real spacingScale: baseSpacingScale * Settings.lyricsLineSpacing
+    readonly property real highlightMultiplier: Settings.lyricsHighlight
+    property bool showSource: Settings.lyricsShowSource
 
     property real fadeTopPct: 0.22
     property real fadeBottomPct: 0.18
-    property int scrollDuration: spicy ? 500 : 700
-    property int scrollStagger: spicy ? 0 : 45
+    property int scrollDuration: !Settings.lyricsAnimate ? 0 : (spicy ? 500 : 700)
+    property int scrollStagger: !Settings.lyricsAnimate ? 0 : (spicy ? 0 : 45)
     property int scrollLeadMs: 250
     property color textColor: Theme.fgSurface
     property int resumeMs: 3000
@@ -185,8 +188,13 @@ Item {
         }
     }
 
+    Connections {
+        target: Settings
+        function onLyricsSyncMsChanged() { root.tick() }
+    }
+
     function tick() {
-        pos = playerPos()
+        pos = playerPos() + Settings.lyricsSyncMs / 1000
         // строка становится активной (и начинает ехать) чуть раньше, чем её поют
         const at = pos + scrollLeadMs / 1000
         const L = lines
@@ -506,8 +514,14 @@ Item {
         readonly property real lineScale: isActive ? root.activeScale : root.idleScale
         readonly property real lineSize: root.fontSize * lineScale
         readonly property real rowH: lineSize * 1.22
-        // Фильтр видимости строк: все строки видны
-        readonly property bool inLineRange: true
+        // Фильтр видимости строк: "all" — все строки; "three" — активная и соседи; "one" — только активная
+        readonly property bool inLineRange: {
+            if (root.linesMode === "one")
+                return root.activeIndex < 0 ? index === 0 : dist === 0
+            if (root.linesMode === "three")
+                return root.activeIndex < 0 ? index <= 2 : dist <= 1
+            return true
+        }
 
         width: col.width
         // Свёрнутая пауза сохраняет волосок высоты: Column не расставляет элементы нулевого размера
@@ -619,7 +633,7 @@ Item {
             layer.effect: MultiEffect {
                 blurEnabled: true
                 blurMax: 16
-                blur: Math.min(1, 0.12 + 0.11 * Math.max(0, line.dist - 1))
+                blur: Math.min(1, (0.12 + 0.11 * Math.max(0, line.dist - 1)) * root.blurAmount)
                 autoPaddingEnabled: true
             }
 
@@ -730,7 +744,15 @@ Item {
         readonly property bool held: dur >= 1.1 && txt.length <= 14
         // root.pos читается, только пока строка активна
         readonly property real progress: lineActive ? root.wordProgress(modelData, root.pos) : 0
-        readonly property real glow: lineActive ? (root.spicy ? (0.6 * Math.sin(Math.PI * progress)) : (held ? Math.sin(Math.PI * progress) : 0)) : 0
+        readonly property real glow: {
+            if (!lineActive)
+                return 0
+            if (root.spicy)
+                return 0.55 * Math.sin(Math.PI * progress) * root.highlightMultiplier
+            if (root.karaoke)
+                return 0
+            return (held ? Math.sin(Math.PI * progress) : 0) * root.highlightMultiplier
+        }
 
         // Пробел на конце слова — из общей метрики, отмасштабированной под размер строки
         implicitWidth: label.implicitWidth + (spaced ? spaceMetrics.advanceWidth * (fontSize / Math.max(1, root.fontSize)) : 0)
@@ -762,7 +784,8 @@ Item {
             layer.enabled: word.lineActive && root.fillMode !== "off"
             layer.effect: ShaderEffect {
                 readonly property real featherPx: word.fontSize * 0.45
-                property real feather: root.spicy ? 0.35 : Math.min(0.5, featherPx / Math.max(1, label.width) / 2)
+                readonly property real baseFeather: root.spicy ? 0.32 : Math.min(0.5, featherPx / Math.max(1, label.width) / 2)
+                property real feather: baseFeather * root.highlightMultiplier
                 property real progress: root.fillMode === "line" ? (1.0 + feather) : (-feather + word.progress * (1 + 2 * feather))
                 property real dimAlpha: root.dimAlpha
                 property real glow: root.fillMode === "word" ? word.glow : 0
