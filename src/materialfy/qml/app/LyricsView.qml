@@ -16,31 +16,39 @@ Item {
     property real baseFontSize: 34
     property real fontSize: baseFontSize * Settings.lyricsFontScale
     property real anchorPos: Settings.lyricsAnchor
-    // Сколько строк видно: "all" — весь текст; "three" — активная и ±1; "one" — только активная
-    readonly property string linesMode: Settings.lyricsLines
-    // Режим заливки текста: "word" — по словам; "line" — строка целиком; "off" — без заливки
-    readonly property string fillMode: Settings.lyricsFill
     // Подложка под текстом: "none" — прозрачно; "soft" | "strong" — затемнение в цвет темы
     readonly property string scrimMode: Settings.lyricsScrim
     readonly property real scrimAlpha: scrimMode === "strong" ? 0.6 : (scrimMode === "soft" ? 0.28 : 0)
-    // Как выглядит колонка: "normal" — как было; "simple" — без размытия, приглушение ровное;
-    // "karaoke" — поющаяся строка крупнее соседних.
+
+    // Стиль отображения:
+    // "normal" — классический вид: каскад, размытые соседние строки, выравнивание влево;
+    // "spicy" — по центру, только 3 строки, без размытия, плавная прокрутка без каскада;
+    // "minimal" — по центру, только активная строка, статичный текст без заливки и анимаций;
+    // "karaoke" — как классический, но поющаяся строка крупнее соседних.
     readonly property string mode: Settings.lyricsMode
-    readonly property bool plain: mode === "simple"
+    readonly property bool spicy: mode === "spicy"
+    readonly property bool minimal: mode === "minimal"
     readonly property bool karaoke: mode === "karaoke"
-    // Выравнивание строк: "left" | "center" (перенос слов учитывает выравнивание)
-    readonly property string align: Settings.lyricsAlign
-    property real dimAlpha: Settings.lyricsDim
-    property bool blurInactive: Settings.lyricsBlur
+
+    // Параметры внешнего вида и поведения, определяемые выбранным стилем
+    readonly property string align: (spicy || minimal) ? "center" : "left"
+    readonly property bool blurInactive: !spicy && !minimal
+    readonly property string linesMode: minimal ? "one" : (spicy ? "three" : "all")
+    readonly property string fillMode: minimal ? "off" : "word"
+    readonly property bool motion: !minimal
+    readonly property real activeScale: karaoke ? 1.18 : (spicy ? 1.10 : 1.0)
+    readonly property real idleScale: karaoke ? 0.94 : (spicy ? 0.95 : 1.0)
+    readonly property real dimAlpha: spicy ? 0.45 : (minimal ? 0.30 : 0.35)
+    readonly property bool uniformDim: spicy || minimal
+    readonly property real spacingScale: spicy ? 1.15 : 1.0
+    property bool showSource: true
+
     property real fadeTopPct: 0.22
     property real fadeBottomPct: 0.18
-    // Каскад и анимация прокрутки: выключено — строки меняются сразу
-    readonly property bool motion: Settings.lyricsMotion
-    property int scrollDuration: motion ? 700 : 0
-    property int scrollStagger: motion ? 45 : 0
+    property int scrollDuration: minimal ? 0 : (spicy ? 520 : 700)
+    property int scrollStagger: (spicy || minimal) ? 0 : 45
     property int scrollLeadMs: 250
     property color textColor: Theme.fgSurface
-    property bool showSource: Settings.lyricsSource
     property int resumeMs: 3000
 
     readonly property var lines: Lyrics.lines
@@ -50,7 +58,7 @@ Item {
     readonly property bool live: visible && !stale && lines.length > 0
     onLiveChanged: if (live) { jumpTimer.restart(); sync(Player.positionMs / 1000); tick() }
     readonly property real rowH: fontSize * 1.22
-    readonly property real lineGap: fontSize * 0.62 * Settings.lyricsSpacing
+    readonly property real lineGap: fontSize * 0.62 * root.spacingScale
     readonly property real liftPx: fontSize * 0.07
     readonly property real sidePad: Math.max(12, fontSize * 0.4)
     readonly property var scrollBezier: [0.42, 0.0, 0.58, 1.0, 1.0, 1.0]
@@ -496,8 +504,9 @@ Item {
         readonly property int dist: root.activeIndex < 0 ? index + 1 : Math.abs(index - root.activeIndex)
         readonly property real gapProgress: isGap && isActive ? Math.max(0, Math.min(1, (root.pos - modelData.t) / Math.max(0.1, modelData.e - modelData.t))) : 0
         readonly property bool hovered: hover.hovered
-        // «Караоке»: поющаяся строка крупнее соседних — размер у строки свой, и высота считается по нему
-        readonly property real lineSize: root.fontSize * (root.karaoke ? (isActive ? 1.16 : 0.94) : 1)
+        // Масштаб строки зависит от стиля: в spicy и karaoke поющаяся строка крупнее соседних
+        readonly property real lineScale: isActive ? root.activeScale : root.idleScale
+        readonly property real lineSize: root.fontSize * lineScale
         readonly property real rowH: lineSize * 1.22
         // Фильтр видимости строк: "all" — все; "three" — активная и ±1; "one" — только активная
         readonly property bool inLineRange: root.linesMode === "one"
@@ -536,7 +545,7 @@ Item {
                 line.appear = 1
                 return
             }
-            appearAnim.delayMs = root.motion ? 120 + rel * 55 : 0
+            appearAnim.delayMs = (root.motion && !root.spicy) ? 120 + rel * 55 : 0
             appearAnim.start()
         })
         SequentialAnimation {
@@ -547,7 +556,7 @@ Item {
                 target: line
                 property: "appear"
                 to: 1
-                duration: root.motion ? 650 : 0
+                duration: root.motion ? (root.spicy ? 520 : 650) : 0
                 easing.type: Easing.BezierSpline
                 easing.bezierCurve: Theme.motion.emphasizedDecelerate
             }
@@ -606,10 +615,10 @@ Item {
 
             // Строка, начавшая заливаться, сразу непрозрачна: неспетые слова приглушает шейдер
             opacity: line.filling ? 1 : fadeOpacity
-            property real fadeOpacity: line.filling ? 1 : Math.max(0.22, root.dimAlpha * (line.hovered ? 1.9 : (root.plain ? 1 : (1 - 0.1 * Math.max(0, line.dist - 1)))))
+            property real fadeOpacity: line.filling ? 1 : Math.max(0.22, root.dimAlpha * (line.hovered ? 1.9 : (root.uniformDim ? 1 : (1 - 0.1 * Math.max(0, line.dist - 1)))))
             Behavior on fadeOpacity { NumberAnimation { duration: root.motion ? 380 : 0; easing.type: Easing.OutCubic } }
 
-            readonly property bool blurred: root.blurInactive && !root.plain && !line.filling && !line.hovered && line.dist < 8 && line.inLineRange
+            readonly property bool blurred: root.blurInactive && !line.filling && !line.hovered && line.dist < 8 && line.inLineRange
             layer.enabled: blurred
             layer.effect: MultiEffect {
                 blurEnabled: true

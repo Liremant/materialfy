@@ -38,28 +38,12 @@ pub enum SettingKey {
     CoverSpin,
     CoverPulse,
     CalmWhenInactive,
-    /// текст песни: "normal" (как было) | "simple" (без размытия и каскада) | "karaoke" (текущая строка крупнее)
+    /// текст песни: "normal" (как было) | "spicy" (по центру, 3 строки) | "minimal" (только активная, без анимации) | "karaoke" (текущая строка крупнее)
     LyricsMode,
     /// множитель размера шрифта текста (базовый размер задаёт место вызова)
     LyricsFontScale,
-    /// "left" | "center" — выравнивание строк текста
-    LyricsAlign,
-    /// прозрачность непоющихся строк
-    LyricsDim,
-    /// размывать непоющие строки
-    LyricsBlur,
-    /// множитель интервала между строками
-    LyricsSpacing,
-    /// каскад и анимация прокрутки при смене строки
-    LyricsMotion,
-    /// подпись источника под текстом
-    LyricsSource,
     /// положение активной строки по вертикали (0.15…0.55 от верха)
     LyricsAnchor,
-    /// количество отображаемых строк: "all" | "three" | "one"
-    LyricsLines,
-    /// режим заливки текста: "word" | "line" | "off"
-    LyricsFill,
     /// затемняющая подложка за текстом: "none" | "soft" | "strong"
     LyricsScrim,
     /// "system" | "full" | "reduced" → Theme.reducedMotion
@@ -150,7 +134,7 @@ pub enum SettingType {
 }
 
 impl SettingKey {
-    pub const ALL: [SettingKey; 65] = [
+    pub const ALL: [SettingKey; 57] = [
         SettingKey::ThemeMode,
         SettingKey::SchemeVariant,
         SettingKey::AccentFromCover,
@@ -166,15 +150,7 @@ impl SettingKey {
         SettingKey::CalmWhenInactive,
         SettingKey::LyricsMode,
         SettingKey::LyricsFontScale,
-        SettingKey::LyricsAlign,
-        SettingKey::LyricsDim,
-        SettingKey::LyricsBlur,
-        SettingKey::LyricsSpacing,
-        SettingKey::LyricsMotion,
-        SettingKey::LyricsSource,
         SettingKey::LyricsAnchor,
-        SettingKey::LyricsLines,
-        SettingKey::LyricsFill,
         SettingKey::LyricsScrim,
         SettingKey::Animations,
         SettingKey::LowPowerMode,
@@ -237,15 +213,7 @@ impl SettingKey {
             CalmWhenInactive => "calmWhenInactive",
             LyricsMode => "lyricsMode",
             LyricsFontScale => "lyricsFontScale",
-            LyricsAlign => "lyricsAlign",
-            LyricsDim => "lyricsDim",
-            LyricsBlur => "lyricsBlur",
-            LyricsSpacing => "lyricsSpacing",
-            LyricsMotion => "lyricsMotion",
-            LyricsSource => "lyricsSource",
             LyricsAnchor => "lyricsAnchor",
-            LyricsLines => "lyricsLines",
-            LyricsFill => "lyricsFill",
             LyricsScrim => "lyricsScrim",
             Animations => "animations",
             LowPowerMode => "lowPowerMode",
@@ -322,15 +290,7 @@ impl SettingKey {
             CalmWhenInactive => Bool(true),
             LyricsMode => Str("normal".into()),
             LyricsFontScale => Float(1.0),
-            LyricsAlign => Str("left".into()),
-            LyricsDim => Float(0.35),
-            LyricsBlur => Bool(true),
-            LyricsSpacing => Float(1.0),
-            LyricsMotion => Bool(true),
-            LyricsSource => Bool(true),
             LyricsAnchor => Float(0.33),
-            LyricsLines => Str("all".into()),
-            LyricsFill => Str("word".into()),
             LyricsScrim => Str("none".into()),
             Animations => Str("system".into()),
             LowPowerMode => Str("auto".into()),
@@ -1002,7 +962,7 @@ mod tests {
 
     #[test]
     fn schema() {
-        assert_eq!(SettingKey::ALL.len(), 65);
+        assert_eq!(SettingKey::ALL.len(), 57);
         for key in SettingKey::ALL {
             assert_eq!(SettingKey::from_name(key.name()), Some(key));
             assert_eq!(key.default_value().value_type(), key.value_type());
@@ -1274,8 +1234,7 @@ mod tests {
         for name in [
             "themeMode", "schemeVariant", "accentFromCover", "customSeed", "windowButtons", "trackTransition",
             "backdropMode", "nowPlayingBlur", "nowPlayingDrift", "ambientBackground", "coverSpin", "coverPulse",
-            "calmWhenInactive", "lyricsMode", "lyricsFontScale", "lyricsAlign", "lyricsDim", "lyricsBlur",
-            "lyricsSpacing", "lyricsMotion", "lyricsSource", "lyricsAnchor", "lyricsLines", "lyricsFill", "lyricsScrim", "animations", "lowPowerMode", "rightPanelOpen", "rightPanelTab", "sidebarCollapsed", "windowWidth",
+            "calmWhenInactive", "lyricsMode", "lyricsFontScale", "lyricsAnchor", "lyricsScrim", "animations", "lowPowerMode", "rightPanelOpen", "rightPanelTab", "sidebarCollapsed", "windowWidth",
             "windowHeight", "windowX", "windowY", "windowMaximized", "closeToTray", "wheelStep", "libraryView",
             "librarySort", "homeHidden", "bitrate", "normalisation", "gapless", "autoplay", "volume", "audioDevice",
             "audioCache", "audioCacheMb", "playbackAuthorized", "deviceName", "webClientId", "proxyMode", "proxyHost",

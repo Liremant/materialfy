@@ -1178,41 +1178,16 @@ Page {
 
         SettingRow {
             title: I18n.t("Lyrics style")
-            description: Settings.lyricsMode === "simple" ? I18n.t("Plain lines: no blur, no cascade, even dimming")
-                         : Settings.lyricsMode === "karaoke" ? I18n.t("The singing line is larger than its neighbours")
-                         : I18n.t("Cascade scroll, blurred and dimmed inactive lines")
+            description: Settings.lyricsMode === "spicy" ? I18n.t("Spicy style: centred text, prominent singing line and only 3 lines")
+                         : Settings.lyricsMode === "minimal" ? I18n.t("Only the singing line, no animation")
+                         : Settings.lyricsMode === "karaoke" ? I18n.t("Like classic, but the singing line is noticeably larger")
+                         : I18n.t("As it was: cascade scroll, blurred neighbouring lines")
             ButtonGroup {
-                model: [I18n.t("Classic"), I18n.t("Simple"), I18n.t("Karaoke")]
+                model: [I18n.t("Classic"), I18n.t("Spicy"), I18n.t("Minimal"), I18n.t("Karaoke")]
                 autoSelect: false
                 size: page.compact ? "xs" : "s"
-                currentIndex: Math.max(0, ["normal", "simple", "karaoke"].indexOf(Settings.lyricsMode))
-                onActivated: i => Settings.lyricsMode = ["normal", "simple", "karaoke"][i]
-            }
-        }
-        SettingRow {
-            title: I18n.t("Lines shown")
-            description: Settings.lyricsLines === "one" ? I18n.t("Only the singing line")
-                         : Settings.lyricsLines === "three" ? I18n.t("Only the singing line and its neighbours")
-                         : I18n.t("All lines are visible")
-            ButtonGroup {
-                model: [I18n.t("All"), I18n.t("Three"), I18n.t("One")]
-                autoSelect: false
-                size: page.compact ? "xs" : "s"
-                currentIndex: Math.max(0, ["all", "three", "one"].indexOf(Settings.lyricsLines))
-                onActivated: i => Settings.lyricsLines = ["all", "three", "one"][i]
-            }
-        }
-        SettingRow {
-            title: I18n.t("Fill mode")
-            description: Settings.lyricsFill === "line" ? I18n.t("The whole line lights up at once while sung")
-                         : Settings.lyricsFill === "off" ? I18n.t("No sweep animation; the active line stays highlighted")
-                         : I18n.t("Words light up in time with the vocals")
-            ButtonGroup {
-                model: [I18n.t("Word"), I18n.t("Line"), I18n.t("Off")]
-                autoSelect: false
-                size: page.compact ? "xs" : "s"
-                currentIndex: Math.max(0, ["word", "line", "off"].indexOf(Settings.lyricsFill))
-                onActivated: i => Settings.lyricsFill = ["word", "line", "off"][i]
+                currentIndex: Math.max(0, ["normal", "spicy", "minimal", "karaoke"].indexOf(Settings.lyricsMode))
+                onActivated: i => Settings.lyricsMode = ["normal", "spicy", "minimal", "karaoke"][i]
             }
         }
         SettingRow {
@@ -1244,50 +1219,6 @@ Page {
             }
         }
         SettingRow {
-            title: I18n.t("Line alignment")
-            description: I18n.t("Where the text sits in the player")
-            ButtonGroup {
-                model: [I18n.t("Left"), I18n.t("Center")]
-                autoSelect: false
-                size: page.compact ? "xs" : "s"
-                currentIndex: Settings.lyricsAlign === "center" ? 1 : 0
-                onActivated: i => Settings.lyricsAlign = i === 1 ? "center" : "left"
-            }
-        }
-        SettingRow {
-            title: I18n.t("Line spacing")
-            description: I18n.t("{0}% of the default spacing", Math.round(Settings.lyricsSpacing * 100))
-            Slider {
-                wheelEnabled: false     // колесо прокручивает страницу, а не меняет настройку
-                width: 220
-                from: 0.6
-                to: 2
-                stepSize: 0.1
-                value: Settings.lyricsSpacing
-                valueText: v => Math.round(v * 100) + " %"
-                onMoved: v => Settings.lyricsSpacing = Math.round(v * 10) / 10
-            }
-        }
-        SettingRow {
-            title: I18n.t("Inactive lines")
-            description: I18n.t("How visible the lines that are not being sung are")
-            Slider {
-                wheelEnabled: false     // колесо прокручивает страницу, а не меняет настройку
-                width: 220
-                from: 0.15
-                to: 1
-                stepSize: 0.05
-                value: Settings.lyricsDim
-                valueText: v => Math.round(v * 100) + " %"
-                onMoved: v => Settings.lyricsDim = Math.round(v * 20) / 20
-            }
-        }
-        SettingRow {
-            title: I18n.t("Blur inactive lines")
-            description: I18n.t("Off keeps the whole text sharp")
-            Switch { checked: Settings.lyricsBlur; onToggled: c => Settings.lyricsBlur = c }
-        }
-        SettingRow {
             title: I18n.t("Background scrim")
             description: Settings.lyricsScrim === "soft" ? I18n.t("Soft tinted backing behind the lyrics")
                          : Settings.lyricsScrim === "strong" ? I18n.t("Prominent tinted backing behind the lyrics")
@@ -1299,16 +1230,6 @@ Page {
                 currentIndex: Math.max(0, ["none", "soft", "strong"].indexOf(Settings.lyricsScrim))
                 onActivated: i => Settings.lyricsScrim = ["none", "soft", "strong"][i]
             }
-        }
-        SettingRow {
-            title: I18n.t("Scroll animation")
-            description: I18n.t("Off changes the line at once, with no cascade")
-            Switch { checked: Settings.lyricsMotion; onToggled: c => Settings.lyricsMotion = c }
-        }
-        SettingRow {
-            title: I18n.t("Show lyrics source")
-            description: I18n.t("The provider’s name under the text")
-            Switch { checked: Settings.lyricsSource; onToggled: c => Settings.lyricsSource = c }
         }
     }
 
