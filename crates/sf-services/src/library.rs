@@ -643,7 +643,9 @@ impl LibraryService {
                             service.reload_with_session();
                             let wanted = {
                                 let state = lock(&service.state);
-                                state.account.is_some() && state.rootlist.is_none() && !state.rootlist_loading
+                                // список с диска (library_cache) — тоже повод: свежий rootlist заменит его
+                                state.account.is_some() && (state.rootlist.is_none() || !state.session_list)
+                                    && !state.rootlist_loading
                             };
                             if wanted {
                                 service.load_rootlist();
