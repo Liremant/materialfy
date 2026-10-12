@@ -3,8 +3,9 @@ import QtQuick.Shapes
 import QtQuick.Templates as T
 
 // Всплывающее меню MD3: карточка со списком пунктов у точки окна. Клик мимо или Esc — закрыть.
-// Карточки — отдельные всплывающие окна (Popup.Window): меню выходит за края окна приложения
-// (в мини-плеере 280×120 иначе не поместится) и прижимается к краям экрана.
+// Меню — отдельное всплывающее окно (Popup.Window): выходит за края окна приложения (в мини-плеере
+// 280×120 иначе не поместится) и прижимается к краям экрана. Подменю — в том же окне, рядом с карточкой:
+// Qt отдаёт мышь последнему открытому popup-окну, и в отдельном окне подменю главная карточка глохла.
 // Кладётся в окно: Menu { anchors.fill: parent }; open(items, point[, size]) — точка в координатах окна.
 // Пункт: { id, text, icon, enabled (true), checked (undefined — без галочки), hint (серый текст справа),
 // separator: true, submenu: [пункты] }.
@@ -42,8 +43,9 @@ Item {
     function closeSub() {
         hoverTimer.stop()
         sub.parentIndex = -1
-        subPopup.close()
+        _subOpen = false
     }
+    property bool _subOpen: false
 
     // Экран под якорем (окно может стоять на двух мониторах сразу) в глобальных координатах; панель задач
     // снизу/справа срезается по доступной области рабочего стола (availableGeometry экрана в QML не видна)
@@ -91,18 +93,14 @@ Item {
         const item = items[index]
         if (!_usable(item) || !item.submenu || item.submenu.length === 0)
             return
-        if (sub.parentIndex !== index || !subPopup.opened) {
+        if (sub.parentIndex !== index || !_subOpen) {
             sub.model = item.submenu
             sub.parentIndex = index
             sub.currentIndex = -1
             const row = main.rowAt(index)
-            const tl = row ? row.mapToGlobal(0, 0) : main.mapToGlobal(0, 0)
-            const cardTl = main.mapToGlobal(0, 0)
-            subPopup.rowY = tl.y
-            subPopup.cardLeft = cardTl.x
-            subPopup.cardRight = cardTl.x + main.width
-            subPopup.area = mainPopup.area
-            subPopup.open()
+            mainPopup.subRowY = row ? row.mapToItem(main, 0, 0).y : 0
+            _subOpen = true
+            subEnter.restart()
         }
         if (focusFirst) {
             sub.currentIndex = sub.step(-1, 1)
@@ -294,7 +292,7 @@ Item {
                         height: parent.height
                         radius: Theme.shape.medium
                         color: Theme.fgSurface
-                        opacity: (row.current && !hit.containsMouse) || (row.hasSub && subPopup.opened && sub.parentIndex === row.index)
+                        opacity: (row.current && !hit.containsMouse) || (row.hasSub && root._subOpen && sub.parentIndex === row.index)
                                  ? Theme.stateLayer.focus : 0
                         Behavior on opacity { NumberAnimation { duration: Theme.motion.effectsFast } }
                     }
@@ -410,47 +408,58 @@ Item {
         readonly property bool below: anchor.y + anchor.height + gap + main.height <= bounds.y + bounds.height - 8
                                       || anchor.y - gap - main.height < bounds.y + 8
                                          && bounds.y + bounds.height - anchor.y - anchor.height >= anchor.y - bounds.y
-        readonly property real gx: Math.max(bounds.x + 8, Math.min(bounds.x + bounds.width - main.width - 8,
-                                       toLeft ? anchor.x + anchor.width - main.width : anchor.x)) - root._pad
-        readonly property real gy: Math.max(bounds.y + 8, Math.min(bounds.y + bounds.height - main.height - 8,
-                                       below ? anchor.y + anchor.height + gap : anchor.y - gap - main.height)) - root._pad
-        x: toLocal(gx, gy).x
-        y: toLocal(gx, gy).y
+        // карточка в глобальных координатах
+        readonly property real mx: Math.max(bounds.x + 8, Math.min(bounds.x + bounds.width - main.width - 8,
+                                       toLeft ? anchor.x + anchor.width - main.width : anchor.x))
+        readonly property real my: Math.max(bounds.y + 8, Math.min(bounds.y + bounds.height - main.height - 8,
+                                       below ? anchor.y + anchor.height + gap : anchor.y - gap - main.height))
+        // подменю: справа от карточки, не влезает — слева; по вертикали — у строки-родителя (subRowY — от верха карточки)
+        property real subRowY: 0
+        readonly property real sx: mx + main.width - 4 + sub.width > area.x + area.width - 8
+                                   ? Math.max(area.x + 8, mx - sub.width + 4)
+                                   : mx + main.width - 4
+        readonly property real sy: Math.max(area.y + 8, Math.min(my + subRowY - 8, area.y + area.height - sub.height - 8))
+        // окно охватывает обе карточки
+        readonly property real left: root._subOpen ? Math.min(mx, sx) : mx
+        readonly property real top: root._subOpen ? Math.min(my, sy) : my
+        readonly property real right: root._subOpen ? Math.max(mx + main.width, sx + sub.width) : mx + main.width
+        readonly property real bottom: root._subOpen ? Math.max(my + main.height, sy + sub.height) : my + main.height
+        x: toLocal(left - root._pad, top - root._pad).x
+        y: toLocal(left - root._pad, top - root._pad).y
         closePolicy: T.Popup.CloseOnEscape | T.Popup.CloseOnPressOutside
         // раскрывается из угла у якоря
         transformOrigin: below ? (toLeft ? Item.TopRight : Item.TopLeft) : (toLeft ? Item.BottomRight : Item.BottomLeft)
         onClosed: root.closeSub()
-        card: main
+        card: pane
 
-        MenuCard {
-            id: main
-            level: 0
-            model: root.items
-        }
-    }
+        Item {
+            id: pane
+            implicitWidth: mainPopup.right - mainPopup.left
+            implicitHeight: mainPopup.bottom - mainPopup.top
 
-    // Подменю — справа от карточки, не влезает — слева; по вертикали — у строки-родителя
-    CardPopup {
-        id: subPopup
-        property real rowY: 0
-        property real cardLeft: 0
-        property real cardRight: 0
-        readonly property real gx: cardRight - 4 + sub.width > area.x + area.width - 8
-                                   ? Math.max(area.x + 8, cardLeft - sub.width + 4) - root._pad
-                                   : cardRight - 4 - root._pad
-        readonly property real gy: Math.max(area.y + 8, Math.min(rowY - 8, area.y + area.height - sub.height - 8)) - root._pad
-        parent: main
-        x: main.mapFromGlobal(gx, gy).x
-        y: main.mapFromGlobal(gx, gy).y
-        // клик мимо закрывает главное меню целиком, Esc и «←» обрабатывает карточка
-        closePolicy: T.Popup.NoAutoClose
-        transformOrigin: Item.TopLeft
-        card: sub
+            MenuCard {
+                id: main
+                x: mainPopup.mx - mainPopup.left
+                y: mainPopup.my - mainPopup.top
+                level: 0
+                model: root.items
+            }
 
-        MenuCard {
-            id: sub
-            level: 1
-            HoverHandler { onHoveredChanged: if (hovered) hoverTimer.stop() }
+            MenuCard {
+                id: sub
+                x: mainPopup.sx - mainPopup.left
+                y: mainPopup.sy - mainPopup.top
+                visible: root._subOpen
+                level: 1
+                transformOrigin: x < main.x ? Item.TopRight : Item.TopLeft
+                HoverHandler { onHoveredChanged: if (hovered) hoverTimer.stop() }
+
+                ParallelAnimation {
+                    id: subEnter
+                    NumberAnimation { target: sub; property: "opacity"; from: 0; to: 1; duration: Theme.motion.effectsFast }
+                    NumberAnimation { target: sub; property: "scale"; from: 0.9; to: 1; duration: Theme.motion.spatialFast; easing.type: Easing.OutBack }
+                }
+            }
         }
     }
 }
