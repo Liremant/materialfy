@@ -216,6 +216,39 @@ fn an_update_of_the_previous_track_keeps_the_chosen_one_on_screen() {
     assert!(core.intent_track.is_some());
 }
 
+/// Отказ в ключе — испорченная сессия: переподключиться сразу, но не чаще раза в 30 с.
+#[test]
+fn a_refused_audio_key_reconnects_the_session() {
+    let mut core = headless();
+    playing(&mut core, "spotify:track:honey");
+    core.take_effects();
+    let mut refused = core.local.clone();
+    refused.error = Some(crate::engine::player::AUDIO_KEY_REFUSED.into());
+    core.handle_local(refused.clone());
+    assert!(core.take_effects().iter().any(|effect| matches!(effect, Effect::Reconnect)));
+    let mut again = refused;
+    again.error = None;
+    core.handle_local(again.clone());
+    again.error = Some(crate::engine::player::AUDIO_KEY_REFUSED.into());
+    core.handle_local(again);
+    assert!(!core.take_effects().iter().any(|effect| matches!(effect, Effect::Reconnect)), "not twice in 30 s");
+}
+
+/// Три «недоступно» за 20 с — тоже переподключение (по тексту, который движок пишет на самом деле).
+#[test]
+fn repeated_unavailable_tracks_reconnect_the_session() {
+    let mut core = headless();
+    playing(&mut core, "spotify:track:honey");
+    core.take_effects();
+    for (i, uri) in ["spotify:track:a", "spotify:track:b", "spotify:track:c"].iter().enumerate() {
+        let mut failed = core.local.clone();
+        failed.error = Some(format!("{}: {uri}", crate::engine::player::UNAVAILABLE));
+        core.handle_local(failed);
+        let reconnect = core.take_effects().iter().any(|effect| matches!(effect, Effect::Reconnect));
+        assert_eq!(reconnect, i == 2, "after failure {i}");
+    }
+}
+
 /// Удалённое намерение снимается только опросом, начатым после команды; одно несовпадение терпим.
 #[test]
 fn remote_track_intent_waits_for_a_fresh_confirming_poll() {

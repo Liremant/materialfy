@@ -971,13 +971,17 @@ impl Core {
         {
             let text = engine_error_text(error);
             self.notice(text);
-            // несколько «недоступно» подряд — испорченная сессия librespot: лечится новой
-            if error.starts_with("This item isn't available") {
+            // Испорченная сессия librespot лечится новой (воспроизведение подхватывается с той же позиции):
+            // ключ не выдан — сразу (Spotify перестаёт выдавать ключи этой сессии, у новой они есть: в РФ без
+            // VPN — минут через десять); «недоступно» — после трёх подряд (один бывает и по делу: регион).
+            // Раньше проверялся старый текст ошибки, которого движок уже не пишет, — переподключения не было.
+            let key_refused = error == crate::engine::player::AUDIO_KEY_REFUSED;
+            if key_refused || error.starts_with(crate::engine::player::UNAVAILABLE) {
                 let now = Instant::now();
                 self.unavailable_at.retain(|at| now.duration_since(*at) < Duration::from_secs(20));
                 self.unavailable_at.push(now);
-                if self.unavailable_at.len() >= 3
-                    && self.last_unavailable_reconnect.is_none_or(|at| at.elapsed() > Duration::from_secs(60))
+                if (key_refused || self.unavailable_at.len() >= 3)
+                    && self.last_unavailable_reconnect.is_none_or(|at| at.elapsed() > Duration::from_secs(30))
                 {
                     self.unavailable_at.clear();
                     self.last_unavailable_reconnect = Some(now);
