@@ -396,14 +396,15 @@ Window {
                 Behavior on Layout.preferredWidth { NumberAnimation { duration: Theme.motion.spatialDefault; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.motion.emphasized } }
                 Behavior on Layout.leftMargin { NumberAnimation { duration: Theme.motion.spatialDefault; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.motion.emphasized } }
                 clip: true
-                // Закрытая панель не просто прозрачна, а скрыта: иначе её анимации (морфы пустой очереди,
-                // текст песни) крутятся за кадром и перерисовывают всё окно
-                visible: width > 0
 
-                // создаётся при первом открытии: в закрытом виде она не нужна, а собирать её дорого
+                // Создаётся при первом открытии: в закрытом виде она не нужна, а собирать её дорого.
+                // Закрытая не просто прозрачна, а скрыта: иначе её анимации (морфы пустой очереди, текст
+                // песни) крутятся за кадром и перерисовывают всё окно. (Скрыт Loader, а не место в RowLayout:
+                // невидимое место раскладка выкидывает вместе с промежутком, и страница стала бы шире.)
                 Loader {
                     width: 340
                     height: parent.height
+                    visible: parent.width > 0
                     active: win.panelShown || item !== null
                     sourceComponent: RightPanel {
                         opacity: win.panelShown ? 1 : 0
