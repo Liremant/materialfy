@@ -134,6 +134,20 @@ Item {
             // в самой узкой раскладке текст не залезает под лайк
             clip: true
 
+            // Колесо над обложкой и названием — громкость, как в мини-режиме: щелчок ±5 %, тачпад плавно
+            WheelHandler {
+                acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                onWheel: event => {
+                    if (Player.remote === true && Player.canSetVolume === false)
+                        return
+                    const touchpad = event.pixelDelta.y !== 0 && event.angleDelta.y % 120 !== 0
+                    const d = touchpad ? event.pixelDelta.y / 600 : event.angleDelta.y / 120 * 0.05
+                    Player.volume = Math.max(0, Math.min(1, Player.volume + d))
+                    volumeHint.opacity = 1
+                    volumeHintHide.restart()
+                }
+            }
+
             RowLayout {
                 anchors.fill: parent
                 spacing: 12
@@ -156,6 +170,23 @@ Item {
                         shape: "softSquare"
                         color: Theme.surfaceContainerHigh
                         Icon { anchors.centerIn: parent; name: Player.isEpisode ? "podcasts" : "music_note"; size: 24; color: Theme.fgSurfaceVariant }
+                    }
+                    // громкость колесом: проценты поверх обложки, гаснут через секунду
+                    Rectangle {
+                        id: volumeHint
+                        anchors.fill: parent
+                        radius: Theme.shape.medium
+                        color: Qt.alpha(Theme.surfaceContainerHighest, 0.88)
+                        opacity: 0
+                        visible: opacity > 0
+                        Behavior on opacity { NumberAnimation { duration: Theme.motion.effectsDefault } }
+                        Label {
+                            anchors.centerIn: parent
+                            text: Math.round(Player.volume * 100) + "%"
+                            type: "labelMedium"
+                            weight: 600
+                        }
+                        Timer { id: volumeHintHide; interval: 1000; onTriggered: volumeHint.opacity = 0 }
                     }
                     // играет другое устройство — его значок в углу обложки
                     DeviceBadge {
