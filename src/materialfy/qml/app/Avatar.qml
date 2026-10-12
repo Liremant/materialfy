@@ -22,7 +22,7 @@ MorphShape {
         anchors.centerIn: parent
         visible: root.initials !== "" && !root._photo
         text: root.initials
-        type: root.size >= 64 ? "headlineSmall" : root.size < 32 ? "labelSmall" : "titleSmall"
+        type: root.size >= 140 ? "displayLarge" : root.size >= 64 ? "headlineSmall" : root.size < 32 ? "labelSmall" : "titleSmall"
         weight: 600
         color: Theme.fgTertiaryContainer
     }

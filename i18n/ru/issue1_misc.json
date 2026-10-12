@@ -2,5 +2,9 @@
   "Devices": "Устройства",
   "Looking for devices…": "Ищем устройства…",
   "Redirect URI": "Redirect URI",
-  "Copy it into Redirect URIs of your app on developer.spotify.com exactly as shown, then paste the app's Client ID above.": "Скопируйте его в Redirect URIs вашего приложения на developer.spotify.com в точности как есть, затем вставьте Client ID приложения выше."
+  "Copy it into Redirect URIs of your app on developer.spotify.com exactly as shown, then paste the app's Client ID above.": "Скопируйте его в Redirect URIs вашего приложения на developer.spotify.com в точности как есть, затем вставьте Client ID приложения выше.",
+  "Your library": "Ваша медиатека",
+  "Music plays here and this computer shows up in Spotify Connect.": "Музыка играет здесь, а этот компьютер виден в Spotify Connect.",
+  "Control playback on your phone or speakers from here.": "Отсюда можно управлять музыкой на телефоне и колонках.",
+  "Open spotify.com": "Открыть spotify.com"
 }

@@ -50,7 +50,7 @@ Page {
     readonly property bool compact: width < 860 || height < 700
 
     title: login ? I18n.t("Sign-in") : I18n.t("Account")
-    showHeader: !login
+    showHeader: false
 
     function _go(name, props) {
         if (page.router)
@@ -380,87 +380,76 @@ Page {
             }
 
             // ================= Аккаунт =================
+            // Шапка профиля во всю ширину, под ней — медиатека счётчиками и состояние этого компьютера
             ColumnLayout {
+                id: acc
                 visible: !page.login
                 Layout.fillWidth: true
-                Layout.maximumWidth: 640
-                spacing: 16
+                spacing: 32
+                readonly property bool narrow: width < 720
+                readonly property string country: {
+                    const code = page.account.country ?? ""
+                    const name = code !== "" ? Qt.locale("en_" + code).nativeTerritoryName : ""
+                    return name !== "" ? name : code
+                }
 
-                Rectangle {
+                GridLayout {
                     Layout.fillWidth: true
-                    implicitHeight: signedInRow.implicitHeight + 48
-                    radius: Theme.shape.extraLarge
-                    color: Theme.surfaceContainerHigh
+                    Layout.topMargin: 16
+                    columns: acc.narrow ? 1 : 2
+                    columnSpacing: 32
+                    rowSpacing: 20
 
-                    RowLayout {
-                        id: signedInRow
-                        anchors.fill: parent
-                        anchors.margins: 24
-                        spacing: 20
-
-                        Item {
-                            Layout.alignment: Qt.AlignTop
-                            Layout.preferredWidth: 72
-                            Layout.preferredHeight: 72
-                            Avatar { anchors.fill: parent; size: 72; name: page.displayName }
-                            MorphImage {
-                                anchors.fill: parent
-                                visible: (page.account.avatar ?? "") !== "" && status === Image.Ready
-                                source: page.account.avatar ?? ""
-                                shape: "cookie9"
-                            }
+                    Item {
+                        readonly property int side: acc.narrow ? 120 : 184
+                        Layout.preferredWidth: side
+                        Layout.preferredHeight: side
+                        Layout.alignment: Qt.AlignVCenter
+                        Avatar { anchors.fill: parent; size: parent.side; name: page.displayName }
+                        MorphImage {
+                            anchors.fill: parent
+                            visible: (page.account.avatar ?? "") !== "" && status === Image.Ready
+                            source: page.account.avatar ?? ""
+                            shape: "cookie9"
                         }
+                    }
 
-                        ColumnLayout {
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        Layout.alignment: Qt.AlignVCenter
+                        spacing: 6
+                        Label {
+                            text: I18n.t("Spotify account").toUpperCase()
+                            type: "labelLarge"
+                            weight: 600
+                            font.letterSpacing: 1.2
+                            color: Theme.primary
+                        }
+                        Label {
                             Layout.fillWidth: true
-                            Layout.preferredWidth: 0      // чипы переносятся, а не распирают карточку
-                            spacing: 4
-                            Label { Layout.fillWidth: true; text: page.displayName !== "" ? page.displayName : I18n.t("Spotify account"); type: "headlineSmall"; weight: 600 }
-                            Label {
-                                Layout.fillWidth: true
-                                visible: text !== ""
-                                text: page.account.email ?? ""
-                                type: "bodyMedium"
-                                color: Theme.fgSurfaceVariant
-                            }
-                            Flow {
-                                Layout.fillWidth: true
-                                Layout.topMargin: 6
-                                spacing: 8
-                                Chip {
-                                    text: page.premium ? "Spotify Premium" : "Spotify Free"
-                                    icon: page.premium ? "workspace_premium" : "block"
-                                }
-                                Chip {
-                                    visible: Auth.tokenStorage === "keyring"
-                                    text: Qt.platform.os === "windows" ? I18n.t("Keys in Credential Manager") : I18n.t("Keys in the keychain")
-                                    icon: "lock"
-                                }
-                                Chip {
-                                    text: Auth.playbackState === "ready" ? I18n.t("Playing on this computer")
-                                        : Auth.playbackState === "premiumRequired" ? I18n.t("Remote only")
-                                        : I18n.t("Playback here isn't set up")
-                                    icon: Auth.playbackState === "ready" ? "computer" : "cast"
-                                    onClicked: page._go("playback")
-                                }
-                            }
-                            // узкая карточка: кнопки под подписями, а не справа
-                            Flow {
-                                visible: signedInRow.width < 520
-                                Layout.fillWidth: true
-                                Layout.topMargin: 8
-                                spacing: 8
-                                Button { text: I18n.t("Playback"); icon: "speaker"; style: "tonal"; onClicked: page._go("playback") }
-                                Button { text: I18n.t("Sign out"); icon: "logout"; style: "outlined"; onClicked: Auth.signOut() }
-                            }
+                            text: page.displayName !== "" ? page.displayName : I18n.t("Spotify account")
+                            type: acc.narrow ? "headlineLarge" : "displayMedium"
+                            weight: 700
                         }
-                        ColumnLayout {
-                            visible: signedInRow.width >= 520
-                            Layout.fillWidth: false
-                            Layout.alignment: Qt.AlignTop
+                        Label {
+                            Layout.fillWidth: true
+                            text: [page.premium ? "Spotify Premium" : "Spotify Free", acc.country, page.account.email ?? ""].filter(x => x).join(" · ")
+                            type: "bodyLarge"
+                            color: Theme.fgSurfaceVariant
+                        }
+                        Flow {
+                            Layout.fillWidth: true
+                            Layout.topMargin: 14
                             spacing: 8
-                            Button { Layout.fillWidth: true; text: I18n.t("Playback"); icon: "speaker"; style: "tonal"; onClicked: page._go("playback") }
-                            Button { Layout.fillWidth: true; text: I18n.t("Sign out"); icon: "logout"; style: "outlined"; onClicked: Auth.signOut() }
+                            Button { text: I18n.t("Playback"); icon: "speaker"; style: "tonal"; onClicked: page._go("playback") }
+                            Button {
+                                visible: (page.account.id ?? "") !== ""
+                                text: I18n.t("Open in Spotify")
+                                icon: "open_in_new"
+                                style: "outlined"
+                                onClicked: Qt.openUrlExternally("https://open.spotify.com/user/" + page.account.id)
+                            }
+                            Button { text: I18n.t("Sign out"); icon: "logout"; style: "outlined"; onClicked: Auth.signOut() }
                         }
                     }
                 }
@@ -470,15 +459,134 @@ Page {
                     Layout.fillWidth: true
                 }
 
+                // Медиатека: счётчики, клик открывает раздел
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 12
+                    SectionHeader { text: I18n.t("Your library") }
+                    GridLayout {
+                        id: stats
+                        Layout.fillWidth: true
+                        columns: Math.max(2, Math.min(4, Math.floor((width + columnSpacing) / 220)))
+                        columnSpacing: 12
+                        rowSpacing: 12
+                        StatCard { icon: "favorite"; value: Library.liked ? Library.liked.count : 0; label: I18n.t("Liked Songs"); onClicked: page._go("liked") }
+                        StatCard { icon: "queue_music"; value: Library.playlists ? Library.playlists.count : 0; label: I18n.t("Playlists"); onClicked: page._go("library", { kind: "playlists" }) }
+                        StatCard { icon: "album"; value: Library.albums ? Library.albums.count : 0; label: I18n.t("Albums"); onClicked: page._go("library", { kind: "albums" }) }
+                        StatCard { icon: "person"; value: Library.artists ? Library.artists.count : 0; label: I18n.t("Artists"); onClicked: page._go("library", { kind: "artists" }) }
+                    }
+                }
+
+                // Этот компьютер: звук и где лежат ключи входа
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 12
+                    SectionHeader { text: I18n.t("This computer") }
+                    GridLayout {
+                        Layout.fillWidth: true
+                        columns: acc.narrow ? 1 : 2
+                        columnSpacing: 12
+                        rowSpacing: 12
+                        InfoCard {
+                            icon: Auth.playbackState === "ready" ? "computer" : "cast"
+                            title: Auth.playbackState === "ready" ? I18n.t("Playing on this computer")
+                                 : Auth.playbackState === "premiumRequired" ? I18n.t("Remote only")
+                                 : I18n.t("Playback here isn't set up")
+                            text: Auth.playbackState === "ready" ? I18n.t("Music plays here and this computer shows up in Spotify Connect.")
+                                : I18n.t("Control playback on your phone or speakers from here.")
+                            action: I18n.t("Playback")
+                            onTriggered: page._go("playback")
+                        }
+                        InfoCard {
+                            icon: "lock"
+                            title: Auth.tokenStorage === "keyring"
+                                   ? (Qt.platform.os === "windows" ? I18n.t("Keys in Credential Manager") : I18n.t("Keys in the keychain"))
+                                   : I18n.t("Sign-in")
+                            text: I18n.t("Signing out removes this computer's keys from storage. You can revoke the app's permissions on spotify.com under “Apps”.")
+                            action: I18n.t("Open spotify.com")
+                            onTriggered: Qt.openUrlExternally("https://www.spotify.com/account/apps/")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Счётчик медиатеки: число крупно, подпись, значок; вся карточка — кнопка
+    component StatCard: Rectangle {
+        id: stat
+        property string icon
+        property int value
+        property string label
+        signal clicked()
+        Layout.fillWidth: true
+        implicitHeight: 112
+        radius: Theme.shape.large
+        color: Theme.surfaceContainerHigh
+        Icon {
+            x: 20
+            y: 20
+            name: stat.icon
+            size: 22
+            color: Theme.primary
+        }
+        Column {
+            x: 20
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: 16
+            width: parent.width - 40
+            Label { width: parent.width; text: stat.value.toLocaleString(Qt.locale(), "f", 0); type: "headlineMedium"; weight: 700 }
+            Label { width: parent.width; text: stat.label; type: "bodyMedium"; color: Theme.fgSurfaceVariant }
+        }
+        StateLayer { anchors.fill: parent; radius: stat.radius; onClicked: stat.clicked() }
+    }
+
+    // Карточка состояния: значок, заголовок, пояснение, кнопка
+    component InfoCard: Rectangle {
+        id: info
+        property string icon
+        property string title
+        property string text
+        property string action
+        signal triggered()
+        Layout.fillWidth: true
+        Layout.fillHeight: true
+        implicitHeight: infoCol.implicitHeight + 40
+        radius: Theme.shape.large
+        color: Theme.surfaceContainerHigh
+        RowLayout {
+            id: infoCol
+            x: 20
+            y: 20
+            width: parent.width - 40
+            spacing: 16
+            Rectangle {
+                Layout.alignment: Qt.AlignTop
+                implicitWidth: 44
+                implicitHeight: 44
+                radius: 22
+                color: Theme.secondaryContainer
+                Icon { anchors.centerIn: parent; name: info.icon; size: 22; color: Theme.fgSecondaryContainer }
+            }
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 4
+                Label { Layout.fillWidth: true; text: info.title; type: "titleMedium"; weight: 600 }
                 Label {
                     Layout.fillWidth: true
-                    text: I18n.t("Signing out removes this computer's keys from storage. You can revoke the app's permissions on spotify.com under “Apps”.")
-                    type: "bodySmall"
+                    text: info.text
+                    type: "bodyMedium"
                     color: Theme.fgSurfaceVariant
                     wrapMode: Text.WordWrap
                     elide: Text.ElideNone
-                    lineHeightMode: Text.ProportionalHeight
-                    lineHeight: 1.25
+                }
+                Button {
+                    Layout.topMargin: 4
+                    Layout.leftMargin: -12          // текстовая кнопка — вровень с текстом над ней
+                    visible: info.action !== ""
+                    text: info.action
+                    style: "text"
+                    onClicked: info.triggered()
                 }
             }
         }
