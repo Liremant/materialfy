@@ -15,6 +15,7 @@ layout(std140, binding = 0) uniform buf {
     vec4 box;           // (sx, sy, cropX, cropY): q = (uv·2 − 1)·box.xy — эффект чуть больше элемента под перелёт
     vec4 fill;          // заливка / подложка картинки
     vec4 stroke;        // цвет обводки
+    vec4 fade;          // растворение по вертикали: (u0, du, v0, dv), u = u0 + y·du, v = v0 + y·dv, 0 — нет
 };
 
 // Радиус полярной фигуры MD3 (как Shapes.radius): p0 = (kind, n, depth, p), p1 = (поворот, aspect, масштаб, фаза3),
@@ -61,6 +62,11 @@ void main() {
     if (misc.y > 0.0) {
         float band = inside * clamp(0.5 + d + misc.y, 0.0, 1.0);
         col = mix(col, vec4(stroke.rgb * stroke.a, stroke.a), band);
+    }
+    // Края растворяются: прозрачно при u ≤ 0 или v ≤ 0, полностью видно при u, v ≥ 1 (фон шапки, FloatingShapes)
+    if (fade != vec4(0.0)) {
+        float y = qt_TexCoord0.y;
+        col *= smoothstep(0.0, 1.0, fade.x + y * fade.y) * smoothstep(0.0, 1.0, fade.z + y * fade.w);
     }
     fragColor = col * qt_Opacity;
 }

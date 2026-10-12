@@ -20,6 +20,9 @@ Item {
     property alias overshoot: m.overshoot
     property alias livingSpeed: m.livingSpeed // скорость «дыхания» blob-фигур, 0 — заморозить
     property real pulse: 0                 // 0..1 — «дыхание» контура: впадины глубже, фигура чуть шире
+    // Растворение по вертикали без слоя (см. shape.frag): (u0, du, v0, dv) по y шейдера, 0 — нет
+    property alias fade: fx.fade
+    readonly property alias pad: fx.pad    // насколько шейдер выходит за элемент с каждой стороны, px
 
     function morphTo(next) { m.morphTo(next) }
     // Сменить фигуру сразу, без морфа (привязка m.shape не рвётся)
@@ -63,6 +66,7 @@ Item {
         property vector4d box: Qt.vector4d(width / Math.max(1, root.width), height / Math.max(1, root.height), 1, 1)
         property color fill: root.color
         property color stroke: root.strokeColor
+        property vector4d fade
         fragmentShader: Qt.resolvedUrl("shaders/shape.frag.qsb")
     }
 }

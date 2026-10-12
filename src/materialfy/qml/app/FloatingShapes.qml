@@ -11,6 +11,12 @@ Item {
     property int count: 6
     property string seed: ""
     property bool running: visible
+    // Края растворяются по вертикали (в своих координатах, px): прозрачно выше fadeFrom и ниже fadeTo,
+    // полностью видно через fadeIn / fadeOut от них. fadeIn = 0 — без растворения.
+    property real fadeFrom: 0
+    property real fadeIn: 0
+    property real fadeTo: height
+    property real fadeOut: 0
 
     property real _t: 0
 
@@ -64,9 +70,16 @@ Item {
             height: side
             x: modelData.x * root.width - side / 2 + modelData.ax * Math.sin(root._t * modelData.sx * 6.28 + modelData.ph)
             y: modelData.y * root.height - side / 2 + modelData.ay * Math.cos(root._t * modelData.sy * 6.28 + modelData.ph)
-            rotation: modelData.r0 + root._t * modelData.rs
+            // поворот контура в шейдере, а не элемента: растворение считается по вертикали шейдера
+            angle: modelData.r0 + root._t * modelData.rs
             shape: modelData.shape
             color: root.color
+            // y шейдера 0..1 ↔ [y − pad, y + side + pad] здесь
+            readonly property real _top: y - pad
+            readonly property real _span: side + 2 * pad
+            fade: root.fadeIn > 0 ? Qt.vector4d((_top - root.fadeFrom) / root.fadeIn, _span / root.fadeIn,
+                                                (root.fadeTo - _top) / root.fadeOut, -_span / root.fadeOut)
+                                  : Qt.vector4d(0, 0, 0, 0)
         }
     }
 }
