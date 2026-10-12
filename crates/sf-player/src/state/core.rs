@@ -252,6 +252,8 @@ pub(crate) struct TrackIntent {
     pub position_ms: u32,
     pub at: Instant,
     pub confirmation: TrackConfirmation,
+    /// что играло здесь, когда трек выбрали: его обновления (догрузилась обложка, длительность) намерение не снимают
+    pub from_uri: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -615,14 +617,22 @@ impl Core {
             Target::Local => TrackConfirmation::Local,
             Target::Remote(_) => TrackConfirmation::Remote { after_poll: self.remote_poll_seq, mismatches: 0 },
         };
-        self.intent_track = Some(TrackIntent { uri, position_ms, at: Instant::now(), confirmation });
+        self.intent_track = Some(TrackIntent {
+            uri,
+            position_ms,
+            at: Instant::now(),
+            confirmation,
+            from_uri: self.local.track.as_ref().map(|track| track.uri.clone()),
+        });
     }
 
-    /// Локальный движок — источник истины: настоящая смена трека побеждает догадку очереди.
-    fn reconcile_local_track_intent(&mut self, track_changed: bool, reported: Option<&str>) {
+    /// Локальный движок — источник истины: настоящая смена трека побеждает догадку очереди. Настоящая — это
+    /// выбранный трек или любой другой, кроме игравшего до выбора (Spotify мог подменить трек версией для своего
+    /// рынка). Обновление прежнего трека — не она: иначе на экране мелькал предыдущий трек, пока грузится новый.
+    fn reconcile_local_track_intent(&mut self, reported: Option<&str>) {
         let settled = self.intent_track.as_ref().is_some_and(|intent| {
             matches!(intent.confirmation, TrackConfirmation::Local)
-                && (track_changed || reported == Some(intent.uri.as_str()))
+                && reported.is_some_and(|uri| uri == intent.uri || Some(uri) != intent.from_uri.as_deref())
         });
         if settled {
             self.intent_track = None;
@@ -948,7 +958,7 @@ impl Core {
         if state.playback != self.local.playback {
             self.optimistic_playing = None;
         }
-        self.reconcile_local_track_intent(track_changed, state.track.as_ref().map(|track| track.uri.as_str()));
+        self.reconcile_local_track_intent(state.track.as_ref().map(|track| track.uri.as_str()));
         let held_volume = self.held_local_volume(state.volume);
         if held_volume.is_none() {
             self.volume = state.volume;

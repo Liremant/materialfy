@@ -196,6 +196,26 @@ fn an_engine_track_report_overrules_the_optimistic_queue_marker() {
     assert!(core.intent_track.is_none());
 }
 
+/// Обновление прежнего трека (догрузились обложка, длительность), пока выбранный ещё грузится, не снимает
+/// намерение: иначе на экране мелькал предыдущий трек и возвращался выбранный.
+#[test]
+fn an_update_of_the_previous_track_keeps_the_chosen_one_on_screen() {
+    let mut core = headless();
+    playing(&mut core, "spotify:track:honey");
+    loaded_queue(&mut core, "spotify:track:honey", &["spotify:track:next"]);
+    core.next();
+    assert_eq!(core.current_track_uri().as_deref(), Some("spotify:track:next"));
+    let mut refreshed = core.local.clone();
+    refreshed.track = local_track("spotify:track:honey");
+    if let Some(track) = refreshed.track.as_mut() {
+        track.duration_ms += 1;
+    }
+    refreshed.track_sequence += 1;
+    core.handle_local(refreshed);
+    assert_eq!(core.current_track_uri().as_deref(), Some("spotify:track:next"));
+    assert!(core.intent_track.is_some());
+}
+
 /// Удалённое намерение снимается только опросом, начатым после команды; одно несовпадение терпим.
 #[test]
 fn remote_track_intent_waits_for_a_fresh_confirming_poll() {
