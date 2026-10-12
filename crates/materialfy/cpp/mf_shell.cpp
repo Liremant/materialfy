@@ -46,6 +46,7 @@
 #include <cwchar>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 #if defined(Q_OS_LINUX)
@@ -441,12 +442,97 @@ watch_color_scheme()
   });
 }
 
+#if defined(Q_OS_WIN) && defined(_M_X64)
+namespace {
+std::atomic<long long> gui_tick_ms{ 0 };
+HANDLE gui_thread = nullptr;
+
+long long
+monotonic_ms()
+{
+  return static_cast<long long>(GetTickCount64());
+}
+
+// Стек приостановленного потока: адреса возврата по таблицам раскрутки x64 (без dbghelp и без выделения памяти,
+// пока поток стоит — он может держать блокировку кучи)
+USHORT
+capture_thread_stack(HANDLE thread, void** frames, USHORT capacity)
+{
+  CONTEXT context{};
+  context.ContextFlags = CONTEXT_FULL;
+  if (!GetThreadContext(thread, &context))
+    return 0;
+  USHORT count = 0;
+  while (count < capacity && context.Rip) {
+    frames[count++] = reinterpret_cast<void*>(context.Rip);
+    DWORD64 image_base = 0;
+    PRUNTIME_FUNCTION function = RtlLookupFunctionEntry(context.Rip, &image_base, nullptr);
+    if (!function) {
+      // листовая функция: адрес возврата на вершине стека
+      context.Rip = *reinterpret_cast<DWORD64*>(context.Rsp);
+      context.Rsp += 8;
+      continue;
+    }
+    void* handler_data = nullptr;
+    DWORD64 establisher = 0;
+    RtlVirtualUnwind(UNW_FLAG_NHANDLER, image_base, context.Rip, function, &context, &handler_data, &establisher, nullptr);
+  }
+  return count;
+}
+
+// Сторож: GUI-поток не отметился 10 с — окно «не отвечает». Его стек — в crash.log, один раз на зависание.
+void
+watch_gui_thread()
+{
+  bool reported = false;
+  for (;;) {
+    Sleep(2000);
+    const long long silent = monotonic_ms() - gui_tick_ms.load();
+    if (silent < 10000) {
+      reported = false;
+      continue;
+    }
+    if (reported || !gui_thread || !crash_log_path[0])
+      continue;
+    reported = true;
+    void* frames[64];
+    USHORT count = 0;
+    if (SuspendThread(gui_thread) != static_cast<DWORD>(-1)) {
+      count = capture_thread_stack(gui_thread, frames, 64);
+      ResumeThread(gui_thread);
+    }
+    FILE* file = nullptr;
+    if (_wfopen_s(&file, crash_log_path, L"ab") == 0 && file) {
+      fprintf(file, "=== hang · Materialfy · the GUI thread has not responded for %lld s\n", silent / 1000);
+      char where[MAX_PATH + 32];
+      for (USHORT i = 0; i < count; ++i) {
+        describe_address(frames[i], where, sizeof where);
+        fprintf(file, "  %2u %s\n", static_cast<unsigned>(i), where);
+      }
+      fclose(file);
+    }
+  }
+}
+} // namespace
+#endif
+
 void
 start_gui_heartbeat()
 {
   auto* timer = new QTimer(qApp);
   timer->setInterval(1000);
+#if defined(Q_OS_WIN) && defined(_M_X64)
+  QObject::connect(timer, &QTimer::timeout, qApp, [] {
+    gui_tick_ms.store(monotonic_ms());
+    gui_heartbeat();
+  });
+  gui_tick_ms.store(monotonic_ms());
+  DuplicateHandle(GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &gui_thread,
+                  THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION, FALSE, 0);
+  std::thread(watch_gui_thread).detach();
+#else
   QObject::connect(timer, &QTimer::timeout, qApp, [] { gui_heartbeat(); });
+#endif
   timer->start();
   gui_heartbeat();
 }
