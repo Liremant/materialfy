@@ -74,11 +74,24 @@ Item {
     Keys.onEscapePressed: compact && sheetOpen ? sheetOpen = false : hide()
 
     Behavior on reveal {
+        id: revealBehavior
         NumberAnimation {
             id: revealAnim
             // программный рендер — сразу: кадры раскрытия (два слоя и маска на весь экран) рисует процессор
             duration: Theme.lowPower ? 0 : Theme.reducedMotion ? Theme.motion.effectsDefault : root.open ? 820 : 620
             easing.type: Easing.Linear     // кривые — у каждой фазы свои, см. blob
+            onFinished: {
+                // последний шаг интерполяции может дать 0.999… (или 0.0001 при закрытии) — маска на
+                // весь экран или сам плеер остались бы «включёнными навсегда». Ставим ровно цель,
+                // ненадолго выключив Behavior, и возвращаем привязку.
+                const target = root.open ? 1 : 0
+                if (root.reveal !== target) {
+                    revealBehavior.enabled = false
+                    root.reveal = target
+                    root.reveal = Qt.binding(() => root.open ? 1 : 0)
+                    revealBehavior.enabled = true
+                }
+            }
         }
     }
 
