@@ -116,22 +116,27 @@ Item {
     // тень поднятой строки (Elevation кладётся рядом с bg — внутрь строки, сдвигается вместе с ней)
     Elevation { target: bg; level: root.dragging ? 2 : 0 }
 
-    Rectangle {
-        id: flash
+    // Вспышка и всё, что видно только в правке или под курсором, создаётся по требованию: строк в списке
+    // десятки, а мигает, правится или наведена одна
+    Loader {
         anchors.fill: parent
-        radius: Theme.shape.large
-        color: Theme.primary
-        opacity: 0
-        SequentialAnimation {
-            running: root.highlighted && Theme.reducedMotion !== true
-            loops: 2
-            NumberAnimation { target: flash; property: "opacity"; to: 0.18; duration: Theme.motion.effectsDefault }
-            NumberAnimation { target: flash; property: "opacity"; to: 0; duration: Theme.motion.effectsDefault * 2 }
-        }
-        // reduced motion — без вспышки: ровная подсветка, пока строка помечена
-        states: State {
-            when: root.highlighted && Theme.reducedMotion === true
-            PropertyChanges { flash.opacity: 0.12 }
+        active: root.highlighted
+        sourceComponent: Rectangle {
+            id: flash
+            radius: Theme.shape.large
+            color: Theme.primary
+            opacity: 0
+            SequentialAnimation {
+                running: Theme.reducedMotion !== true
+                loops: 2
+                NumberAnimation { target: flash; property: "opacity"; to: 0.18; duration: Theme.motion.effectsDefault }
+                NumberAnimation { target: flash; property: "opacity"; to: 0; duration: Theme.motion.effectsDefault * 2 }
+            }
+            // reduced motion — без вспышки: ровная подсветка, пока строка помечена
+            states: State {
+                when: Theme.reducedMotion === true
+                PropertyChanges { flash.opacity: 0.12 }
+            }
         }
     }
 
@@ -152,24 +157,30 @@ Item {
             Behavior on Layout.preferredWidth { enabled: Theme.reducedMotion !== true; NumberAnimation { duration: Theme.motion.spatialFast; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.motion.emphasized } }
             Behavior on Layout.rightMargin { enabled: Theme.reducedMotion !== true; NumberAnimation { duration: Theme.motion.spatialFast; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.motion.emphasized } }
             clip: true
-            Icon {
-                anchors.centerIn: parent
-                name: "drag_indicator"
-                size: 22
-                color: handleHover.hovered || root.dragging ? Theme.fgSurface : Theme.fgSurfaceVariant
-                opacity: root.editable ? 1 : 0
-                Behavior on opacity { NumberAnimation { duration: Theme.motion.effectsDefault } }
-            }
-            HoverHandler { id: handleHover; cursorShape: root.dragging ? Qt.ClosedHandCursor : Qt.OpenHandCursor; enabled: root.editable }
-            DragHandler {
-                id: drag
-                enabled: root.editable
-                target: null
-                yAxis.enabled: true
-                xAxis.enabled: false
-                grabPermissions: PointerHandler.CanTakeOverFromAnything
-                onActiveChanged: active ? root.dragStarted() : root.dragFinished()
-                onTranslationChanged: if (active) root.dragMoved(translation.y, centroid.scenePosition.y)
+            // с первого входа в правку и остаётся (иконка гаснет при выходе)
+            Loader {
+                anchors.fill: parent
+                active: root.editable || item !== null
+                sourceComponent: Item {
+                    Icon {
+                        anchors.centerIn: parent
+                        name: "drag_indicator"
+                        size: 22
+                        color: handleHover.hovered || root.dragging ? Theme.fgSurface : Theme.fgSurfaceVariant
+                        opacity: root.editable ? 1 : 0
+                        Behavior on opacity { NumberAnimation { duration: Theme.motion.effectsDefault } }
+                    }
+                    HoverHandler { id: handleHover; cursorShape: root.dragging ? Qt.ClosedHandCursor : Qt.OpenHandCursor; enabled: root.editable }
+                    DragHandler {
+                        enabled: root.editable
+                        target: null
+                        yAxis.enabled: true
+                        xAxis.enabled: false
+                        grabPermissions: PointerHandler.CanTakeOverFromAnything
+                        onActiveChanged: active ? root.dragStarted() : root.dragFinished()
+                        onTranslationChanged: if (active) root.dragMoved(translation.y, centroid.scenePosition.y)
+                    }
+                }
             }
         }
 
@@ -311,30 +322,38 @@ Item {
                         onClicked: root.likeClicked()
                     }
                 }
-                IconButton {
-                    id: moreButton
+                // «⋯» — с первого наведения на строку
+                Loader {
                     width: 32
                     height: 32
-                    icon: "more_horiz"
-                    size: "xs"
-                    iconSize: 26
-                    iconWeight: 700
-                    enabled: !root.editable
-                    opacity: rowHover.hovered || pressed ? 1 : 0
-                    onClicked: root.openMenuAt(moreButton)
+                    active: rowHover.hovered || item !== null
+                    sourceComponent: IconButton {
+                        id: moreButton
+                        icon: "more_horiz"
+                        size: "xs"
+                        iconSize: 26
+                        iconWeight: 700
+                        enabled: !root.editable
+                        opacity: rowHover.hovered || pressed ? 1 : 0
+                        onClicked: root.openMenuAt(moreButton)
+                    }
                 }
             }
-            IconButton {
+            // «убрать» — с первого входа в правку
+            Loader {
                 anchors.right: parent.right
                 width: 32
                 height: 32
+                active: root.editable || item !== null
                 visible: opacity > 0
                 opacity: root._editT
                 Behavior on opacity { NumberAnimation { duration: Theme.motion.effectsDefault } }
-                icon: "remove_circle"
-                size: "xs"
-                iconColor: Theme.fgSurfaceVariant
-                onClicked: root.removeClicked()
+                sourceComponent: IconButton {
+                    icon: "remove_circle"
+                    size: "xs"
+                    iconColor: Theme.fgSurfaceVariant
+                    onClicked: root.removeClicked()
+                }
             }
         }
 

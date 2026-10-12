@@ -21,7 +21,7 @@ Item {
     property bool playing: false        // играет из этой плитки — иконка паузы
     property string badge
     property bool pinned: false
-    readonly property bool hovered: area.containsMouse || playArea.containsMouse
+    readonly property bool hovered: area.containsMouse || (playLoader.item !== null && playLoader.item.hovering)
 
     signal clicked()
     signal playClicked()
@@ -46,60 +46,77 @@ Item {
                 shape: root.hovered ? root.hoverShape : root.shape
                 duration: Theme.motion.spatialDefault
             }
-            MorphShape {
+            // Заглушка, плашка, булавка и «Слушать» создаются, только когда нужны: плиток на полках сотни,
+            // а без обложки, с плашкой или под курсором — единицы
+            Loader {
                 anchors.fill: parent
-                visible: root.cover === ""
-                shape: root.hovered ? root.hoverShape : root.shape
-                color: Theme.surfaceContainerHigh
-                Icon { anchors.centerIn: parent; name: root.placeholderIcon; size: root.size * 0.3; color: Theme.fgSurfaceVariant }
+                active: root.cover === ""
+                sourceComponent: MorphShape {
+                    shape: root.hovered ? root.hoverShape : root.shape
+                    color: Theme.surfaceContainerHigh
+                    Icon { anchors.centerIn: parent; name: root.placeholderIcon; size: root.size * 0.3; color: Theme.fgSurfaceVariant }
+                }
             }
 
-            Rectangle {
-                visible: root.badge !== ""
+            Loader {
                 x: 8
                 y: 8
-                implicitWidth: badgeLabel.implicitWidth + 12
-                implicitHeight: 20
-                radius: 6
-                color: Theme.primary
-                Label { id: badgeLabel; anchors.centerIn: parent; text: root.badge; type: "labelSmall"; weight: 700; color: Theme.fgPrimary }
+                active: root.badge !== ""
+                sourceComponent: Rectangle {
+                    implicitWidth: badgeLabel.implicitWidth + 12
+                    implicitHeight: 20
+                    radius: 6
+                    color: Theme.primary
+                    Label { id: badgeLabel; anchors.centerIn: parent; text: root.badge; type: "labelSmall"; weight: 700; color: Theme.fgPrimary }
+                }
             }
-            Rectangle {
-                visible: root.pinned
+            Loader {
                 anchors.right: parent.right
                 anchors.top: parent.top
                 anchors.margins: 8
-                width: 28
-                height: 28
-                radius: 14
-                color: Theme.primaryContainer
-                Icon { anchors.centerIn: parent; name: "push_pin"; size: 16; fill: 1; color: Theme.fgPrimaryContainer }
+                active: root.pinned
+                sourceComponent: Rectangle {
+                    width: 28
+                    height: 28
+                    radius: 14
+                    color: Theme.primaryContainer
+                    Icon { anchors.centerIn: parent; name: "push_pin"; size: 16; fill: 1; color: Theme.fgPrimaryContainer }
+                }
             }
 
             // «Слушать» по наведению: всплывает снизу и дорастает (OutBack)
-            Item {
-                id: playHost
-                visible: root.showPlay && opacity > 0
+            Loader {
+                id: playLoader
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
                 anchors.margins: 8
                 width: 48
                 height: 48
-                opacity: root.hovered || root.playing ? 1 : 0
-                scale: root.hovered || root.playing ? 1 : 0.8
-                transform: Translate { y: root.hovered || root.playing ? 0 : 8; Behavior on y { NumberAnimation { duration: Theme.motion.spatialFast; easing.type: Easing.OutBack } } }
-                Behavior on opacity { NumberAnimation { duration: Theme.motion.effectsDefault } }
-                Behavior on scale { NumberAnimation { duration: Theme.motion.spatialFast; easing.type: Easing.OutBack } }
-                PlayButton {
-                    anchors.fill: parent
-                    size: 48
-                    playing: root.playing
-                    spin: false
-                    pausedShape: "cookie6"
-                    playingShape: "cookie9"
-                    onClicked: root.playClicked()
+                active: root.showPlay && (root.hovered || root.playing || item !== null)
+                sourceComponent: Item {
+                    id: playHost
+                    readonly property bool hovering: playArea.containsMouse
+                    // созданная наведением кнопка всплывает с анимацией, уже играющая — сразу на месте
+                    property bool _armed: root.playing
+                    Component.onCompleted: Qt.callLater(() => _armed = true)
+                    readonly property bool shown: _armed && (root.hovered || root.playing)
+                    visible: opacity > 0
+                    opacity: shown ? 1 : 0
+                    scale: shown ? 1 : 0.8
+                    transform: Translate { y: playHost.shown ? 0 : 8; Behavior on y { NumberAnimation { duration: Theme.motion.spatialFast; easing.type: Easing.OutBack } } }
+                    Behavior on opacity { NumberAnimation { duration: Theme.motion.effectsDefault } }
+                    Behavior on scale { NumberAnimation { duration: Theme.motion.spatialFast; easing.type: Easing.OutBack } }
+                    PlayButton {
+                        anchors.fill: parent
+                        size: 48
+                        playing: root.playing
+                        spin: false
+                        pausedShape: "cookie6"
+                        playingShape: "cookie9"
+                        onClicked: root.playClicked()
+                    }
+                    MouseArea { id: playArea; anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.NoButton }
                 }
-                MouseArea { id: playArea; anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.NoButton }
             }
         }
 
