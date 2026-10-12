@@ -11,7 +11,11 @@ Item {
     id: root
 
     required property Window window
-    readonly property bool rounded: Qt.platform.os !== "windows" && window.visibility === Window.Windowed
+    // окно рисует свой край само (Linux / macOS, не развёрнуто)
+    readonly property bool framed: Qt.platform.os !== "windows" && window.visibility === Window.Windowed
+    // На программном рендере углы прямые: слой на всё окно — лишний проход по каждому пикселю в каждом кадре,
+    // а меняющееся содержимое «живого» слоя ещё и удваивает кадры (Qt просит следующий после каждого изменения)
+    readonly property bool rounded: framed && !Theme.lowPower
     readonly property real radius: rounded ? Theme.shape.large : 0
     // слой включается только после того, как содержимое перенесено: иначе эффект слоя (его ставят рядом,
     // в contentItem) попал бы внутрь самой рамки
@@ -36,7 +40,7 @@ Item {
     Rectangle {
         anchors.fill: parent
         z: 100000
-        visible: root.rounded
+        visible: root.framed
         radius: root.radius
         color: "transparent"
         border.width: 1

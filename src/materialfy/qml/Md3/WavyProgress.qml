@@ -34,7 +34,7 @@ Item {
     property real _phase: 0
 
     TickAnimation {
-        running: root.visible && root._amp > 0.01 && root.speed !== 0 && !Theme.calm
+        running: root.visible && root._amp > 0.01 && root.speed !== 0 && !Theme.quiet
         onTriggered: root._phase = (root._phase + frameTime * root.speed * Math.PI * 2) % (Math.PI * 2)
     }
 

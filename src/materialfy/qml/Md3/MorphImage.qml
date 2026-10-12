@@ -73,7 +73,9 @@ Item {
 
         readonly property real ready: image.shown && image.source.toString() !== "" ? 1 : 0
         property real _shown: ready
-        Behavior on _shown { enabled: !Theme.reducedMotion; NumberAnimation { duration: 150 } }
+        // на программном рендере обложка появляется сразу: затухания десятков обложек, догружающихся
+        // вразнобой, держали бы перерисовку окна секунду-другую после открытия страницы
+        Behavior on _shown { enabled: !Theme.reducedMotion && !Theme.lowPower; NumberAnimation { duration: 150 } }
 
         property var source: image
         property vector4d a0: m.a[0]
@@ -98,6 +100,6 @@ Item {
                                            _k < 1 ? _k : 1, _k > 1 ? 1 / _k : 1)
         property color fill: root.placeholderColor
         property color stroke: "transparent"
-        fragmentShader: Qt.resolvedUrl("shaders/shapeimage.frag.qsb")
+        fragmentShader: "shaders/shapeimage.frag.qsb"
     }
 }

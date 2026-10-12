@@ -58,7 +58,7 @@ Page {
             readonly property real below: 120     // запас под шапкой на растворение
             readonly property color tone: Theme.surfaceContainer
             // Высота слоя — ступенями 128 px, ниже фото — пустая полоса (cut): пока шапка дорастает,
-            // текстура слоя не пересоздаётся каждый кадр (см. HeroShapes)
+            // текстура слоя не пересоздаётся каждый кадр (драйвер D3D11 копит освобождённые текстуры)
             readonly property real contentHeight: above + 8 + hero.height + below
             width: page.width
             height: Math.ceil(contentHeight / 128) * 128

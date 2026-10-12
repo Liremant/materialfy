@@ -209,7 +209,7 @@ Item {
                         width: root.compact ? 72 : 120
                         height: 12
                         value: root.progress
-                        wavy: root.playing && !Theme.calm && !Theme.reducedMotion
+                        wavy: root.playing && !Theme.quiet && !Theme.reducedMotion
                         amplitude: 2
                         interactive: false
                     }

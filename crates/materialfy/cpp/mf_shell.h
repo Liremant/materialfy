@@ -75,6 +75,10 @@ void schedule_screenshot(QObject* window, const QString& path, int delay_ms);
 // (QQuickWindow::releaseResources with non-persistent graphics), collect JS garbage, compact the heaps and
 // trim the working set. Showing the window rebuilds everything on the first frame.
 void install_memory_trim(QObject* window);
+// Software rendering (llvmpipe, WARP, SwiftShader, Qt Quick software backend: the CPU draws every frame): once the
+// scene graph is up, the window gets softwareRendering = true and drops its decorative effects.
+// MATERIALFY_SOFTWARE_RENDERING=1 / 0 forces it either way.
+void watch_software_rendering(QObject* window);
 
 // Самый быстрый монитор — основным (display.py). Строка для лога.
 QString prefer_fastest_screen();

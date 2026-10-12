@@ -18,10 +18,10 @@ Item {
     readonly property bool landscape: !strip && width > height * 1.35
 
     // Позиция приходит ~5 раз в секунду; между обновлениями — плавно (как в мини-плеере)
-    property real progress: Player.position
-    Behavior on progress {
-        enabled: Player.playing && !cardSeek.dragging && !stripSeek.dragging && !Theme.calm
-        NumberAnimation { duration: 220; easing.type: Easing.Linear }
+    readonly property alias progress: playerProgress.value
+    PlayerProgress {
+        id: playerProgress
+        active: (cardSeek.visible || stripSeek.visible) && !cardSeek.dragging && !stripSeek.dragging
     }
 
     function _time(ms) {

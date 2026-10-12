@@ -48,6 +48,7 @@ pub mod ffi {
         fn post_quit();
         unsafe fn schedule_screenshot(window: *mut QObject, path: &QString, delay_ms: i32);
         unsafe fn install_memory_trim(window: *mut QObject);
+        unsafe fn watch_software_rendering(window: *mut QObject);
 
         fn prefer_fastest_screen() -> QString;
         fn icon_measure(text: &QString, size: i32) -> QRectF;

@@ -10,7 +10,7 @@ TickAnimation {
     property bool spinning: false
     property real speed: 8                 // градусов в секунду
 
-    running: spinning && target !== null && target.visible && !Theme.calm && !Theme.reducedMotion
+    running: spinning && target !== null && target.visible && !Theme.quiet && !Theme.reducedMotion
     onTriggered: target.maskRotation = (target.maskRotation + frameTime * speed) % 360
 
     onSpinningChanged: {

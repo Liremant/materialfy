@@ -181,7 +181,12 @@ Item {
     }
 
     FrameAnimation {
-        running: root.live && root.advancing
+        running: root.live && root.advancing && !Theme.lowPower
+        onTriggered: root.tick()
+    }
+    // программный рендер: заливка слов — по общим часам Ticker (~30 Гц), а не в каждом кадре монитора
+    TickAnimation {
+        running: root.live && root.advancing && Theme.lowPower
         onTriggered: root.tick()
     }
 
@@ -246,11 +251,14 @@ Item {
         opacity: root.stale || root._tearing ? 0 : 1
         Behavior on opacity { NumberAnimation { duration: 160 } }
 
-        // Края растворяются в прозрачность (а не в цвет фона — под текстом бывает обложка)
-        layer.enabled: true
+        // Края растворяются в прозрачность (а не в цвет фона — под текстом бывает обложка). На программном
+        // рендере — без слоя, края просто обрезаны: слой с меняющимся текстом удваивает кадры (Qt просит
+        // следующий после каждого изменения содержимого) и сам стоит лишнего прохода по всему тексту
+        layer.enabled: !Theme.lowPower
         layer.effect: ShaderEffect {
             property real fadeTop: root.fadeTopPx / Math.max(1, viewport.height)
             property real fadeBottom: root.fadeBottomPx / Math.max(1, viewport.height)
+            property real cut: 0
             fragmentShader: Qt.resolvedUrl("shaders/edgefade.frag.qsb")
         }
 

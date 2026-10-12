@@ -25,6 +25,13 @@ Item {
     // Окно не в фокусе: декоративные бесконечные анимации стоят. Каждая такая анимация заставляет
     // перерисовывать всё окно на частоте монитора — это основная нагрузка в фоне.
     property bool calm: false
+    // Кадры рисует процессор — программный рендер (llvmpipe, WARP: нет драйвера видеокарты; Main.qml берёт из
+    // softwareRendering окна). Каждый кадр там стоит десятки миллисекунд ядра: декоративное движение стоит всегда,
+    // окно без слоя-скругления.
+    property bool lowPower: false
+    // Декоративные бесконечные анимации (дрейф фигур и фона, вращение и «дыхание» обложек, бегущая волна) стоят.
+    // Индикаторы загрузки смотрят только на calm: на программном рендере они крутятся — это не украшение.
+    readonly property bool quiet: calm || lowPower
     // Минимум анимаций: настройка «Анимации» или системный флаг. Пространственные длительности
     // обнуляются, остаются короткие затухания; волны и морфы компоненты выключают сами.
     readonly property bool reducedMotion: Settings.animations === "reduced"
@@ -140,7 +147,10 @@ Item {
     Connections {
         target: ThemeEngine
         function onSchemeChanged() {
-            if (root.wipe !== null && root.wipe.visible)
+            // программный рендер: сразу, без шторки на всё окно (каждый её кадр процессор рисует целиком)
+            if (root.lowPower)
+                root._applyNow()
+            else if (root.wipe !== null && root.wipe.visible)
                 root.wipe.start(root.wipeDirection, root._applyNow)
             else
                 root._startTransition()

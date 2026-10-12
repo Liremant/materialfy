@@ -55,11 +55,8 @@ Item {
     }
 
     // Позиция приходит ~5 раз в секунду (у другого устройства — опросом); между обновлениями — плавно.
-    property real progress: Player.position
-    Behavior on progress {
-        enabled: Player.playing && !seekBar.dragging && !Theme.calm
-        NumberAnimation { duration: 220; easing.type: Easing.Linear }
-    }
+    readonly property alias progress: playerProgress.value
+    PlayerProgress { id: playerProgress; active: seekBar.visible && !seekBar.dragging }
 
     function _time(ms) {
         const s = Math.max(0, Math.round(ms / 1000))

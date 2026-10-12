@@ -29,6 +29,8 @@ Window {
     title: Player.hasTrack ? Player.title + " — " + Player.artist + " · Materialfy" : "Materialfy"
     // «Поверх всех окон» (кнопка мини-плеера, меню трека); не запоминается между запусками
     property bool pinnedOnTop: false
+    // Кадры рисует процессор (программный рендер) — ставит mf_shell.cpp, watch_software_rendering
+    property bool softwareRendering: false
     // Wayland: протокола «поверх всех окон» нет (GNOME, Weston флаг игнорируют), и окно не знает своих координат
     readonly property bool wayland: Qt.platform.pluginName.indexOf("wayland") === 0
     readonly property bool canPin: !wayland
@@ -386,11 +388,19 @@ Window {
                 Behavior on Layout.leftMargin { NumberAnimation { duration: Theme.motion.spatialDefault; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.motion.emphasized } }
                 clip: true
 
-                RightPanel {
+                // Создаётся при первом открытии: в закрытом виде она не нужна, а собирать её дорого.
+                // Закрытая не просто прозрачна, а скрыта: иначе её анимации (морфы пустой очереди, текст
+                // песни) крутятся за кадром и перерисовывают всё окно. (Скрыт Loader, а не место в RowLayout:
+                // невидимое место раскладка выкидывает вместе с промежутком, и страница стала бы шире.)
+                Loader {
                     width: 340
                     height: parent.height
-                    opacity: win.panelShown ? 1 : 0
-                    Behavior on opacity { NumberAnimation { duration: Theme.motion.effectsDefault } }
+                    visible: parent.width > 0
+                    active: win.panelShown || item !== null
+                    sourceComponent: RightPanel {
+                        opacity: win.panelShown ? 1 : 0
+                        Behavior on opacity { NumberAnimation { duration: Theme.motion.effectsDefault } }
+                    }
                 }
             }
         }
@@ -433,6 +443,7 @@ Window {
         Component.onCompleted: Theme.wipe = themeWipe
     }
     Binding { target: Theme; property: "wipeDirection"; value: Player.direction }
+    Binding { target: Theme; property: "lowPower"; value: win.softwareRendering }
     // Окно не в фокусе (или свёрнуто) — декоративные анимации стоят
     // закреплённый мини-плеер висит на виду поверх других окон — его анимации не замирают и без фокуса
     Binding {

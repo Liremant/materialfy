@@ -76,7 +76,8 @@ Item {
     Behavior on reveal {
         NumberAnimation {
             id: revealAnim
-            duration: Theme.reducedMotion ? Theme.motion.effectsDefault : root.open ? 820 : 620
+            // программный рендер — сразу: кадры раскрытия (два слоя и маска на весь экран) рисует процессор
+            duration: Theme.lowPower ? 0 : Theme.reducedMotion ? Theme.motion.effectsDefault : root.open ? 820 : 620
             easing.type: Easing.Linear     // кривые — у каждой фазы свои, см. blob
         }
     }
@@ -231,7 +232,7 @@ Item {
                     property: "levelsWanted"
                     // уровни нужны и мини-плееру (MiniMode): там обложка и фон тоже дышат в такт
                     value: ((root.visible && root.open) || (root.Window.window && root.Window.window.layoutMode === "mini"))
-                           && Settings.coverPulse && Player.playing && Player.isLocal === true && !Theme.calm
+                           && Settings.coverPulse && Player.playing && Player.isLocal === true && !Theme.quiet
                 }
                 property real avgLevel: 0
                 property real beat: 0
@@ -344,11 +345,8 @@ Item {
                 }
 
                 // Прогресс
-                property real progress: Player.position
-                Behavior on progress {
-                    enabled: Player.playing && !bigSeek.dragging && !Theme.calm
-                    NumberAnimation { duration: 220; easing.type: Easing.Linear }
-                }
+                readonly property alias progress: playerProgress.value
+                PlayerProgress { id: playerProgress; active: bigSeek.visible && !bigSeek.dragging }
                 RowLayout {
                     Layout.fillWidth: true
                     Layout.topMargin: 8

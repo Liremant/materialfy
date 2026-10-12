@@ -21,20 +21,12 @@ Item {
 
     visible: active && scroll < headerHeight + below
     y: -above - scroll
-    // Слой — по высоте ступенями 128 px, ниже шапки — пустая полоса (cut): пока шапка дорастает
-    // (анимация при открытии страницы), текстура слоя не пересоздаётся каждый кадр. Иначе драйвер
-    // D3D11 копит освобождённые текстуры — сотни МБ на секунды.
-    readonly property real _contentHeight: above + headerHeight + below
-    height: Math.ceil(_contentHeight / 128) * 128
+    height: above + headerHeight + below
+    clip: true
 
-    layer.enabled: visible
-    layer.effect: ShaderEffect {
-        property real fadeTop: root.above * 1.6 / Math.max(1, root.height)
-        property real fadeBottom: root.below * 1.4 / Math.max(1, root.height)
-        property real cut: 1 - root._contentHeight / Math.max(1, root.height)
-        fragmentShader: Qt.resolvedUrl("shaders/edgefade.frag.qsb")
-    }
-
+    // Растворение краёв считает шейдер каждой фигуры, а не слой поверх них: «живой» слой с меняющимся
+    // содержимым просит у окна лишний кадр после каждого изменения (плывущие фигуры перерисовывали окно
+    // дважды за тик), а на программном рендере ещё и сам стоит целого прохода по шапке.
     FloatingShapes {
         x: root.contentX
         y: root.above
@@ -43,5 +35,9 @@ Item {
         seed: root.seed
         opacity: root.shapesOpacity
         running: root.visible && root.running
+        fadeFrom: -root.above
+        fadeIn: root.above * 1.6
+        fadeTo: root.headerHeight + root.below
+        fadeOut: root.below * 1.4
     }
 }

@@ -106,7 +106,7 @@ Rectangle {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 20
                 value: root.durationMs > 0 ? root.positionMs / root.durationMs : 0
-                wavy: root.isCurrent && Player.playing && !Theme.calm && !Theme.reducedMotion
+                wavy: root.isCurrent && Player.playing && !Theme.quiet && !Theme.reducedMotion
                 interactive: root.durationMs > 0
                 onCommitted: v => root.playFrom(Math.round(v * root.durationMs))
             }
