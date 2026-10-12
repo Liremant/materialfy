@@ -109,7 +109,7 @@ Item {
             Label {
                 id: titleLabel
                 // не шире плитки (минус плашка «E»): длинное название не залезает на соседнюю, а затухает
-                Layout.preferredWidth: Math.min(naturalWidth, root.size - (root.explicit ? 20 : 0))
+                Layout.preferredWidth: Math.min(Math.ceil(naturalWidth), root.size - (root.explicit ? 20 : 0))
                 Layout.maximumWidth: Layout.preferredWidth
                 Layout.alignment: root.round ? Qt.AlignHCenter : Qt.AlignLeft
                 text: root.title

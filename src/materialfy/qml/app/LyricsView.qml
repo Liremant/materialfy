@@ -271,13 +271,18 @@ Item {
             target: null
             acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
             orientation: Qt.Vertical
+            property real fineUntil: 0   // тачпад Windows: доли щелчка — сразу, без доводки (см. SmoothScroll)
             onWheel: event => {
                 // тачпад узнаём по фазе жеста (см. SmoothScroll): пиксели 1:1, колесо — шагами с доводкой
                 if (event.phase !== Qt.NoScrollPhase) {
                     root.userScroll(event.pixelDelta.y, false)
                 } else {
+                    const a = Math.abs(event.angleDelta.y)
+                    const now = Date.now()
+                    if (a % 120 !== 0)
+                        fineUntil = now + 400
                     const notches = event.angleDelta.y !== 0 ? event.angleDelta.y / 120 : event.pixelDelta.y / 15
-                    root.userScroll(notches * Settings.wheelStep, true)
+                    root.userScroll(notches * Settings.wheelStep, now >= fineUntil)
                 }
             }
         }

@@ -5,7 +5,7 @@ import QtQuick.Templates as T
 // Всплывающее меню MD3: карточка со списком пунктов у точки окна. Клик мимо или Esc — закрыть.
 // Карточки — отдельные всплывающие окна (Popup.Window): меню выходит за края окна приложения
 // (в мини-плеере 280×120 иначе не поместится) и прижимается к краям экрана.
-// Кладётся в окно: Menu { anchors.fill: parent }; open(items, point) — точка в координатах окна.
+// Кладётся в окно: Menu { anchors.fill: parent }; open(items, point[, size]) — точка в координатах окна.
 // Пункт: { id, text, icon, enabled (true), checked (undefined — без галочки), hint (серый текст справа),
 // separator: true, submenu: [пункты] }.
 // picked(index) — выбран пункт верхнего уровня (индекс в списке); triggered(id, item) — любой выбранный пункт.
@@ -21,14 +21,17 @@ Item {
     // поле под тень карточки внутри прозрачного окна
     readonly property int _pad: 12
 
-    function open(list, point) {
+    // size — размер кнопки, у которой открыто меню (point — её левый верхний угол): карточка встаёт
+    // под кнопкой, правым краем к её правому краю, а не влезает вниз — над ней. Без size меню открывается
+    // от точки (курсор при ПКМ) вправо-вниз и отражается влево/вверх у края.
+    function open(list, point, size) {
         closeSub()
         items = list
         main.currentIndex = -1
         const g = root.mapToGlobal(point.x, point.y)
-        mainPopup.anchorX = g.x
-        mainPopup.anchorY = g.y
-        mainPopup.area = _screenArea()
+        mainPopup.anchor = Qt.rect(g.x, g.y, size ? size.width : 0, size ? size.height : 0)
+        mainPopup.area = _screenArea(g)
+        mainPopup.windowArea = _windowArea()
         mainPopup.open()
         main.forceActiveFocus()
     }
@@ -42,11 +45,17 @@ Item {
         subPopup.close()
     }
 
-    // Экран окна в глобальных координатах; панель задач снизу/справа срезается по доступной области
-    // рабочего стола (availableGeometry самого экрана в QML не видна)
-    function _screenArea() {
+    // Экран под якорем (окно может стоять на двух мониторах сразу) в глобальных координатах; панель задач
+    // снизу/справа срезается по доступной области рабочего стола (availableGeometry экрана в QML не видна)
+    function _screenArea(g) {
         const w = root.Window.window
-        const s = w ? w.screen : null
+        let s = w ? w.screen : null
+        for (const sc of Qt.application.screens) {
+            if (g.x >= sc.virtualX && g.x < sc.virtualX + sc.width && g.y >= sc.virtualY && g.y < sc.virtualY + sc.height) {
+                s = sc
+                break
+            }
+        }
         if (!s || !(s.width > 0)) {
             const o = root.mapToGlobal(0, 0)
             return Qt.rect(o.x, o.y, root.width, root.height)
@@ -58,6 +67,15 @@ Item {
         if (s.desktopAvailableHeight > s.virtualY)
             bottom = Math.min(bottom, s.desktopAvailableHeight)
         return Qt.rect(s.virtualX, s.virtualY, right - s.virtualX, bottom - s.virtualY)
+    }
+
+    // Окно приложения в глобальных координатах: меню держится внутри него, если помещается
+    function _windowArea() {
+        const w = root.Window.window
+        if (!w || !w.contentItem)
+            return Qt.rect(0, 0, 0, 0)
+        const o = w.contentItem.mapToGlobal(0, 0)
+        return Qt.rect(o.x, o.y, w.width, w.height)
     }
 
     function _usable(item) {
@@ -364,20 +382,37 @@ Item {
     }
 
     // Позиции — биндингами: размер карточки известен только после раскладки пунктов.
-    // Точка — левый верхний угол карточки; не влезает вниз — карточка над точкой; прижатие к экрану.
+    // Границы — окно приложения, если карточка в нём помещается (в мини-плеере — нет: тогда экран).
+    // По горизонтали: от кнопки — правым краем к её правому краю, от точки — вправо; не влезает — в другую
+    // сторону. По вертикали: под якорем, не влезает — над ним, не влезает и так — где места больше.
     CardPopup {
         id: mainPopup
-        property real anchorX: 0
-        property real anchorY: 0
-        readonly property real gx: Math.max(area.x + 8 - root._pad,
-                                            Math.min(anchorX - root._pad, area.x + area.width - main.width - 8 - root._pad))
-        readonly property real gy: anchorY + main.height + 8 > area.y + area.height
-                                   ? Math.max(area.y + 8, anchorY - main.height) - root._pad
-                                   : anchorY - root._pad
+        property rect anchor: Qt.rect(0, 0, 0, 0)
+        property rect windowArea: Qt.rect(0, 0, 0, 0)
+        readonly property real gap: anchor.height > 0 ? 4 : 0
+        readonly property rect bounds: {
+            const a = area, w = windowArea
+            if (w.width < main.width + 16 || w.height < main.height + 16)
+                return a
+            const l = Math.max(a.x, w.x), t = Math.max(a.y, w.y)
+            const r = Math.min(a.x + a.width, w.x + w.width), b = Math.min(a.y + a.height, w.y + w.height)
+            return r - l >= main.width + 16 && b - t >= main.height + 16 ? Qt.rect(l, t, r - l, b - t) : a
+        }
+        readonly property bool toLeft: anchor.width > 0
+                                       ? anchor.x + anchor.width - main.width >= bounds.x + 8
+                                       : anchor.x + main.width > bounds.x + bounds.width - 8
+        readonly property bool below: anchor.y + anchor.height + gap + main.height <= bounds.y + bounds.height - 8
+                                      || anchor.y - gap - main.height < bounds.y + 8
+                                         && bounds.y + bounds.height - anchor.y - anchor.height >= anchor.y - bounds.y
+        readonly property real gx: Math.max(bounds.x + 8, Math.min(bounds.x + bounds.width - main.width - 8,
+                                       toLeft ? anchor.x + anchor.width - main.width : anchor.x)) - root._pad
+        readonly property real gy: Math.max(bounds.y + 8, Math.min(bounds.y + bounds.height - main.height - 8,
+                                       below ? anchor.y + anchor.height + gap : anchor.y - gap - main.height)) - root._pad
         x: toLocal(gx, gy).x
         y: toLocal(gx, gy).y
         closePolicy: T.Popup.CloseOnEscape | T.Popup.CloseOnPressOutside
-        transformOrigin: Item.TopLeft
+        // раскрывается из угла у якоря
+        transformOrigin: below ? (toLeft ? Item.TopRight : Item.TopLeft) : (toLeft ? Item.BottomRight : Item.BottomLeft)
         onClosed: root.closeSub()
         card: main
 

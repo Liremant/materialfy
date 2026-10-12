@@ -466,8 +466,8 @@ Item {
                         iconWeight: 700
                         enabled: Player.hasTrack
                         onClicked: {
-                            const p = bigMore.mapToItem(null, 0, bigMore.height)
-                            Catalog.requestTrackMenu(Player.track, p.x, p.y)
+                            const p = bigMore.mapToItem(null, 0, 0)
+                            Catalog.requestTrackMenuAt(Player.track, p.x, p.y, bigMore.width, bigMore.height)
                         }
                     }
                 }

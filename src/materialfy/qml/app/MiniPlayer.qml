@@ -267,8 +267,8 @@ Item {
             iconColor: enabled ? Theme.fgSurface : Qt.alpha(Theme.fgSurface, Theme.stateLayer.disabledContent)
             enabled: Player.hasTrack
             onClicked: {
-                const p = miniMore.mapToItem(null, 0, miniMore.height)
-                Catalog.requestTrackMenu(Player.track, p.x, p.y)
+                const p = miniMore.mapToItem(null, 0, 0)
+                Catalog.requestTrackMenuAt(Player.track, p.x, p.y, miniMore.width, miniMore.height)
             }
         } }
         Fold { shown: !root.compact; Item { width: 8; height: 8 } }

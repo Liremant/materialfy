@@ -71,10 +71,11 @@ pub mod qobject {
         #[qsignal]
         #[cxx_name = "searchChanged"]
         fn search_changed(self: Pin<&mut Catalog>);
-        /// меню трека у точки (x, y) — его показывает главное окно
+        /// меню трека у точки (x, y) — его показывает главное окно; w, h > 0 — размер кнопки «⋯»
+        /// с левым верхним углом в (x, y): меню встаёт у неё
         #[qsignal]
         #[cxx_name = "trackMenuRequested"]
-        fn track_menu_requested(self: Pin<&mut Catalog>, track: QMap_QString_QVariant, x: f64, y: f64);
+        fn track_menu_requested(self: Pin<&mut Catalog>, track: QMap_QString_QVariant, x: f64, y: f64, w: f64, h: f64);
         /// ответ на requestTrackDetails: id трека и словарь TrackDetails (пустой — не загрузилось)
         #[qsignal]
         #[cxx_name = "trackDetailsReady"]
@@ -149,6 +150,10 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "requestTrackMenu"]
         fn request_track_menu(self: Pin<&mut Catalog>, track: &QMap_QString_QVariant, x: f64, y: f64);
+        /// меню трека у кнопки: (x, y) — её левый верхний угол в координатах окна, w × h — размер
+        #[qinvokable]
+        #[cxx_name = "requestTrackMenuAt"]
+        fn request_track_menu_at(self: Pin<&mut Catalog>, track: &QMap_QString_QVariant, x: f64, y: f64, w: f64, h: f64);
         /// Окно «О треке»: всё, что известно о треке {trackId, albumId} → trackDetailsReady.
         #[qinvokable]
         #[cxx_name = "requestTrackDetails"]
@@ -754,7 +759,11 @@ impl qobject::Catalog {
     }
 
     fn request_track_menu(self: Pin<&mut Self>, track: &QVariantMap, x: f64, y: f64) {
-        self.track_menu_requested(track.clone(), x, y);
+        self.track_menu_requested(track.clone(), x, y, 0.0, 0.0);
+    }
+
+    fn request_track_menu_at(self: Pin<&mut Self>, track: &QVariantMap, x: f64, y: f64, w: f64, h: f64) {
+        self.track_menu_requested(track.clone(), x, y, w, h);
     }
 }
 

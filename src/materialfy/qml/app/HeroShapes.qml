@@ -14,6 +14,7 @@ Item {
     property string seed
     property real shapesOpacity: 0.75
     property bool active: true
+    property bool running: true            // false — фигуры на месте, без движения
 
     readonly property real above: 64       // высота верхней панели над страницей
     readonly property real below: 140      // запас под шапкой на растворение
@@ -36,6 +37,6 @@ Item {
         height: root.headerHeight
         seed: root.seed
         opacity: root.shapesOpacity
-        running: root.visible
+        running: root.visible && root.running
     }
 }

@@ -125,9 +125,15 @@ Item {
     // Медленно плывущие фигуры за шапкой. Слой вне ListView (иначе его clip режет фигуры по краю
     // списка) и заходит под прозрачную верхнюю панель; сверху и снизу фигуры растворяются,
     // поэтому видимой рамки нет. Едет вместе с шапкой, стоит, когда она уехала из виду.
+    // Декоративное движение шапки стартует, когда страница доехала и список встал: открытие и так
+    // самый тяжёлый момент (создание страницы и строк, переход), не добавляем к нему перерисовки
+    property bool _settled: false
+    Timer { interval: 900; running: page.visible && !page._settled; onTriggered: page._settled = true }
+
     HeroShapes {
         width: page.width - page.contentRightInset
         active: page.showHeader && page.visible && Theme.reducedMotion !== true
+        running: page._settled
         headerHeight: list.headerItem ? list.headerItem.height : 320
         scroll: list.contentY - list.originY
         contentX: list.x
@@ -243,6 +249,7 @@ Item {
         }
 
         footer: Item {
+            id: footerBox
             width: list.width
             height: 120 + (page.model && page.model.loading && page.model.count > 0 ? 64 : 0) + extraLoader.height
             Loader {
@@ -255,6 +262,9 @@ Item {
                 anchors.horizontalCenter: parent.horizontalCenter
                 y: extraLoader.height
                 visible: page.model && page.model.loading && page.model.count > 0
+                // Длинный плейлист грузится страницами секундами; крутящийся индикатор перерисовывает окно
+                // с частотой монитора, поэтому крутится, только когда низ списка на экране
+                running: footerBox.y < list.contentY + list.height
             }
             Label {
                 anchors.horizontalCenter: parent.horizontalCenter
@@ -296,7 +306,7 @@ Item {
                     color: Theme.surfaceContainerHighest
                 }
                 TickAnimation {
-                    running: coverBackdrop.visible && page.visible && !Theme.calm && Theme.reducedMotion !== true
+                    running: coverBackdrop.visible && page.visible && page._settled && !Theme.calm && Theme.reducedMotion !== true
                              && list.contentY - list.originY < 300
                     onTriggered: coverBackdrop.rotation = (coverBackdrop.rotation + frameTime * 6) % 360
                 }

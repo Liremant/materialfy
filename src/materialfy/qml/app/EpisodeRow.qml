@@ -247,8 +247,8 @@ Item {
                         size: "xs"
                         visible: root.hovered || root.isCurrent
                         onClicked: {
-                            const p = moreButton.mapToItem(null, 0, moreButton.height)
-                            Catalog.requestTrackMenu(root.trackData(), p.x, p.y)
+                            const p = moreButton.mapToItem(null, 0, 0)
+                            Catalog.requestTrackMenuAt(root.trackData(), p.x, p.y, moreButton.width, moreButton.height)
                         }
                     }
                 }

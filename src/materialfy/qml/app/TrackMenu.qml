@@ -23,11 +23,12 @@ Item {
     readonly property var _win: root.Window.window
     readonly property bool _mini: !!_win && _win.layoutMode === "mini"
 
-    function show(t, point) {
+    // size — размер кнопки «⋯» с левым верхним углом в point (меню встаёт у неё); без него — у точки
+    function show(t, point, size) {
         track = t ?? ({})
         if (_id === "" && (track.uri ?? "") === "" && !_mini)
             return
-        menu.open(_items(), point)
+        menu.open(_items(), point, size)
     }
     function close() { menu.close() }
 

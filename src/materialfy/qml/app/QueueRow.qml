@@ -27,6 +27,10 @@ Item {
         const p = item.mapToItem(null, x, y)
         Catalog.requestTrackMenu(track, p.x, p.y)
     }
+    function openMenuAt(button) {   // у кнопки «⋯»
+        const p = button.mapToItem(null, 0, 0)
+        Catalog.requestTrackMenuAt(track, p.x, p.y, button.width, button.height)
+    }
     function _time(ms) {
         const s = Math.round((ms ?? 0) / 1000)
         if (s >= 3600)
@@ -100,7 +104,7 @@ Item {
                 Label {
                     // сжимается до ширины строки (иначе длинное название выталкивает длительность за край)
                     Layout.fillWidth: true
-                    Layout.maximumWidth: implicitWidth
+                    Layout.maximumWidth: Math.ceil(implicitWidth)
                     text: root.track.title ?? ""
                     type: "bodyLarge"
                     weight: 500
@@ -156,7 +160,7 @@ Item {
                 opacity: parent.menuShown ? 1 : 0
                 visible: opacity > 0
                 Behavior on opacity { NumberAnimation { duration: Theme.motion.effectsFast } }
-                onClicked: root.openMenu(moreButton, 0, moreButton.height)
+                onClicked: root.openMenuAt(moreButton)
             }
         }
     }

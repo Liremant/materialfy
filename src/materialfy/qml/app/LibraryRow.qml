@@ -95,7 +95,7 @@ Item {
                     spacing: 6
                     Label {
                         Layout.fillWidth: implicitWidth > width
-                        Layout.maximumWidth: implicitWidth
+                        Layout.maximumWidth: Math.ceil(implicitWidth)
                         text: root.kind === "liked" ? I18n.t("Liked Songs") : (root.entry.title ?? "")
                         type: "bodyLarge"
                         weight: 500

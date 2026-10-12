@@ -450,12 +450,12 @@ Window {
             artistMenu.refs = refs
             artistMenu.open(refs.map(r => ({ text: r.name, icon: "person" })), cursor.point.position)
         }
-        function onTrackMenuRequested(track, x, y) {
+        function onTrackMenuRequested(track, x, y, w, h) {
             artistPreview.hide()
             // «Убрать из этого плейлиста» — только на странице своего плейлиста
             const page = router.currentItem
             trackMenu.playlistId = !nowPlaying.open && router.currentName === "playlist" && page && page.canEdit ? page.playlistId : ""
-            trackMenu.show(track, Qt.point(x, y))
+            trackMenu.show(track, Qt.point(x, y), w > 0 && h > 0 ? Qt.size(w, h) : undefined)
         }
     }
     // Короткие сообщения сервисов; «не ответил» приходит только от Player

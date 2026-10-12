@@ -76,6 +76,11 @@ Item {
         const p = item.mapToItem(null, x, y)
         Catalog.requestTrackMenu(trackData(), p.x, p.y)
     }
+    // меню у кнопки «⋯»: под ней, правым краем к её правому краю
+    function openMenuAt(button) {
+        const p = button.mapToItem(null, 0, 0)
+        Catalog.requestTrackMenuAt(trackData(), p.x, p.y, button.width, button.height)
+    }
 
     function _time(ms) {
         const s = Math.round(ms / 1000)
@@ -193,7 +198,7 @@ Item {
                 spacing: 6
                 Label {
                     Layout.fillWidth: true
-                    Layout.maximumWidth: implicitWidth
+                    Layout.maximumWidth: Math.ceil(implicitWidth)   // дробный масштаб: ширина в раскладке округляется вниз
                     text: root.title
                     type: "bodyLarge"
                     weight: 500
@@ -202,7 +207,7 @@ Item {
                 Label {
                     visible: root.version !== ""
                     Layout.fillWidth: true
-                    Layout.maximumWidth: implicitWidth
+                    Layout.maximumWidth: Math.ceil(implicitWidth)
                     text: root.version
                     type: "bodyLarge"
                     color: Theme.fgSurfaceVariant
@@ -240,9 +245,10 @@ Item {
             color: Theme.fgSurfaceVariant
         }
 
-        // «Добавил» (аватар + имя) / «Добавлено» (дата); в узкой строке — только аватар
+        // «Добавил» (аватар + имя) / «Добавлено» (дата); в узкой строке — только аватар, а дату прячем:
+        // место нужнее названию
         RowLayout {
-            visible: root.addedColumn !== ""
+            visible: root.addedColumn !== "" && !(root.addedColumn === "at" && root._compactAdded)
             Layout.preferredWidth: root.addedColumn === "by" && root._compactAdded ? 28 : 132
             Layout.maximumWidth: Layout.preferredWidth
             spacing: 8
@@ -315,7 +321,7 @@ Item {
                     iconWeight: 700
                     enabled: !root.editable
                     opacity: rowHover.hovered || pressed ? 1 : 0
-                    onClicked: root.openMenu(moreButton, 0, moreButton.height)
+                    onClicked: root.openMenuAt(moreButton)
                 }
             }
             IconButton {

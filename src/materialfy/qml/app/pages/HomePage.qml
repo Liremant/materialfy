@@ -326,7 +326,7 @@ Page {
                 z: 1        // подсказка у «ⓘ» длиннее строки заголовка: поверх плиток полки, а не под ними
                 Label {
                     Layout.fillWidth: true
-                    Layout.maximumWidth: implicitWidth
+                    Layout.maximumWidth: Math.ceil(implicitWidth)
                     text: rowCol.shelfData.title ?? ""
                     type: "headlineSmall"
                     weight: 600
