@@ -7,7 +7,7 @@
 //! канала, т. е. работает и как мьютекс) или unix-сокет `$TMPDIR/materialfy-Materialfy.sock`. Новый процесс подключается,
 //! пишет "raise\n" и выходит; без слушателя (оболочка его не запустила) — false, как раньше.
 //! Протокол: клиент — строка "raise\n", сервер — ответ "ok\n" или "hung\n": окно не отвечает (GUI-поток не
-//! отметился в [`gui_alive`] за 5 с). Зависший экземпляр новый процесс завершает (Windows) и запускается сам —
+//! отметился в [`gui_alive`] за 20 с: подвисание на тяжёлой странице слабого ПК — ещё не зависание). Зависший экземпляр новый процесс завершает (Windows) и запускается сам —
 //! иначе после зависания каждый запуск тихо выходил, «показав» мёртвое окно.
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
@@ -42,7 +42,7 @@ fn gui_responsive() -> bool {
     let now = now_ms();
     match GUI_BEAT_MS.load(Ordering::Relaxed) {
         0 => now.saturating_sub(LISTEN_MS.load(Ordering::Relaxed)) < 60_000,
-        beat => now.saturating_sub(beat) < 5_000,
+        beat => now.saturating_sub(beat) < 20_000,
     }
 }
 const TIMEOUT: Duration = Duration::from_secs(3);
@@ -388,7 +388,7 @@ mod tests {
     async fn a_hung_window_answers_hung() {
         use std::sync::atomic::Ordering;
         let _serial = GUI_STATE.lock().await;
-        super::GUI_BEAT_MS.store(super::now_ms() - 10_000, Ordering::Relaxed);
+        super::GUI_BEAT_MS.store(super::now_ms() - 30_000, Ordering::Relaxed);
         let (client, server) = tokio::io::duplex(64);
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let served = tokio::spawn(super::serve_client(server, tx));
