@@ -14,10 +14,12 @@ use super::route;
 
 /// Строк «Любимых треков» за страницу через сессию (один пакет метаданных).
 pub const LIKED_PAGE: u32 = 50;
-/// Сколько ждать чтение набора целиком (с подробностями строк).
-const READ_TIMEOUT: Duration = Duration::from_secs(20);
-/// Сколько ждать страницу подробностей «Любимых треков».
-const PAGE_TIMEOUT: Duration = Duration::from_secs(15);
+/// Сколько ждать чтение набора целиком (с подробностями строк). Срок каждой страницы и пакета
+/// (с одним повтором) держит session_collection; этот — лишь потолок: у большой библиотеки
+/// десятки страниц и сотни альбомов.
+const READ_TIMEOUT: Duration = Duration::from_secs(120);
+/// Сколько ждать страницу подробностей «Любимых треков» (пакет и его повтор, иногда два пакета).
+const PAGE_TIMEOUT: Duration = Duration::from_secs(60);
 /// Сколько ждать запись или проверку через сессию, прежде чем спросить Web API.
 const SESSION_TIMEOUT: Duration = Duration::from_secs(8);
 /// Дольше Web API не ждём: под 429 он отвечает минутами.
@@ -262,6 +264,65 @@ mod tests {
         assert_eq!(rest.items.iter().map(|i| i.track.uri.as_str()).collect::<Vec<_>>(), ["spotify:track:4", "spotify:track:5"]);
         assert_eq!(rest.total, 5, "the last page's total matches the rows shown");
         assert_eq!(rest.next_offset(), None);
+    }
+
+    #[tokio::test]
+    async fn a_long_collection_pages_in_batches_of_fifty_and_skips_gone_rows_across_pages() {
+        // 130 треков, пропавшие — на границах пакетов (49, 50) и в конце (129)
+        let gone: &'static [&'static str] = &["spotify:track:49", "spotify:track:50", "spotify:track:129"];
+        let mut feed = LikedFeed::new(rows(130));
+        let batches = std::cell::RefCell::new(Vec::new());
+        let mut shown = Vec::new();
+        let mut offset = 0;
+        let mut pages = 0;
+        let mut last_total = 130;
+        loop {
+            let mut resolve = resolver(gone);
+            let page = feed
+                .page(offset, LIKED_PAGE, |uris| {
+                    batches.borrow_mut().push(uris.len());
+                    resolve(uris)
+                })
+                .await
+                .unwrap();
+            pages += 1;
+            assert!(page.items.len() <= LIKED_PAGE as usize);
+            shown.extend(page.items.iter().map(|item| item.track.uri.clone()));
+            // пропавшие строки вычитаются из общего числа, как только встретились
+            assert!(page.total >= 127 && page.total <= last_total, "{}", page.total);
+            last_total = page.total;
+            match page.next_offset() {
+                Some(next) => {
+                    assert_eq!(next, offset + LIKED_PAGE);
+                    offset = next;
+                }
+                None => break,
+            }
+        }
+        assert_eq!(pages, 3);
+        assert_eq!(last_total, 127, "the last page's total is exact");
+        assert_eq!(shown.len(), 127);
+        assert!(gone.iter().all(|uri| !shown.iter().any(|s| s == uri)));
+        let unique: std::collections::HashSet<&String> = shown.iter().collect();
+        assert_eq!(unique.len(), shown.len(), "no row twice");
+        assert!(batches.borrow().iter().all(|&n| n <= LIKED_PAGE as usize));
+        // страница не короче лимита, пока строки есть: первая добрала пакетами (49 + 0 + 1)
+        assert_eq!(batches.borrow()[..3], [50, 1, 1]);
+    }
+
+    #[tokio::test]
+    async fn a_batch_that_fails_fails_its_page_and_the_page_can_be_asked_again() {
+        let mut feed = LikedFeed::new(rows(60));
+        let first = feed.page(0, 50, resolver(&[])).await.unwrap();
+        assert_eq!(first.next_offset(), Some(50));
+        let failed = feed
+            .page(50, 50, |_| std::future::ready(Err(Failure::Retry(anyhow::anyhow!("network")))))
+            .await;
+        assert!(matches!(failed, Err(Failure::Retry(_))));
+        let again = feed.page(50, 50, resolver(&[])).await.unwrap();
+        assert_eq!(again.items.len(), 10);
+        assert_eq!(again.items[0].track.uri, "spotify:track:50");
+        assert_eq!(again.next_offset(), None);
     }
 
     #[tokio::test]

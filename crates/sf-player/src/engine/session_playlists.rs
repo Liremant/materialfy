@@ -27,7 +27,7 @@ use protobuf::{EnumOrUnknown, Message as _, MessageField};
 use reqwest::Method;
 use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
 use sf_api::ApiError;
-use sf_api::models::{Image, Owner, PlayableItem, Playlist, TrackCount};
+use sf_api::models::{Image, Owner, Playlist, TrackCount};
 
 use super::player::{Rootlist, editable_uris, parse_rootlist};
 use super::session_reads::{self, Failure, IMAGE_HOST};
@@ -186,12 +186,21 @@ async fn name_owners(session: &Session, playlists: &mut [Playlist]) {
 
 /// Коллаж из обложек альбомов первых строк — как Web API рисует плейлист без своей обложки.
 pub async fn mosaic(session: &Session, id: &str) -> Vec<Image> {
-    let Ok(page) = session_reads::items(session, id, 0, MOSAIC_ROWS).await else { return Vec::new() };
+    // строки — нестрого: одна странная песня в начале не должна оставлять плейлист без обложки
+    let Ok(tracks) = session_reads::lead_tracks(session, id, MOSAIC_ROWS).await else { return Vec::new() };
+    mosaic_from(tracks.iter().filter_map(|track| {
+        let album = track.album.as_ref()?;
+        album.images.iter().max_by_key(|image| image.width).map(|image| image.url.as_str())
+    }))
+}
+
+/// Коллаж из адресов обложек строк (по порядку, повторы не в счёт) — как Web API рисует плейлист
+/// без своей обложки. Адреса не с i.scdn.co пропускаются.
+pub fn mosaic_from<'a>(urls: impl IntoIterator<Item = &'a str>) -> Vec<Image> {
     let mut covers: Vec<String> = Vec::new();
-    for item in &page.items {
-        let Some(PlayableItem::Track(track)) = &item.item else { continue };
-        let largest = track.album.as_ref().and_then(|album| album.images.iter().max_by_key(|image| image.width));
-        if let Some(cover) = largest.and_then(|image| image.url.strip_prefix(IMAGE_HOST))
+    for url in urls {
+        if let Some(cover) = url.strip_prefix(IMAGE_HOST)
+            && !cover.is_empty()
             && !covers.iter().any(|known| known == cover)
         {
             covers.push(cover.to_owned());
@@ -750,6 +759,18 @@ mod tests {
         assert!(changes.want_resulting_revisions());
         assert_eq!(changes.deltas.len(), 1);
         assert_eq!(list_changes(Vec::new(), Vec::new()).base_revision, None);
+    }
+
+    #[test]
+    fn a_mosaic_is_made_of_the_first_distinct_covers() {
+        let url = |hex: &str| format!("{IMAGE_HOST}{hex}");
+        let urls = [url("aa"), "https://elsewhere/x".to_owned(), url("aa"), url("bb"), String::new(), url("cc"), url("dd"), url("ee")];
+        let images = mosaic_from(urls.iter().map(String::as_str));
+        assert_eq!(images[0].url, "https://mosaic.scdn.co/640/aabbccdd");
+        let few = mosaic_from([url("aa").as_str(), url("aa").as_str()]);
+        assert_eq!(few.len(), 1);
+        assert_eq!(few[0].url, url("aa"));
+        assert!(mosaic_from([]).is_empty());
     }
 
     #[test]

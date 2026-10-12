@@ -153,7 +153,7 @@ Item {
         if (k === "liked")
             router.push("liked")
         else if (k === "folder")
-            router.push("library", { folderId: e.id, folderTitle: e.title ?? "" })
+            router.push("folder", { folderId: e.id, folderTitle: e.title ?? "" })
         else if (k === "playlist")
             router.push("playlist", { playlistId: e.id, playlistTitle: e.title ?? "", cover: e.cover ?? "" })
         else if (k === "album")
@@ -611,7 +611,11 @@ Item {
         y: Math.max(140, (parent.height - implicitHeight) / 2)
         width: Math.min(parent.width - 64, 420)
         visible: page.signedIn && page.model !== null && page.model.loading !== true && page.entries.length === 0 && !page.showLiked
-        readonly property var texts: page.query.trim() !== "" || page.owner !== "all"
+        // не загрузилось (сессия не ответила, Web API под 429) — ошибка и «Повторить», а не «пусто»
+        readonly property bool failed: Library.errorText !== "" && page.query.trim() === "" && page.owner === "all"
+        readonly property var texts: failed
+            ? ["cloud_off", I18n.t("Couldn’t load your library"), Library.errorText]
+            : page.query.trim() !== "" || page.owner !== "all"
             ? ["search_off", I18n.t("Nothing found"), page.query.trim() !== "" ? I18n.t("Try a different search") : I18n.t("This section is empty")]
             : ({
                 playlists: ["queue_music", page.inFolder ? I18n.t("Folder is empty") : I18n.t("No playlists"), I18n.t("Playlists you create or save will appear here.")],
@@ -623,12 +627,15 @@ Item {
         title: texts[1]
         text: texts[2]
         // ничего не нашлось — кнопка снимает то, что сузило список (поиск или фильтр владельца)
-        actionText: page.query.trim() !== "" ? I18n.t("Clear search")
+        actionText: failed ? I18n.t("Retry")
+                  : page.query.trim() !== "" ? I18n.t("Clear search")
                   : page.owner !== "all" ? I18n.t("Show all")
                   : page.kind === "albums" ? I18n.t("Find albums") : ""
-        actionIcon: page.query.trim() !== "" || page.owner !== "all" ? "close" : "search"
+        actionIcon: failed ? "refresh" : page.query.trim() !== "" || page.owner !== "all" ? "close" : "search"
         onAction: {
-            if (page.query.trim() !== "") {
+            if (failed) {
+                Library.refresh()
+            } else if (page.query.trim() !== "") {
                 page.query = ""
                 page.searchOpen = false
             } else if (page.owner !== "all") {

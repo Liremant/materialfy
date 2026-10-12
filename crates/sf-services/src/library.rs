@@ -36,6 +36,10 @@ const WRITE_CHUNK: usize = 100;
 const MAX_PLAYLIST_PAGES: u32 = 200;
 /// Потолок страниц раздела библиотеки.
 const MAX_SECTION_PAGES: u32 = 100;
+/// Паузы перед самостоятельными повторами, когда раздел не загрузился ни через сессию, ни через
+/// Web API (сессия не ответила вовремя, Web API под 429): пустой список без повтора — тупик.
+const AUTO_RETRIES: [std::time::Duration; 2] =
+    [std::time::Duration::from_secs(15), std::time::Duration::from_secs(60)];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FeedbackKind {
@@ -156,6 +160,9 @@ struct State {
     /// что загрузилось без сессии librespot (вход раньше движка, через Web API) — повторить, когда сессия встанет
     liked_without_session: bool,
     sections_without_session: HashSet<Section>,
+    /// самостоятельных повторов после ошибки за этот вход; повтор ждёт своей паузы
+    auto_retries: usize,
+    auto_retry_pending: bool,
     pages: HashMap<PlaylistId, PlaylistPage>,
 
     albums: Vec<(String, AlbumItem)>,
@@ -173,6 +180,8 @@ struct State {
 
     /// загруженные обложки, ещё не подтверждённые Spotify (id плейлиста →)
     uploaded_covers: HashMap<String, UploadedCover>,
+    /// плейлисты, чья обложка — наш коллаж из первых строк (своей нет): после правок он пересобирается
+    mosaics: HashSet<String>,
     cover_requests: u64,
 }
 
@@ -615,14 +624,25 @@ impl LibraryService {
                         if !service.player.local_playback().is_ready() {
                             continue;
                         }
-                        service.reload_with_session();
-                        let wanted = {
-                            let state = lock(&service.state);
-                            state.account.is_some() && state.rootlist.is_none() && !state.rootlist_loading
-                        };
-                        if wanted {
-                            service.load_rootlist();
-                        }
+                        // аккаунт сессии вход ставит по тому же событию — может и чуть позже этого
+                        // слушателя; без него перечитывание через сессию молча не начнётся
+                        service.spawn(|service| async move {
+                            let api = service.auth.api();
+                            for _ in 0..20 {
+                                if route::account_session(&api, &service.player).is_some() {
+                                    break;
+                                }
+                                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                            }
+                            service.reload_with_session();
+                            let wanted = {
+                                let state = lock(&service.state);
+                                state.account.is_some() && state.rootlist.is_none() && !state.rootlist_loading
+                            };
+                            if wanted {
+                                service.load_rootlist();
+                            }
+                        });
                     }
                     Ok(_) | Err(broadcast::error::RecvError::Lagged(_)) => {}
                     Err(broadcast::error::RecvError::Closed) => return,
@@ -731,7 +751,35 @@ impl LibraryService {
     }
 
     pub fn refresh(&self) {
+        lock(&self.state).auto_retries = 0;
         self.load_all(true);
+    }
+
+    /// Раздел не загрузился ни через сессию, ни через Web API: ошибка (с «Повторить») уже на экране,
+    /// а через паузу — повтор сам, не больше AUTO_RETRIES раз за вход.
+    fn retry_later(&self, generation: u64) {
+        let pause = {
+            let mut state = lock(&self.state);
+            if state.generation != generation || state.auto_retry_pending {
+                return;
+            }
+            let Some(&pause) = AUTO_RETRIES.get(state.auto_retries) else { return };
+            state.auto_retries += 1;
+            state.auto_retry_pending = true;
+            pause
+        };
+        self.spawn(move |service| async move {
+            tokio::time::sleep(pause).await;
+            {
+                let mut state = lock(&service.state);
+                if state.generation != generation {
+                    return;
+                }
+                state.auto_retry_pending = false;
+            }
+            tracing::debug!("library: retrying what didn't load");
+            service.load_all(false);
+        });
     }
 
     fn load_all(&self, force: bool) {
@@ -875,6 +923,7 @@ impl LibraryService {
                             service.send(events);
                             // сессия встала, пока шёл Web API, — повторить через неё
                             service.reload_with_session();
+                            service.retry_later(generation);
                             return;
                         }
                     }
@@ -1117,6 +1166,7 @@ impl LibraryService {
                 let text = service.error_text_of(&error);
                 let event = lock(&service.state).set_error(mf_i18n::tf("Couldn’t load playlists: {0}", &[&text]));
                 service.send(event);
+                service.retry_later(generation);
             }
         });
     }
@@ -1203,12 +1253,16 @@ impl LibraryService {
                 if state.generation != generation {
                     return;
                 }
-                if let Some(listed) = state.playlists_raw.iter_mut().find(|pl| pl.id == id && pl.images.is_empty()) {
+                let generated = state.mosaics.contains(&id);
+                if let Some(listed) =
+                    state.playlists_raw.iter_mut().find(|pl| pl.id == id && (pl.images.is_empty() || generated || spotify_mosaic(&pl.images)))
+                {
                     listed.images = images.clone();
                 }
+                state.mosaics.insert(id.clone());
                 let id = PlaylistId::new(id);
                 if let Some(header) = state.pages.get_mut(&id).and_then(|page| page.header.as_mut())
-                    && header.images.is_empty()
+                    && (header.images.is_empty() || generated)
                 {
                     header.images = images;
                 }
@@ -1219,6 +1273,47 @@ impl LibraryService {
             };
             self.send(events);
         }
+    }
+
+    /// Плейлист без своей обложки: коллаж из обложек первых строк `rows` (как у Web API) — и заново
+    /// после правок, когда первые строки сменились. Своя обложка (картинка в шапке) и только что
+    /// загруженная не трогаются.
+    fn refresh_mosaic(&self, id: &PlaylistId, rows: &[TrackItem]) {
+        let events = {
+            let mut state = lock(&self.state);
+            if state.uploaded_covers.contains_key(id.as_str()) {
+                return;
+            }
+            let Some(header) = state.pages.get(id).and_then(|page| page.header.as_ref()) else { return };
+            let generated = state.mosaics.contains(id.as_str());
+            if !header.images.is_empty() && !generated && !spotify_mosaic(&header.images) {
+                return;
+            }
+            let images = sf_player::engine::session_playlists::mosaic_from(
+                rows.iter().map(|row| if row.cover_large.is_empty() { row.cover.as_str() } else { row.cover_large.as_str() }),
+            );
+            let listed = state.raw(id.as_str()).map(|listed| listed.images.clone());
+            let changed = match &listed {
+                Some(current) if current.is_empty() || generated || spotify_mosaic(current) => *current != images,
+                Some(_) => return,
+                None => header.images != images,
+            };
+            if !changed {
+                return;
+            }
+            if let Some(listed) = state.playlists_raw.iter_mut().find(|pl| pl.id == id.as_str()) {
+                listed.images = images.clone();
+            }
+            if let Some(header) = state.pages.get_mut(id).and_then(|page| page.header.as_mut()) {
+                header.images = images;
+            }
+            state.mosaics.insert(id.as_str().to_owned());
+            let mut events: Vec<LibraryEvent> = state.rebuild_playlists().into_iter().collect();
+            events.push(LibraryEvent::EntriesChanged);
+            events.push(LibraryEvent::PlaylistInfo(id.clone()));
+            events
+        };
+        self.send(events);
     }
 
     pub fn playlists(&self) -> Vec<PlaylistItem> {
@@ -1358,8 +1453,14 @@ impl LibraryService {
         };
         service.send([LibraryEvent::PlaylistInfo(id.clone())]);
         if up_to_date {
-            lock(&service.state).pages.entry(id.clone()).or_default().complete = true;
+            let rows = {
+                let mut state = lock(&service.state);
+                let page = state.pages.entry(id.clone()).or_default();
+                page.complete = true;
+                page.rows.clone()
+            };
             service.send([LibraryEvent::PlaylistInfo(id.clone())]);
+            service.refresh_mosaic(&id, &rows);
             finish(&service, None);
             return;
         }
@@ -1412,6 +1513,7 @@ impl LibraryService {
         };
         service.send(event);
         service.send([LibraryEvent::PlaylistInfo(id.clone())]);
+        service.refresh_mosaic(&id, &rows);
         finish(&service, None);
         if !snapshot.is_empty() {
             let cache = playlist_cache::CachedPlaylist::new(snapshot, rows);
@@ -1505,6 +1607,7 @@ impl LibraryService {
 
     /// Закончить запись: новый snapshot или перечитать.
     fn end_write(&self, id: &PlaylistId, result: Result<Option<String>, ApiError>, success: Option<String>) {
+        let mosaic: Option<Option<Vec<TrackItem>>>;
         let reload = {
             let mut state = lock(&self.state);
             let page = state.pages.entry(id.clone()).or_default();
@@ -1525,6 +1628,8 @@ impl LibraryService {
                 }
             }
             let reload = page.pending_writes == 0 && std::mem::take(&mut page.reload_after_write);
+            // коллаж из первых строк — по строкам после правки (известны все) или заново через сессию
+            mosaic = (result.is_ok() && page.pending_writes == 0 && !reload).then(|| page.complete.then(|| page.rows.clone()));
             if page.pending_writes == 0 && !reload && page.complete && !page.snapshot.is_empty() {
                 let account = state.account.clone().unwrap_or_default();
                 let page = &state.pages[id];
@@ -1544,6 +1649,26 @@ impl LibraryService {
                 let text = self.error_text_of(&error);
                 self.notice(mf_i18n::tf("Playlist didn’t change: {0}", &[&text]));
             }
+        }
+        match mosaic {
+            Some(Some(rows)) => self.refresh_mosaic(id, &rows),
+            Some(None) => {
+                let (wanted, generation) = {
+                    let state = lock(&self.state);
+                    let wanted = !state.uploaded_covers.contains_key(id.as_str())
+                        && state
+                            .raw(id.as_str())
+                            .is_some_and(|listed| {
+                                listed.images.is_empty() || state.mosaics.contains(id.as_str()) || spotify_mosaic(&listed.images)
+                            });
+                    (wanted, state.generation)
+                };
+                if wanted {
+                    let ids = vec![id.as_str().to_owned()];
+                    self.spawn(move |service| async move { service.fill_mosaics(ids, generation).await });
+                }
+            }
+            None => {}
         }
         if reload {
             self.load_playlist(id.clone());
@@ -2245,6 +2370,9 @@ impl LibraryService {
                 events
             };
             service.send(events);
+            if result.is_err() {
+                service.retry_later(generation);
+            }
             // сессия встала, пока шёл Web API, — повторить через неё
             service.reload_with_session();
         });
@@ -2813,6 +2941,11 @@ impl LibraryService {
     pub fn error_text(&self) -> String {
         lock(&self.state).error_text.clone()
     }
+}
+
+/// Коллаж, который Spotify сам нарисовал плейлисту без своей обложки (Web API отдаёт его как обложку).
+fn spotify_mosaic(images: &[models::Image]) -> bool {
+    !images.is_empty() && images.iter().all(|image| image.url.starts_with("https://mosaic.scdn.co/"))
 }
 
 fn collect_placed<'a>(folder: &'a Folder, folders: &'a HashMap<String, Folder>, placed: &mut HashSet<&'a str>) {

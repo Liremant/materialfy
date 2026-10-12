@@ -56,9 +56,23 @@ Item {
         { name: "liked", icon: "favorite", text: I18n.t("Liked Songs") }
     ]
 
-    // Плейлисты и папки верхнего уровня rootlist (порядок Spotify; закреплённые — первыми, их ставит сервис)
+    // Плейлисты и папки верхнего уровня rootlist (порядок Spotify; закреплённые — первыми, их ставит сервис).
+    // Раскрытая папка (стрелка справа) показывает свои плейлисты и вложенные папки прямо в списке, с отступом;
+    // клик по самой папке открывает её страницей (FolderPage). Раскрытые папки помнятся, пока открыто приложение.
     readonly property var _source: signedIn ? Library.items("playlists", "all", "spotify") : null
     property var playlists: []
+    property var expandedFolders: ({})      // id папки → true
+    readonly property int indentStep: 16
+    readonly property int maxDepth: 4         // глубже — без доп. отступа (подпись не должна исчезнуть)
+    function toggleFolder(id) {
+        const next = Object.assign({}, expandedFolders)
+        if (next[id])
+            delete next[id]
+        else
+            next[id] = true
+        expandedFolders = next
+        _rebuild()
+    }
     function _rebuild() {
         const out = []
         const m = _source
@@ -69,21 +83,43 @@ Item {
             if (e.kind === "folder")
                 folders.add(e.id)
         }
+        const seen = new Set()
+        // в рейле вложенных строк нет: иконки держат одну ось
+        const addChildren = (id, depth) => {
+            if (root.rail || !root.expandedFolders[id] || seen.has(id))
+                return
+            seen.add(id)
+            const children = Library.folderChildren(id)
+            for (let i = 0; children && i < children.count; i++) {
+                const c = Object.assign({}, children.get(i), { depth: depth })
+                out.push(c)
+                if (c.kind === "folder")
+                    addChildren(c.id, depth + 1)
+            }
+        }
         for (let i = 0; m && i < m.count; i++) {
             const e = m.get(i)
             if (e.kind === "liked" || folders.has(e.folderId ?? ""))
                 continue
-            out.push(e)
+            out.push(Object.assign({}, e, { depth: 0 }))
+            if (e.kind === "folder")
+                addChildren(e.id, 1)
         }
         playlists = out
     }
     on_SourceChanged: _rebuild()
+    onRailChanged: _rebuild()
     Connections {
         target: root._source
         ignoreUnknownSignals: true
         function onCountChanged() { root._rebuild() }
         function onModelReset() { root._rebuild() }
         function onDataChanged() { root._rebuild() }
+    }
+    // содержимое папок меняется вместе с деревом (обложки, названия, перенос в Spotify)
+    Connections {
+        target: Library
+        function onEntriesChanged() { if (Object.keys(root.expandedFolders).length > 0) root._rebuild() }
     }
 
     implicitWidth: drawer ? 0 : compact ? railWidth : expandedWidth
@@ -296,22 +332,43 @@ Item {
             acceptedButtons: Qt.NoButton
             model: root.playlists
             delegate: NavItem {
+                id: row
                 required property var modelData
                 readonly property bool folder: modelData.kind === "folder"
+                readonly property bool expanded: folder && root.expandedFolders[modelData.id] === true
+                readonly property real indent: Math.min(modelData.depth ?? 0, root.maxDepth) * root.indentStep
                 width: ListView.view.width
                 compact: root.rail
-                iconInset: root.iconInset
-                labelWidth: root.labelWidth
+                iconInset: root.iconInset + indent
+                labelWidth: root.labelWidth - indent - (folder ? 28 : 0)
                 text: modelData.title ?? ""
-                icon: folder ? "folder" : "queue_music"
+                icon: folder ? (expanded ? "folder_open" : "folder") : "queue_music"
                 imageSource: folder ? "" : (modelData.cover ?? "")
-                // папка — шеврон (только чтение), закреплённый — булавка
-                trailingIcon: folder ? "chevron_right" : modelData.pinned === true ? "push_pin" : ""
-                trailingColor: folder ? Theme.fgSurfaceVariant : Theme.primary
-                selected: folder ? root.router.currentName === "library" && (root.router.current.props.folderId ?? "") === modelData.id
+                // у папки справа — своя кнопка-стрелка (ниже); закреплённый — булавка
+                trailingIcon: !folder && modelData.pinned === true ? "push_pin" : ""
+                trailingColor: Theme.primary
+                selected: folder ? root.router.currentName === "folder" && (root.router.current.props.folderId ?? "") === modelData.id
                                  : root.router.currentName === "playlist" && (root.router.current.props.playlistId ?? "") === modelData.id
-                onClicked: folder ? root.go("library", { folderId: modelData.id, folderTitle: modelData.title ?? "" })
+                onClicked: folder ? root.go("folder", { folderId: modelData.id, folderTitle: modelData.title ?? "" })
                                   : root.go("playlist", { playlistId: modelData.id, playlistTitle: modelData.title ?? "", cover: modelData.cover ?? "" })
+
+                // Стрелка папки: раскрыть/свернуть прямо в списке (поворот на 90° — MD3 expand)
+                IconButton {
+                    visible: row.folder && opacity > 0
+                    opacity: root.rail ? 0 : 1
+                    Behavior on opacity { NumberAnimation { duration: Theme.motion.effectsFast } }
+                    anchors.right: parent.right
+                    anchors.rightMargin: 6
+                    anchors.verticalCenter: parent.verticalCenter
+                    z: 2
+                    size: "xs"
+                    icon: "chevron_right"
+                    iconColor: Theme.fgSurfaceVariant
+                    rotation: row.expanded ? 90 : 0
+                    Behavior on rotation { NumberAnimation { duration: Theme.motion.spatialFast; easing.type: Easing.OutCubic } }
+                    onClicked: root.toggleFolder(row.modelData.id)
+                    Accessible.name: row.expanded ? I18n.t("Collapse folder") : I18n.t("Expand folder")
+                }
             }
             SmoothScroll { flickable: playlistList; wheelStep: Settings.wheelStep; showScrollBar: false }
         }

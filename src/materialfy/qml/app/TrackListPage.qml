@@ -20,6 +20,9 @@ Item {
     property string emptyIcon: "music_note"
     property string emptyTitle: I18n.t("Nothing here")
     property string emptyText: ""
+    property string emptyActionText: ""       // кнопка под пустым списком (например, «Повторить»)
+    property string emptyActionIcon: ""
+    signal emptyAction()
     property Component headerExtra: null       // доп. содержимое шапки (кнопки и т. п.)
     property Component heroMeta: null          // строка под подзаголовком (владелец, бейджи)
     property Component heroNote: null          // подсказка под кнопками
@@ -466,5 +469,8 @@ Item {
         icon: page.emptyIcon
         title: page.emptyTitle
         text: page.emptyText
+        actionText: page.emptyActionText
+        actionIcon: page.emptyActionIcon
+        onAction: page.emptyAction()
     }
 }

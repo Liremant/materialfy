@@ -121,6 +121,22 @@ async fn rows_page(
     Ok(page(items, total, offset, limit))
 }
 
+/// The songs among a playlist's first `limit` rows, in order, with their
+/// details read leniently: what a mosaic cover is made of. A song Spotify
+/// answers oddly for is left out rather than failing the cover.
+pub(crate) async fn lead_tracks(session: &Session, id: &str, limit: u32) -> Result<Vec<Track>, Failure> {
+    let list = window(session, id, 0, limit).await?;
+    let rows = rows(&list, 0, limit);
+    let (playables, _) = metadata_lenient(session, rows.iter().map(|row| &row.id)).await?;
+    Ok(rows
+        .iter()
+        .filter_map(|row| match playables.get(&row.id.to_uri()) {
+            Some(PlayableItem::Track(track)) => Some(track.clone()),
+            _ => None,
+        })
+        .collect())
+}
+
 /// A window Spotify cut short of the rows that remain is refused rather
 /// than paged past, since the next page would start after rows nobody was
 /// shown.
@@ -443,6 +459,23 @@ pub(crate) async fn metadata(
     answers(&asked, response)
 }
 
+/// Like `metadata`, but a row Spotify answers oddly for (a refusal other
+/// than 404/451, bytes that do not read as a song, no answer at all) is
+/// listed apart instead of failing the batch: a long saved list should not
+/// stop at one strange song. Only the request itself, or a provider error
+/// over the whole batch, fails.
+pub(crate) async fn metadata_lenient(
+    session: &Session,
+    uris: impl Iterator<Item = &SpotifyUri>,
+) -> Result<(HashMap<String, PlayableItem>, Vec<String>), Failure> {
+    let (request, asked) = batch(uris);
+    if asked.is_empty() {
+        return Ok((HashMap::new(), Vec::new()));
+    }
+    let response = session.spclient().get_extended_metadata(request).await?;
+    answers_lenient(&asked, response)
+}
+
 /// One request for the details of every track and episode among `uris`,
 /// with the URIs it asks for. A playlist can hold the same song twice; it
 /// is asked for once.
@@ -484,14 +517,28 @@ fn answers(
     asked: &BTreeSet<String>,
     response: BatchedExtensionResponse,
 ) -> Result<HashMap<String, PlayableItem>, Failure> {
-    let retry = |reason: String| Failure::Retry(anyhow::anyhow!(reason));
+    let (playables, problems) = answers_lenient(asked, response)?;
+    match problems.into_iter().next() {
+        Some(problem) => Err(Failure::Retry(anyhow::anyhow!(problem))),
+        None => Ok(playables),
+    }
+}
+
+/// The answers, and a reason for each URI asked that has none usable
+/// (404 and 451 are not problems: the song is gone). Err only for a
+/// provider error over a whole batch.
+fn answers_lenient(
+    asked: &BTreeSet<String>,
+    response: BatchedExtensionResponse,
+) -> Result<(HashMap<String, PlayableItem>, Vec<String>), Failure> {
     let mut unanswered: BTreeSet<&str> = asked.iter().map(String::as_str).collect();
     let mut playables = HashMap::new();
+    let mut problems = Vec::new();
     for array in response.extended_metadata {
         // Spotify marks a batch it answered with 200, as it does each row.
         let provider = array.header.provider_error_status;
         if !matches!(provider, 0 | 200) {
-            return Err(retry(format!("metadata provider answered {provider}")));
+            return Err(Failure::Retry(anyhow::anyhow!("metadata provider answered {provider}")));
         }
         let kind = match array.extension_kind.enum_value() {
             Ok(kind @ (ExtensionKind::TRACK_V4 | ExtensionKind::EPISODE_V4)) => kind,
@@ -502,20 +549,21 @@ fn answers(
             match data.header.status_code {
                 0 | 200 => {}
                 404 | 451 => continue,
-                code => return Err(retry(format!("{} answered {code}", data.entity_uri))),
+                code => {
+                    problems.push(format!("{} answered {code}", data.entity_uri));
+                    continue;
+                }
             }
-            let item = data
-                .extension_data
-                .as_ref()
-                .and_then(|any| playable(kind, &any.value))
-                .ok_or_else(|| retry(format!("unreadable metadata for {}", data.entity_uri)))?;
-            playables.insert(data.entity_uri, item);
+            match data.extension_data.as_ref().and_then(|any| playable(kind, &any.value)) {
+                Some(item) => {
+                    playables.insert(data.entity_uri, item);
+                }
+                None => problems.push(format!("unreadable metadata for {}", data.entity_uri)),
+            }
         }
     }
-    if let Some(uri) = unanswered.first() {
-        return Err(retry(format!("no metadata answer for {uri}")));
-    }
-    Ok(playables)
+    problems.extend(unanswered.into_iter().map(|uri| format!("no metadata answer for {uri}")));
+    Ok((playables, problems))
 }
 
 fn playable(kind: ExtensionKind, bytes: &[u8]) -> Option<PlayableItem> {
@@ -1678,6 +1726,30 @@ mod tests {
 
         let unanswered = retried(vec![good()]);
         assert!(format!("{unanswered:?}").contains(EPISODE));
+    }
+
+    /// A saved list reads leniently: the odd song is set apart with its
+    /// reason and the rest of the batch is kept; only a provider error over
+    /// the whole batch fails it.
+    #[test]
+    fn a_lenient_batch_keeps_the_good_songs_and_names_the_odd_ones() {
+        let good = || answer(ExtensionKind::TRACK_V4, TRACK, 200, Some(track_bytes()));
+        let (playables, problems) = answers_lenient(
+            &asked(&[TRACK, EPISODE]),
+            response(vec![good(), answer(ExtensionKind::EPISODE_V4, EPISODE, 500, None)]),
+        )
+        .unwrap();
+        assert!(playables.contains_key(TRACK));
+        assert_eq!(problems.len(), 1);
+        assert!(problems[0].contains("500"));
+
+        let (playables, problems) = answers_lenient(&asked(&[TRACK, EPISODE]), response(vec![good()])).unwrap();
+        assert_eq!(playables.len(), 1);
+        assert!(problems[0].contains(EPISODE), "an unanswered URI is named");
+
+        let mut failed = good();
+        failed.header.mut_or_insert_default().provider_error_status = 503;
+        assert!(answers_lenient(&asked(&[TRACK]), response(vec![failed])).is_err());
     }
 
     /// Bytes that are not the kind asked for read as nothing.
