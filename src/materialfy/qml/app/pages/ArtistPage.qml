@@ -80,7 +80,7 @@ Page {
                 id: bannerImage
                 width: parent.width
                 height: banner.contentHeight
-                y: page.flickable.contentY * 0.35   // лёгкий параллакс
+                // без параллакса: смещение от contentY перерисовывало слой баннера в каждом кадре прокрутки
                 source: page.headerImage
                 // декодируется под размер на экране (PreserveAspectCrop — с запасом до покрытия), ступенями 256 px
                 sourceSize: Qt.size(Math.ceil(banner.width * Screen.devicePixelRatio / 256) * 256,
