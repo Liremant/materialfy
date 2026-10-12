@@ -38,12 +38,10 @@ pub enum SettingKey {
     CoverSpin,
     CoverPulse,
     CalmWhenInactive,
-    /// текст песни: "normal" (как было) | "spicy" (по центру, 3 строки) | "minimal" (только активная, без анимации) | "karaoke" (текущая строка крупнее)
+    /// текст песни: "normal" (классика) | "spicy" (крупная строка со сглаженным градиентом) | "karaoke" (текущая строка крупнее)
     LyricsMode,
     /// множитель размера шрифта текста (базовый размер задаёт место вызова)
     LyricsFontScale,
-    /// положение активной строки по вертикали (0.15…0.55 от верха)
-    LyricsAnchor,
     /// затемняющая подложка за текстом: "none" | "soft" | "strong"
     LyricsScrim,
     /// "system" | "full" | "reduced" → Theme.reducedMotion
@@ -134,7 +132,7 @@ pub enum SettingType {
 }
 
 impl SettingKey {
-    pub const ALL: [SettingKey; 57] = [
+    pub const ALL: [SettingKey; 56] = [
         SettingKey::ThemeMode,
         SettingKey::SchemeVariant,
         SettingKey::AccentFromCover,
@@ -150,7 +148,6 @@ impl SettingKey {
         SettingKey::CalmWhenInactive,
         SettingKey::LyricsMode,
         SettingKey::LyricsFontScale,
-        SettingKey::LyricsAnchor,
         SettingKey::LyricsScrim,
         SettingKey::Animations,
         SettingKey::LowPowerMode,
@@ -213,7 +210,6 @@ impl SettingKey {
             CalmWhenInactive => "calmWhenInactive",
             LyricsMode => "lyricsMode",
             LyricsFontScale => "lyricsFontScale",
-            LyricsAnchor => "lyricsAnchor",
             LyricsScrim => "lyricsScrim",
             Animations => "animations",
             LowPowerMode => "lowPowerMode",
@@ -290,7 +286,6 @@ impl SettingKey {
             CalmWhenInactive => Bool(true),
             LyricsMode => Str("normal".into()),
             LyricsFontScale => Float(1.0),
-            LyricsAnchor => Float(0.33),
             LyricsScrim => Str("none".into()),
             Animations => Str("system".into()),
             LowPowerMode => Str("auto".into()),
@@ -962,7 +957,7 @@ mod tests {
 
     #[test]
     fn schema() {
-        assert_eq!(SettingKey::ALL.len(), 57);
+        assert_eq!(SettingKey::ALL.len(), 56);
         for key in SettingKey::ALL {
             assert_eq!(SettingKey::from_name(key.name()), Some(key));
             assert_eq!(key.default_value().value_type(), key.value_type());
@@ -1234,7 +1229,7 @@ mod tests {
         for name in [
             "themeMode", "schemeVariant", "accentFromCover", "customSeed", "windowButtons", "trackTransition",
             "backdropMode", "nowPlayingBlur", "nowPlayingDrift", "ambientBackground", "coverSpin", "coverPulse",
-            "calmWhenInactive", "lyricsMode", "lyricsFontScale", "lyricsAnchor", "lyricsScrim", "animations", "lowPowerMode", "rightPanelOpen", "rightPanelTab", "sidebarCollapsed", "windowWidth",
+            "calmWhenInactive", "lyricsMode", "lyricsFontScale", "lyricsScrim", "animations", "lowPowerMode", "rightPanelOpen", "rightPanelTab", "sidebarCollapsed", "windowWidth",
             "windowHeight", "windowX", "windowY", "windowMaximized", "closeToTray", "wheelStep", "libraryView",
             "librarySort", "homeHidden", "bitrate", "normalisation", "gapless", "autoplay", "volume", "audioDevice",
             "audioCache", "audioCacheMb", "playbackAuthorized", "deviceName", "webClientId", "proxyMode", "proxyHost",

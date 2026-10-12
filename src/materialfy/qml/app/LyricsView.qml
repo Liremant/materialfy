@@ -15,38 +15,36 @@ Item {
     // масштабирует его. Всё остальное (высота строки, отступы, фигуры пауз) считается от fontSize.
     property real baseFontSize: 34
     property real fontSize: baseFontSize * Settings.lyricsFontScale
-    property real anchorPos: Settings.lyricsAnchor
+    property real anchorPos: spicy ? 0.38 : 0.33
     // Подложка под текстом: "none" — прозрачно; "soft" | "strong" — затемнение в цвет темы
     readonly property string scrimMode: Settings.lyricsScrim
     readonly property real scrimAlpha: scrimMode === "strong" ? 0.6 : (scrimMode === "soft" ? 0.28 : 0)
 
     // Стиль отображения:
     // "normal" — классический вид: каскад, размытые соседние строки, выравнивание влево;
-    // "spicy" — по центру, только 3 строки, без размытия, плавная прокрутка без каскада;
-    // "minimal" — по центру, только активная строка, статичный текст без заливки и анимаций;
+    // "spicy" — крупная поющаяся строка со сглаженным градиентным заполнением и свечением;
     // "karaoke" — как классический, но поющаяся строка крупнее соседних.
     readonly property string mode: Settings.lyricsMode
     readonly property bool spicy: mode === "spicy"
-    readonly property bool minimal: mode === "minimal"
     readonly property bool karaoke: mode === "karaoke"
 
     // Параметры внешнего вида и поведения, определяемые выбранным стилем
-    readonly property string align: (spicy || minimal) ? "center" : "left"
-    readonly property bool blurInactive: !spicy && !minimal
-    readonly property string linesMode: minimal ? "one" : (spicy ? "three" : "all")
-    readonly property string fillMode: minimal ? "off" : "word"
-    readonly property bool motion: !minimal
-    readonly property real activeScale: karaoke ? 1.18 : (spicy ? 1.10 : 1.0)
-    readonly property real idleScale: karaoke ? 0.94 : (spicy ? 0.95 : 1.0)
-    readonly property real dimAlpha: spicy ? 0.45 : (minimal ? 0.30 : 0.35)
-    readonly property bool uniformDim: spicy || minimal
-    readonly property real spacingScale: spicy ? 1.15 : 1.0
+    readonly property string align: "left"
+    readonly property bool blurInactive: true
+    readonly property string linesMode: "all"
+    readonly property string fillMode: "word"
+    readonly property bool motion: true
+    readonly property real activeScale: spicy ? 1.28 : (karaoke ? 1.18 : 1.0)
+    readonly property real idleScale: karaoke ? 0.94 : 1.0
+    readonly property real dimAlpha: 0.35
+    readonly property bool uniformDim: false
+    readonly property real spacingScale: 1.0
     property bool showSource: true
 
     property real fadeTopPct: 0.22
     property real fadeBottomPct: 0.18
-    property int scrollDuration: minimal ? 0 : (spicy ? 520 : 700)
-    property int scrollStagger: (spicy || minimal) ? 0 : 45
+    property int scrollDuration: spicy ? 500 : 700
+    property int scrollStagger: spicy ? 0 : 45
     property int scrollLeadMs: 250
     property color textColor: Theme.fgSurface
     property int resumeMs: 3000
@@ -508,10 +506,8 @@ Item {
         readonly property real lineScale: isActive ? root.activeScale : root.idleScale
         readonly property real lineSize: root.fontSize * lineScale
         readonly property real rowH: lineSize * 1.22
-        // Фильтр видимости строк: "all" — все; "three" — активная и ±1; "one" — только активная
-        readonly property bool inLineRange: root.linesMode === "one"
-            ? (line.isActive || (root.activeIndex < 0 && index === 0))
-            : (root.linesMode === "three" ? (line.dist <= 1) : true)
+        // Фильтр видимости строк: все строки видны
+        readonly property bool inLineRange: true
 
         width: col.width
         // Свёрнутая пауза сохраняет волосок высоты: Column не расставляет элементы нулевого размера
@@ -556,7 +552,7 @@ Item {
                 target: line
                 property: "appear"
                 to: 1
-                duration: root.motion ? (root.spicy ? 520 : 650) : 0
+                duration: root.motion ? (root.spicy ? 500 : 650) : 0
                 easing.type: Easing.BezierSpline
                 easing.bezierCurve: Theme.motion.emphasizedDecelerate
             }
@@ -723,7 +719,7 @@ Item {
         required property var modelData
         required property int index
         property bool lineActive: false
-        // Размер слова — размер его строки (в «караоке» он свой у каждой)
+        // Размер слова — размер его строки (в «караоке» и «spicy» он свой у активной)
         property real fontSize: root.fontSize
         property real rowH: root.rowH
 
@@ -734,7 +730,7 @@ Item {
         readonly property bool held: dur >= 1.1 && txt.length <= 14
         // root.pos читается, только пока строка активна
         readonly property real progress: lineActive ? root.wordProgress(modelData, root.pos) : 0
-        readonly property real glow: held && lineActive ? Math.sin(Math.PI * progress) : 0
+        readonly property real glow: lineActive ? (root.spicy ? (0.6 * Math.sin(Math.PI * progress)) : (held ? Math.sin(Math.PI * progress) : 0)) : 0
 
         // Пробел на конце слова — из общей метрики, отмасштабированной под размер строки
         implicitWidth: label.implicitWidth + (spaced ? spaceMetrics.advanceWidth * (fontSize / Math.max(1, root.fontSize)) : 0)
@@ -747,16 +743,18 @@ Item {
             text: word.txt
             font.family: Theme.fontFamily
             font.pixelSize: word.fontSize
-            font.weight: Theme.variableFont ? Font.Normal : Font.Bold
-            font.variableAxes: Theme.fontAxes(word.fontSize, 700)
+            font.weight: Theme.variableFont ? Font.Normal : ((root.spicy && word.lineActive) ? Font.Black : Font.Bold)
+            font.variableAxes: (root.spicy && word.lineActive)
+                ? Theme.fontAxes(word.fontSize, 820)
+                : Theme.fontAxes(word.fontSize, 700)
             color: root.textColor
             transformOrigin: Item.Bottom
-            scale: 1 + 0.045 * word.glow
+            scale: !root.spicy ? (1 + 0.045 * word.glow) : 1.0
 
             transform: Translate {
-                y: word.lineActive && root.fillMode === "word" ? -root.liftPx * root.easeOut(word.progress * 1.6) : 0
+                y: (!root.spicy && word.lineActive && root.fillMode === "word") ? -root.liftPx * root.easeOut(word.progress * 1.6) : 0
                 Behavior on y {
-                    enabled: !word.lineActive
+                    enabled: !root.spicy && !word.lineActive
                     NumberAnimation { duration: root.motion ? 400 : 0; easing.type: Easing.OutCubic }
                 }
             }
@@ -764,7 +762,7 @@ Item {
             layer.enabled: word.lineActive && root.fillMode !== "off"
             layer.effect: ShaderEffect {
                 readonly property real featherPx: word.fontSize * 0.45
-                property real feather: Math.min(0.5, featherPx / Math.max(1, label.width) / 2)
+                property real feather: root.spicy ? 0.35 : Math.min(0.5, featherPx / Math.max(1, label.width) / 2)
                 property real progress: root.fillMode === "line" ? (1.0 + feather) : (-feather + word.progress * (1 + 2 * feather))
                 property real dimAlpha: root.dimAlpha
                 property real glow: root.fillMode === "word" ? word.glow : 0

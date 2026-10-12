@@ -1178,16 +1178,15 @@ Page {
 
         SettingRow {
             title: I18n.t("Lyrics style")
-            description: Settings.lyricsMode === "spicy" ? I18n.t("Spicy style: centred text, prominent singing line and only 3 lines")
-                         : Settings.lyricsMode === "minimal" ? I18n.t("Only the singing line, no animation")
+            description: Settings.lyricsMode === "spicy" ? I18n.t("Spicy style: the singing line is larger, with a soft gradient sweep and a glow")
                          : Settings.lyricsMode === "karaoke" ? I18n.t("Like classic, but the singing line is noticeably larger")
                          : I18n.t("As it was: cascade scroll, blurred neighbouring lines")
             ButtonGroup {
-                model: [I18n.t("Classic"), I18n.t("Spicy"), I18n.t("Minimal"), I18n.t("Karaoke")]
+                model: [I18n.t("Classic"), I18n.t("Spicy"), I18n.t("Karaoke")]
                 autoSelect: false
                 size: page.compact ? "xs" : "s"
-                currentIndex: Math.max(0, ["normal", "spicy", "minimal", "karaoke"].indexOf(Settings.lyricsMode))
-                onActivated: i => Settings.lyricsMode = ["normal", "spicy", "minimal", "karaoke"][i]
+                currentIndex: Math.max(0, ["normal", "spicy", "karaoke"].indexOf(Settings.lyricsMode))
+                onActivated: i => Settings.lyricsMode = ["normal", "spicy", "karaoke"][i]
             }
         }
         SettingRow {
@@ -1202,20 +1201,6 @@ Page {
                 value: Settings.lyricsFontScale
                 valueText: v => Math.round(v * 100) + " %"
                 onMoved: v => Settings.lyricsFontScale = Math.round(v * 20) / 20
-            }
-        }
-        SettingRow {
-            title: I18n.t("Position of the singing line")
-            description: I18n.t("Where the line being sung sits in the player: top, middle or bottom")
-            Slider {
-                wheelEnabled: false     // колесо прокручивает страницу, а не меняет настройку
-                width: 220
-                from: 0.15
-                to: 0.55
-                stepSize: 0.01
-                value: Settings.lyricsAnchor
-                valueText: v => Math.round(v * 100) + " %"
-                onMoved: v => Settings.lyricsAnchor = Math.round(v * 100) / 100
             }
         }
         SettingRow {

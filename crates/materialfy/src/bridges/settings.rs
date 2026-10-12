@@ -37,12 +37,10 @@ pub mod qobject {
         #[qproperty(bool, cover_spin, cxx_name = "coverSpin", READ, WRITE = set_cover_spin, NOTIFY = cover_spin_changed)]
         #[qproperty(bool, cover_pulse, cxx_name = "coverPulse", READ, WRITE = set_cover_pulse, NOTIFY = cover_pulse_changed)]
         #[qproperty(bool, calm_when_inactive, cxx_name = "calmWhenInactive", READ, WRITE = set_calm_when_inactive, NOTIFY = calm_when_inactive_changed)]
-        /// "normal" | "spicy" | "minimal" | "karaoke" — вид колонки текста
+        /// "normal" | "spicy" | "karaoke" — вид колонки текста
         #[qproperty(QString, lyrics_mode, cxx_name = "lyricsMode", READ, WRITE = set_lyrics_mode, NOTIFY = lyrics_mode_changed)]
         /// множитель размера шрифта текста
         #[qproperty(f64, lyrics_font_scale, cxx_name = "lyricsFontScale", READ, WRITE = set_lyrics_font_scale, NOTIFY = lyrics_font_scale_changed)]
-        /// положение активной строки по вертикали (0.15…0.55)
-        #[qproperty(f64, lyrics_anchor, cxx_name = "lyricsAnchor", READ, WRITE = set_lyrics_anchor, NOTIFY = lyrics_anchor_changed)]
         /// "none" | "soft" | "strong" — затемняющая подложка
         #[qproperty(QString, lyrics_scrim, cxx_name = "lyricsScrim", READ, WRITE = set_lyrics_scrim, NOTIFY = lyrics_scrim_changed)]
         #[qproperty(QString, animations, READ, WRITE = set_animations, NOTIFY = animations_changed)]
@@ -110,7 +108,6 @@ pub mod qobject {
         fn set_calm_when_inactive(self: Pin<&mut Settings>, value: bool);
         fn set_lyrics_mode(self: Pin<&mut Settings>, value: QString);
         fn set_lyrics_font_scale(self: Pin<&mut Settings>, value: f64);
-        fn set_lyrics_anchor(self: Pin<&mut Settings>, value: f64);
         fn set_lyrics_scrim(self: Pin<&mut Settings>, value: QString);
         fn set_animations(self: Pin<&mut Settings>, value: QString);
         fn set_low_power_mode(self: Pin<&mut Settings>, value: QString);
@@ -188,9 +185,6 @@ pub mod qobject {
         #[qsignal]
         #[cxx_name = "lyricsFontScaleChanged"]
         fn lyrics_font_scale_changed(self: Pin<&mut Settings>);
-        #[qsignal]
-        #[cxx_name = "lyricsAnchorChanged"]
-        fn lyrics_anchor_changed(self: Pin<&mut Settings>);
         #[qsignal]
         #[cxx_name = "lyricsScrimChanged"]
         fn lyrics_scrim_changed(self: Pin<&mut Settings>);
@@ -488,7 +482,6 @@ settings! {
     calm_when_inactive: bool = CalmWhenInactive, set_calm_when_inactive, calm_when_inactive_changed;
     lyrics_mode: QString = LyricsMode, set_lyrics_mode, lyrics_mode_changed;
     lyrics_font_scale: f64 = LyricsFontScale, set_lyrics_font_scale, lyrics_font_scale_changed;
-    lyrics_anchor: f64 = LyricsAnchor, set_lyrics_anchor, lyrics_anchor_changed;
     lyrics_scrim: QString = LyricsScrim, set_lyrics_scrim, lyrics_scrim_changed;
     animations: QString = Animations, set_animations, animations_changed;
     low_power_mode: QString = LowPowerMode, set_low_power_mode, low_power_mode_changed;
