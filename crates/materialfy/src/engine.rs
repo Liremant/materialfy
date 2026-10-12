@@ -207,6 +207,7 @@ fn spawn_app_requests(rt: &tokio::runtime::Handle, services: &Services) {
 /// Код выхода процесса.
 pub fn run(cli: Cli) -> i32 {
     setup_env(&cli);
+    let qml_guard = crate::qml_cache::prepare(cli.screenshot.is_none());
     let config_dir = cli.config_dir.clone().or_else(|| cli.screenshot.as_ref().map(|_| make_temp_dir()));
 
     ffi::app_set_names(&qstr("Materialfy"), &qstr("materialfy"), &qstr("materialfy"));
@@ -224,6 +225,9 @@ pub fn run(cli: Cli) -> i32 {
     // Плеер уже работает (возможно, спрятан в трей) — показываем его окно вместо второго экземпляра
     if cli.main_mode() && !cli.new_instance && rt.block_on(mf_platform::single_instance::raise_running_instance()) {
         return 0;
+    }
+    if let Some(guard) = qml_guard {
+        guard.arm(rt.handle());
     }
 
     // иконка окна; на Windows ярлыки и панель задач берут ещё и ресурс IDI_ICON1 из exe (build.rs)
@@ -267,6 +271,7 @@ pub fn run(cli: Cli) -> i32 {
     });
     // Активность окна → частота опроса удалённого плеера
     crate::qt::watch_app_state();
+    crate::qt::ffi::ffi::start_gui_heartbeat();
     // Все синглтоны — до создания движка: регистрация после загрузки модуля ломает разрешение типов
     ffi::register_qml_types();
 

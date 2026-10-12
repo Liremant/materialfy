@@ -42,6 +42,8 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstdio>
+#include <cwchar>
 #include <memory>
 #include <string>
 #include <vector>
@@ -265,6 +267,73 @@ app_quit()
   QCoreApplication::quit();
 }
 
+#if defined(Q_OS_WIN)
+namespace {
+wchar_t crash_log_path[MAX_PATH * 2] = {};
+
+// Модуль и смещение адреса: «Qt6Qml.dll+0x1216b7» — как в журнале событий Windows
+void
+describe_address(void* address, char* out, size_t size)
+{
+  HMODULE module = nullptr;
+  wchar_t name[MAX_PATH] = L"?";
+  if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                         reinterpret_cast<LPCWSTR>(address),
+                         &module) &&
+      module) {
+    wchar_t full[MAX_PATH];
+    if (GetModuleFileNameW(module, full, MAX_PATH)) {
+      const wchar_t* base = wcsrchr(full, L'\\');
+      wcsncpy_s(name, base ? base + 1 : full, _TRUNCATE);
+    }
+  }
+  const auto offset = reinterpret_cast<uintptr_t>(address) - reinterpret_cast<uintptr_t>(module);
+  _snprintf_s(out, size, _TRUNCATE, "%ls+0x%llx", name, static_cast<unsigned long long>(offset));
+}
+
+LONG WINAPI
+on_unhandled_exception(EXCEPTION_POINTERS* info)
+{
+  FILE* file = nullptr;
+  if (_wfopen_s(&file, crash_log_path, L"ab") == 0 && file) {
+    char where[MAX_PATH + 32];
+    describe_address(info->ExceptionRecord->ExceptionAddress, where, sizeof where);
+    fprintf(file, "=== native crash · Materialfy · exception 0x%08lx at %s\n",
+            static_cast<unsigned long>(info->ExceptionRecord->ExceptionCode), where);
+    void* frames[48];
+    const USHORT count = RtlCaptureStackBackTrace(0, 48, frames, nullptr);
+    for (USHORT i = 0; i < count; ++i) {
+      describe_address(frames[i], where, sizeof where);
+      fprintf(file, "  %2u %s\n", static_cast<unsigned>(i), where);
+    }
+    fclose(file);
+  }
+  return EXCEPTION_CONTINUE_SEARCH; // дальше — как обычно (отчёт Windows, журнал событий)
+}
+} // namespace
+#endif
+
+void
+install_native_crash_log(const QString& path)
+{
+#if defined(Q_OS_WIN)
+  wcsncpy_s(crash_log_path, reinterpret_cast<const wchar_t*>(path.utf16()), _TRUNCATE);
+  SetUnhandledExceptionFilter(on_unhandled_exception);
+#else
+  Q_UNUSED(path);
+#endif
+}
+
+void
+set_qt_env(const QString& name, const QString& value)
+{
+#if defined(Q_OS_WIN)
+  _wputenv_s(reinterpret_cast<const wchar_t*>(name.utf16()), reinterpret_cast<const wchar_t*>(value.utf16()));
+#else
+  qputenv(name.toUtf8().constData(), value.toUtf8());
+#endif
+}
+
 void
 app_set_names(const QString& name, const QString& org, const QString& desktop)
 {
@@ -370,6 +439,16 @@ watch_color_scheme()
   QObject::connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged, qApp, [](Qt::ColorScheme scheme) {
     system_dark_changed(scheme != Qt::ColorScheme::Light);
   });
+}
+
+void
+start_gui_heartbeat()
+{
+  auto* timer = new QTimer(qApp);
+  timer->setInterval(1000);
+  QObject::connect(timer, &QTimer::timeout, qApp, [] { gui_heartbeat(); });
+  timer->start();
+  gui_heartbeat();
 }
 
 void

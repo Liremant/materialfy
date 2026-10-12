@@ -11,6 +11,7 @@ mod engine;
 mod icons;
 mod images;
 mod models;
+mod qml_cache;
 mod qt;
 mod winframe;
 
@@ -24,6 +25,10 @@ fn main() {
 /// Паника в GUI-потоке (или в коде, который зовёт Qt) роняет процесс без следа: у сборки для Windows нет консоли.
 /// Пишем её в <app_data_dir>/crash.log (последние ~64 КиБ) — с версией, потоком, местом и стеком вызовов.
 fn install_crash_log() {
+    let log = mf_platform::dirs::app_data_dir().join("crash.log");
+    let _ = std::fs::create_dir_all(mf_platform::dirs::app_data_dir());
+    // падения в нативном коде (Qt, драйвер видеокарты) — туда же, на Windows
+    qt::ffi::ffi::install_native_crash_log(&cxx_qt_lib::QString::from(log.to_string_lossy().as_ref()));
     let default = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         let path = mf_platform::dirs::app_data_dir().join("crash.log");

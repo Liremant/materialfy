@@ -22,6 +22,8 @@ pub mod ffi {
         fn app_exec() -> i32;
         fn app_destroy();
         fn app_set_names(app: &QString, org: &QString, desktop: &QString);
+        fn set_qt_env(name: &QString, value: &QString);
+        fn install_native_crash_log(path: &QString);
         fn app_set_quit_on_last_window_closed(value: bool);
         fn app_set_window_icon(path: &QString);
         fn app_add_font(path: &QString) -> i32;
@@ -35,6 +37,7 @@ pub mod ffi {
         fn system_color_scheme_dark() -> bool;
         fn watch_color_scheme();
         fn watch_app_state();
+        fn start_gui_heartbeat();
         fn open_local_folder(path: &QString) -> bool;
 
         fn engine_set_context_bool(engine: Pin<&mut QQmlApplicationEngine>, name: &QString, value: bool);
@@ -66,7 +69,13 @@ pub mod ffi {
         fn system_dark_changed(dark: bool);
         /// QGuiApplication::applicationStateChanged (cpp/mf_shell.cpp, watch_app_state)
         fn app_active_changed(active: bool);
+        /// таймер GUI-потока (cpp/mf_shell.cpp, start_gui_heartbeat)
+        fn gui_heartbeat();
     }
+}
+
+fn gui_heartbeat() {
+    mf_platform::single_instance::gui_alive();
 }
 
 fn system_dark_changed(dark: bool) {
