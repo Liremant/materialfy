@@ -422,46 +422,47 @@ Page {
                 delegate: Loader {
                     required property var modelData
                     sourceComponent: rowCol.kind === "episodes" ? episodeCard : rowCol.kind === "artists" ? artistTile : mediaTile
-                    Component {
-                        id: mediaTile
-                        MediaTile {
-                            readonly property var e: parent ? parent.modelData : ({})
-                            size: 168
-                            cover: e.cover ?? ""
-                            title: e.title ?? ""
-                            subtitle: e.subtitle ?? ""
-                            round: e.kind === "artist"
-                            shape: e.kind === "radio" ? "flower8" : e.kind === "dj" ? "cookie12" : e.kind === "artist" ? "circle" : "softSquare"
-                            badge: e.kind === "radio" ? I18n.t("RADIO") : ""
-                            placeholderIcon: ({ playlist: "queue_music", album: "album", artist: "person", show: "podcasts", radio: "radio", dj: "graphic_eq" })[e.kind] ?? "album"
-                            showPlay: true
-                            playing: page.isPlaying(e)
-                            onClicked: page.openEntry(e)
-                            onPlayClicked: page.playEntry(e)
-                            onMenuRequested: p => page.showMenu(e, p)
-                        }
+                }
+                // Плитки — одни компоненты на всю полку, а не по три на каждую плитку
+                Component {
+                    id: mediaTile
+                    MediaTile {
+                        readonly property var e: parent ? parent.modelData : ({})
+                        size: 168
+                        cover: e.cover ?? ""
+                        title: e.title ?? ""
+                        subtitle: e.subtitle ?? ""
+                        round: e.kind === "artist"
+                        shape: e.kind === "radio" ? "flower8" : e.kind === "dj" ? "cookie12" : e.kind === "artist" ? "circle" : "softSquare"
+                        badge: e.kind === "radio" ? I18n.t("RADIO") : ""
+                        placeholderIcon: ({ playlist: "queue_music", album: "album", artist: "person", show: "podcasts", radio: "radio", dj: "graphic_eq" })[e.kind] ?? "album"
+                        showPlay: true
+                        playing: page.isPlaying(e)
+                        onClicked: page.openEntry(e)
+                        onPlayClicked: page.playEntry(e)
+                        onMenuRequested: p => page.showMenu(e, p)
                     }
-                    Component {
-                        id: artistTile
-                        MediaTile {
-                            readonly property var a: parent ? parent.modelData : ({})
-                            size: 148
-                            round: true
-                            cover: a.cover ?? ""
-                            title: a.name ?? ""
-                            subtitle: I18n.t("Artist")
-                            placeholderIcon: "person"
-                            onClicked: Catalog.openArtist(a.artistId ?? "")
-                            onMenuRequested: p => page.showMenu({ kind: "artist", uri: a.uri ?? "", title: a.name ?? "", id: a.artistId ?? "" }, p)
-                        }
+                }
+                Component {
+                    id: artistTile
+                    MediaTile {
+                        readonly property var a: parent ? parent.modelData : ({})
+                        size: 148
+                        round: true
+                        cover: a.cover ?? ""
+                        title: a.name ?? ""
+                        subtitle: I18n.t("Artist")
+                        placeholderIcon: "person"
+                        onClicked: Catalog.openArtist(a.artistId ?? "")
+                        onMenuRequested: p => page.showMenu({ kind: "artist", uri: a.uri ?? "", title: a.name ?? "", id: a.artistId ?? "" }, p)
                     }
-                    Component {
-                        id: episodeCard
-                        EpisodeCard {
-                            readonly property var ep: parent ? parent.modelData : ({})
-                            episode: ep
-                            onClicked: Catalog.openEpisode(ep.episodeId ?? "")
-                        }
+                }
+                Component {
+                    id: episodeCard
+                    EpisodeCard {
+                        readonly property var ep: parent ? parent.modelData : ({})
+                        episode: ep
+                        onClicked: Catalog.openEpisode(ep.episodeId ?? "")
                     }
                 }
             }
