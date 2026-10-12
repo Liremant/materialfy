@@ -86,10 +86,10 @@ mod tests {
         write(&file, &CachedLibrary::new(entries.clone(), Vec::new()));
         write(&file, &CachedLibrary::new(Vec::new(), Vec::new()));
         assert_eq!(read(&file).unwrap().rootlist, entries);
-        // a cache from another version is ignored
+        // a cache from another version is ignored (written by hand: `write` refuses invalid ones)
         let mut stale = CachedLibrary::new(entries, Vec::new());
         stale.version = 0;
-        write(&file, &stale);
+        std::fs::write(&file, serde_json::to_vec(&stale).unwrap()).unwrap();
         assert!(read(&file).is_none());
         std::fs::remove_dir_all(dir).unwrap();
     }
