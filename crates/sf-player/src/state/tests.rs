@@ -141,6 +141,57 @@ fn next_pops_the_queue_head_into_now_playing() {
     assert_eq!(engine_commands(&mut core), [PlayerCommand::Next]);
 }
 
+/// Следующая песня очереди скачивается заранее, пока играет текущая.
+#[test]
+fn the_next_queue_track_is_preloaded_while_the_current_one_plays() {
+    let mut core = headless();
+    playing(&mut core, "spotify:track:a");
+    core.local.position_ms = 4_000;
+    loaded_queue(&mut core, "spotify:track:a", &["spotify:track:b", "spotify:track:c"]);
+    core.tick();
+    assert_eq!(engine_commands(&mut core), [PlayerCommand::Preload("spotify:track:b".into())]);
+    // повторный tick не заказывает ту же песню снова
+    core.tick();
+    assert!(engine_commands(&mut core).is_empty(), "одного заказа на пару треков достаточно");
+}
+
+/// Загрузка вперёд ждёт, пока текущий трек заиграет: сначала качается он сам.
+#[test]
+fn nothing_is_preloaded_before_the_current_track_plays() {
+    let mut core = headless();
+    playing(&mut core, "spotify:track:a");
+    core.local.position_ms = 500;
+    loaded_queue(&mut core, "spotify:track:a", &["spotify:track:b"]);
+    core.tick();
+    assert!(engine_commands(&mut core).is_empty(), "первые секунды трека — его собственные");
+
+    core.local.playback = Playback::Paused;
+    core.local.position_ms = 30_000;
+    core.tick();
+    assert!(engine_commands(&mut core).is_empty(), "на паузе вперёд не качаем");
+
+    core.local.playback = Playback::Playing;
+    core.tick();
+    assert_eq!(engine_commands(&mut core), [PlayerCommand::Preload("spotify:track:b".into())]);
+}
+
+/// На новом треке заказ вперёд вооружается заново: следующей становится песня после него.
+#[test]
+fn a_new_track_preloads_its_own_successor() {
+    let mut core = headless();
+    playing(&mut core, "spotify:track:a");
+    core.local.position_ms = 4_000;
+    loaded_queue(&mut core, "spotify:track:a", &["spotify:track:b", "spotify:track:c"]);
+    core.tick();
+    assert_eq!(engine_commands(&mut core), [PlayerCommand::Preload("spotify:track:b".into())]);
+
+    playing(&mut core, "spotify:track:b");
+    core.local.position_ms = 4_000;
+    loaded_queue(&mut core, "spotify:track:b", &["spotify:track:c"]);
+    core.tick();
+    assert_eq!(engine_commands(&mut core), [PlayerCommand::Preload("spotify:track:c".into())]);
+}
+
 /// Плеер-бар называет следующую песню сразу, из строки очереди.
 #[test]
 fn next_shows_the_next_songs_title_before_the_engine_loads_it() {
