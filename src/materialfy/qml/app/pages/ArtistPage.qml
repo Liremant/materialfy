@@ -179,10 +179,10 @@ Page {
                         enabled: !Radio.locked
                         onClicked: Radio.playStation("artist:" + page.artistId, page.info.name ?? "")
                     }
-                    Button {
-                        text: page.followed ? I18n.t("Following") : I18n.t("Follow")
-                        icon: page.followed ? "check" : "person_add"
-                        style: "outlined"
+                    IconButton {
+                        Accessible.name: page.followed ? I18n.t("Following") : I18n.t("Follow")
+                        icon: page.followed ? "how_to_reg" : "person_add"
+                        style: page.followed ? "tonal" : "standard"
                         size: "m"
                         checkable: true
                         checked: page.followed

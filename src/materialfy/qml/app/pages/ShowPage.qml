@@ -166,11 +166,14 @@ Page {
                             : I18n.t("Play latest")
                         onClicked: page.mainAction()
                     }
-                    Button {
+                    IconButton {
                         size: "m"
-                        style: "tonal"
+                        style: page.saved ? "tonal" : "standard"
+                        checkable: true
+                        checked: page.saved
+                        autoToggle: false
                         icon: page.saved ? "library_add_check" : "library_add"
-                        text: page.compact ? "" : page.saved ? I18n.t("In library") : I18n.t("Follow")
+                        Accessible.name: page.saved ? I18n.t("In library") : I18n.t("Follow")
                         onClicked: Library.toggleSaved(page.info.uri ?? "")
                     }
                     IconButton {

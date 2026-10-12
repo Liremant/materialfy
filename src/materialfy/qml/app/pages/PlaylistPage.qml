@@ -187,13 +187,13 @@ TrackListPage {
             size: "m"
             onClicked: page.editing = true
         }
-        Button {
+        IconButton {
             visible: !page.canEdit && !page.own && page.playlistId !== ""
             anchors.verticalCenter: parent.verticalCenter
             readonly property bool followed: page.info.followed === true
-            text: followed ? I18n.t("Following") : I18n.t("Follow")
-            icon: followed ? "check" : "add"
-            style: "tonal"
+            Accessible.name: followed ? I18n.t("Following") : I18n.t("Follow")
+            icon: followed ? "library_add_check" : "library_add"
+            style: followed ? "tonal" : "standard"
             size: "m"
             checkable: true
             autoToggle: false
