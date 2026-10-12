@@ -1,5 +1,6 @@
 import QtQuick
 import Md3
+import Materialfy.Core
 
 // Кнопки окна MD3: свернуть, развернуть / свернуть в окно, закрыть. Рамку окна рисует приложение, поэтому
 // кнопки есть на всех ОС и во всех раскладках (в мини-плеере — свои, в пилюле MiniMode).
@@ -29,7 +30,8 @@ Row {
     WindowButton {
         icon: "remove"
         label: I18n.t("Minimize")
-        onClicked: root.window.showMinimized()
+        // не showMinimized(): тот сбрасывает «развёрнуто», и из панели задач окно вернулось бы обычным
+        onClicked: WindowShell.minimize(root.window)
     }
     WindowButton {
         icon: root.expanded ? "collapse_content" : "expand_content"

@@ -33,8 +33,8 @@ fn main() {
         println!("cargo::rustc-env=MATERIALFY_COMMIT={short}");
     }
 
-    // winframe.cpp собирается везде (вне Windows — заглушка), чтобы привязки в qt/ffi.rs не зависели от ОС
-    let cpp = ["cpp/mf_shell.cpp", "cpp/register.cpp", "cpp/winframe.cpp"];
+    // winframe.cpp и taskbar.cpp собираются везде (вне Windows — заглушка), чтобы привязки в qt/ffi.rs не зависели от ОС
+    let cpp = ["cpp/mf_shell.cpp", "cpp/register.cpp", "cpp/taskbar.cpp", "cpp/winframe.cpp"];
 
     // Без QmlModule: он требует, чтобы все мосты лежали в одном каталоге (QTBUG-93443);
     // типы Materialfy.Core регистрирует cpp/register.cpp.
@@ -100,6 +100,9 @@ END
             println!("cargo::rustc-link-lib=user32");
             println!("cargo::rustc-link-lib=dwmapi");
             println!("cargo::rustc-link-lib=shell32");
+            // taskbar.cpp: ITaskbarList3 (COM), тема панели задач из реестра
+            println!("cargo::rustc-link-lib=ole32");
+            println!("cargo::rustc-link-lib=advapi32");
         }
         // dlsym (display.rs: QWindowSystemInterface::handlePrimaryScreenChanged)
         Ok("linux") => println!("cargo::rustc-link-lib=dl"),

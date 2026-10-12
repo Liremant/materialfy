@@ -5,6 +5,23 @@
 // HTCAPTION не возвращаем: в той же полосе живут сайдбар и кнопки.
 #include "winframe.h"
 
+#include <QtGui/QWindow>
+
+namespace mf {
+
+void
+window_minimize(QObject* object)
+{
+  auto* window = qobject_cast<QWindow*>(object);
+  if (!window)
+    return;
+  // Qt на Windows ставит WPF_RESTORETOMAXIMIZED по флагу Maximized нового состояния; FullScreen остаётся —
+  // окно возвращается из панели задач на весь экран
+  window->setWindowStates(window->windowStates() | Qt::WindowMinimized);
+}
+
+} // namespace mf
+
 #if defined(_WIN32)
 
 #ifndef NOMINMAX
@@ -42,6 +59,20 @@ apply_frame_style(HWND hwnd)
     return;
   SetWindowLongPtrW(hwnd, GWL_STYLE, want);
   SetWindowPos(hwnd, nullptr, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+// Windows 11: скруглённые углы MD3. DWM рисует их сам (вместе с тонкой обводкой) и делает прямыми у развёрнутого
+// окна. На весь экран (F11) окно по стилю обычное (WS_THICKFRAME возвращаем мы) — углы и обводку DWM оставил бы,
+// поэтому там они выключаются явно. Windows 10 атрибутов не знает — вызовы вернут ошибку, углы прямые.
+void
+apply_corners(HWND hwnd, bool fullscreen)
+{
+  constexpr DWORD corner_preference = 33; // DWMWA_WINDOW_CORNER_PREFERENCE (SDK 10.0.22000+)
+  constexpr DWORD border_color = 34;      // DWMWA_BORDER_COLOR
+  const int corners = fullscreen ? 1 : 2; // DWMWCP_DONOTROUND : DWMWCP_ROUND
+  const COLORREF border = fullscreen ? 0xFFFFFFFE : 0xFFFFFFFF; // DWMWA_COLOR_NONE : DWMWA_COLOR_DEFAULT
+  DwmSetWindowAttribute(hwnd, corner_preference, &corners, sizeof(corners));
+  DwmSetWindowAttribute(hwnd, border_color, &border, sizeof(border));
 }
 
 bool
@@ -172,11 +203,12 @@ winframe_install(QObject* object, int grip)
   const MARGINS margins{ 0, 0, 0, 1 };
   DwmExtendFrameIntoClientArea(hwnd, &margins);
 
-  // Windows 11: скруглённые углы MD3. DWM рисует их сам (вместе с тонкой обводкой) и делает прямыми
-  // у развёрнутого окна и на весь экран. Windows 10 атрибута не знает — вызов вернёт ошибку, углы прямые.
-  constexpr DWORD corner_preference = 33; // DWMWA_WINDOW_CORNER_PREFERENCE (SDK 10.0.22000+)
-  constexpr int corner_round = 2;         // DWMWCP_ROUND
-  DwmSetWindowAttribute(hwnd, corner_preference, &corner_round, sizeof(corner_round));
+  apply_corners(hwnd, window->windowStates().testFlag(Qt::WindowFullScreen));
+  // Свёрнутое окно углы не меняет: из панели задач оно вернётся в прежнем состоянии
+  QObject::connect(window, &QWindow::windowStateChanged, window, [hwnd](Qt::WindowState state) {
+    if (state != Qt::WindowMinimized)
+      apply_corners(hwnd, state == Qt::WindowFullScreen);
+  });
   return true;
 }
 

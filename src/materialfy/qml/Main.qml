@@ -632,5 +632,17 @@ Window {
     Shortcut { sequence: "Ctrl+B"; onActivated: Settings.sidebarCollapsed = !Settings.sidebarCollapsed }
     Shortcut { sequence: "Ctrl+L"; onActivated: { Settings.rightPanelTab = "lyrics"; Settings.rightPanelOpen = !Settings.rightPanelOpen } }
     Shortcut { sequences: [StandardKey.Quit]; onActivated: Qt.quit() }
-    Shortcut { sequence: "F11"; onActivated: win.visibility = win.visibility === Window.FullScreen ? Window.Windowed : Window.FullScreen }
+    // F11: на весь экран и обратно — к тому, каким окно было (развёрнутым или обычным)
+    property bool _maximizedBeforeFullScreen: false
+    Shortcut {
+        sequence: "F11"
+        onActivated: {
+            if (win.visibility === Window.FullScreen) {
+                win.visibility = win._maximizedBeforeFullScreen ? Window.Maximized : Window.Windowed
+            } else {
+                win._maximizedBeforeFullScreen = win.visibility === Window.Maximized
+                win.visibility = Window.FullScreen
+            }
+        }
+    }
 }

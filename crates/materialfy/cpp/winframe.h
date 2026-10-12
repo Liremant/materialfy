@@ -9,4 +9,8 @@ namespace mf {
 // false — не QWindow или нет HWND.
 bool winframe_install(QObject* window, int grip);
 
+// Свернуть, сохранив «развёрнуто» / «на весь экран»: setWindowStates(windowStates() | Qt::WindowMinimized).
+// QWindow::showMinimized() ставит ровно Minimized — Windows и X11 тогда возвращают окно обычным (issue #2).
+void window_minimize(QObject* window);
+
 } // namespace mf

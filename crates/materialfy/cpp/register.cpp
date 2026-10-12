@@ -24,6 +24,7 @@
 #include "materialfy/src/icons.cxxqt.h"
 #include "materialfy/src/models/list_model.cxxqt.h"
 #include "materialfy/src/models/track_filter.cxxqt.h"
+#include "materialfy/src/winframe.cxxqt.h"
 
 namespace mf {
 
@@ -59,6 +60,7 @@ register_qml_types()
   singleton<Catalog>("Catalog");
   singleton<Lyrics>("Lyrics");
   singleton<Updater>("Updater");
+  singleton<WindowShell>("WindowShell");
 
   qmlRegisterType<TrackFilter>(URI, 1, 0, "TrackFilter");
   qmlRegisterUncreatableType<DictListModel>(URI, 1, 0, "DictListModel", QStringLiteral("the model is created in Rust"));
