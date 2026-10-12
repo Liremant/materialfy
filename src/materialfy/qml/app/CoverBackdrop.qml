@@ -73,9 +73,23 @@ Item {
         }
     }
 
+    // Статичный фон без «плавания»: та же крошечная копия, растянутая билинейно (smooth) —
+    // почти тот же мягкий градиент, что в шейдере, но без полноэкранного прохода в каждом кадре.
+    Image {
+        anchors.fill: parent
+        source: img.source
+        visible: !root._palette && img.status === Image.Ready && root.ready && !root._flowing
+        fillMode: Image.PreserveAspectCrop
+        smooth: true
+        asynchronous: false
+        opacity: root._palette ? 1 : 1.15
+    }
+
     ShaderEffect {
         anchors.fill: parent
-        visible: root.ready
+        // Без «плавания» шейдер не нужен: он каждый кадр семплирует и смешивает всю площадь окна.
+        // Статичная копия обложки (та же кубическая интерполяция блюра) дешевле на порядки.
+        visible: root.ready && (root._palette || root._flowing)
         property var source: root._palette ? swatches : img
         property real time: root._t
         property real amp: root._flowing ? 0.08 * root._blur : 0
