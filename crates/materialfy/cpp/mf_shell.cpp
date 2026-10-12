@@ -495,19 +495,47 @@ watch_gui_thread()
     if (reported || !gui_thread || !crash_log_path[0])
       continue;
     reported = true;
-    void* frames[64];
-    USHORT count = 0;
-    if (SuspendThread(gui_thread) != static_cast<DWORD>(-1)) {
-      count = capture_thread_stack(gui_thread, frames, 64);
-      ResumeThread(gui_thread);
+    // Несколько снимков через полсекунды, пока поток молчит: долгая работа видна в каждом, случайное — в одном
+    constexpr int max_samples = 12;
+    constexpr USHORT depth = 64;
+    static void* samples[max_samples][depth];
+    USHORT counts[max_samples] = {};
+    int taken = 0;
+    while (taken < max_samples && monotonic_ms() - gui_tick_ms.load() >= 10000) {
+      if (SuspendThread(gui_thread) != static_cast<DWORD>(-1)) {
+        counts[taken] = capture_thread_stack(gui_thread, samples[taken], depth);
+        ResumeThread(gui_thread);
+        ++taken;
+      }
+      Sleep(500);
     }
     FILE* file = nullptr;
     if (_wfopen_s(&file, crash_log_path, L"ab") == 0 && file) {
-      fprintf(file, "=== hang · Materialfy · the GUI thread has not responded for %lld s\n", silent / 1000);
+      fprintf(file, "=== hang · Materialfy · the GUI thread has not responded for %lld s, %d samples\n",
+              (monotonic_ms() - gui_tick_ms.load()) / 1000, taken);
       char where[MAX_PATH + 32];
-      for (USHORT i = 0; i < count; ++i) {
-        describe_address(frames[i], where, sizeof where);
-        fprintf(file, "  %2u %s\n", static_cast<unsigned>(i), where);
+      // сводка: в скольких снимках встречается адрес (верхние 40 по частоте)
+      std::vector<std::pair<void*, int>> hits;
+      for (int s = 0; s < taken; ++s)
+        for (USHORT i = 0; i < counts[s]; ++i) {
+          auto it = std::find_if(hits.begin(), hits.end(), [&](const auto& h) { return h.first == samples[s][i]; });
+          if (it == hits.end())
+            hits.emplace_back(samples[s][i], 1);
+          else if (std::none_of(samples[s], samples[s] + i, [&](void* a) { return a == samples[s][i]; }))
+            ++it->second;
+        }
+      std::stable_sort(hits.begin(), hits.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
+      fprintf(file, "  most frequent frames (samples containing it):\n");
+      for (size_t i = 0; i < hits.size() && i < 40; ++i) {
+        describe_address(hits[i].first, where, sizeof where);
+        fprintf(file, "    %2d/%d %s\n", hits[i].second, taken, where);
+      }
+      for (int s = 0; s < taken; ++s) {
+        fprintf(file, "  sample %d:\n", s);
+        for (USHORT i = 0; i < counts[s]; ++i) {
+          describe_address(samples[s][i], where, sizeof where);
+          fprintf(file, "    %2u %s\n", static_cast<unsigned>(i), where);
+        }
       }
       fclose(file);
     }
