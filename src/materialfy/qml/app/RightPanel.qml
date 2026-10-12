@@ -11,7 +11,8 @@ Surface {
     readonly property var tabs: [
         { key: "queue", text: I18n.t("Queue"), icon: "queue_music" },
         { key: "lyrics", text: I18n.t("Song lyrics"), icon: "title" },
-        { key: "devices", text: I18n.t("Devices"), icon: "speaker_group" }
+        { key: "devices", text: I18n.t("Devices"), icon: "speaker_group" },
+        { key: "friends", text: I18n.t("Friends"), icon: "group" }
     ]
     readonly property int tabIndex: Math.max(0, tabs.findIndex(t => t.key === Settings.rightPanelTab))
     readonly property string tab: tabs[tabIndex].key
@@ -59,6 +60,15 @@ Surface {
                 visible: root.tab === "devices"
                 sourceComponent: DevicePanel {
                     shown: root.tab === "devices" && Settings.rightPanelOpen
+                }
+            }
+            // друзья и Jam: тоже при первом открытии; опрос активности — только пока вкладка видна
+            Loader {
+                anchors.fill: parent
+                active: root.tab === "friends" || item !== null
+                visible: root.tab === "friends"
+                sourceComponent: FriendsPanel {
+                    shown: root.tab === "friends" && Settings.rightPanelOpen
                 }
             }
         }

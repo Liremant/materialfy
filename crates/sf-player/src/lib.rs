@@ -8,6 +8,8 @@
 
 pub mod engine;
 pub mod handle;
+/// JSON pushes of the dealer (social-connect) for sf-services
+pub mod pushes;
 /// внутреннее «queue-state»
 pub mod state;
 

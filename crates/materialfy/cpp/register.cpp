@@ -17,6 +17,7 @@
 #include "materialfy/src/bridges/radio.cxxqt.h"
 #include "materialfy/src/bridges/releases.cxxqt.h"
 #include "materialfy/src/bridges/settings.cxxqt.h"
+#include "materialfy/src/bridges/social.cxxqt.h"
 #include "materialfy/src/bridges/theme.cxxqt.h"
 #include "materialfy/src/bridges/translations.cxxqt.h"
 #include "materialfy/src/bridges/updater.cxxqt.h"
@@ -54,6 +55,7 @@ register_qml_types()
   singleton<Radio>("Radio");
   singleton<Home>("Home");
   singleton<Releases>("Releases");
+  singleton<Social>("Social");
   singleton<Catalog>("Catalog");
   singleton<Lyrics>("Lyrics");
   singleton<Updater>("Updater");

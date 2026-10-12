@@ -21,6 +21,8 @@ pub mod library;
 pub mod lyrics;
 /// «Новинки»: «Радар новинок» и свежие релизы исполнителей
 pub mod releases;
+/// Friends (friend activity) and Jam through the session
+pub mod social;
 /// auto-update from GitHub Releases
 pub mod update;
 pub mod wave;
@@ -44,6 +46,7 @@ pub use library::{FeedbackKind, LibraryEvent, LibraryKind, LibraryService, Playl
 pub use lyrics::{LyricsService, LyricsSnapshot, LyricsStatus};
 pub use md3_model::{ListChange, PlaylistId};
 pub use releases::{NewRelease, ReleasesService, ReleasesSnapshot};
+pub use social::{FriendActivity, Jam, JamMember, SocialService, SocialSnapshot};
 pub use update::{UpdateService, UpdateSnapshot, UpdateState};
 pub use wave::{WaveService, WaveSnapshot};
 
@@ -88,6 +91,8 @@ pub struct Services {
     pub lyrics: Arc<LyricsService>,
     pub history: Arc<HistoryService>,
     pub devices: Arc<DevicesService>,
+    /// friend activity and Jam
+    pub social: Arc<SocialService>,
     /// auto-update (checks start from the Updater bridge, not here)
     pub update: Arc<update::UpdateService>,
     pub player: PlayerHandle,
@@ -145,6 +150,7 @@ impl Services {
         };
         let lyrics = LyricsService::new(rt.clone(), player.clone(), fetcher);
         let devices = DevicesService::new(rt.clone(), auth.clone(), player.clone(), settings.clone());
+        let social = SocialService::new(rt.clone(), auth.clone(), player.clone());
         glue::spawn_settings_glue(rt, settings.clone(), player.clone());
 
         let (app_requests, _) = broadcast::channel(16);
@@ -167,6 +173,7 @@ impl Services {
             lyrics,
             history,
             devices,
+            social,
             update,
             player,
             app_requests,
