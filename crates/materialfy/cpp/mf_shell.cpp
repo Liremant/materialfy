@@ -25,6 +25,7 @@
 #include <QtNetwork/QNetworkAccessManager>
 #include <QtNetwork/QNetworkDiskCache>
 #include <QtNetwork/QNetworkProxy>
+#include <QtNetwork/QNetworkReply>
 #include <QtNetwork/QNetworkRequest>
 #include <QtQml/QQmlContext>
 #include <QtQml/QQmlEngine>
@@ -40,6 +41,7 @@
 #include <QtWidgets/QApplication>
 
 #include <algorithm>
+#include <atomic>
 #include <memory>
 #include <string>
 #include <vector>
@@ -87,7 +89,27 @@ int argc_storage = 0;
 QApplication* app = nullptr;
 QPointer<QWindow> main_window;
 
-// Только HTTP/1.1: по HTTP/2 сервер обложек Яндекса отвечает REFUSED_STREAM, когда страница
+// Картинки Spotify: один и тот же путь /image/<id> отдают несколько CDN. Основной i.scdn.co в РФ не открывается
+// или отвечает по 8+ с — его адреса переписываем на зеркала (тот же список — sf_api::image_hosts). Берём текущее
+// рабочее зеркало; таймаут или сетевая ошибка переводят всех на следующее (404 — нет картинки, хост ни при чём).
+const char* const spotify_image_hosts[] = { "image-cdn-fa.spotifycdn.com", "image-cdn-ak.spotifycdn.com",
+                                            "image-cdn.spotifycdn.com", "i2o.scdn.co" };
+constexpr int spotify_image_host_count = 4;
+// и прежние адреса: кэш обложек, скачанных до зеркал, лежит под i.scdn.co
+const char* const spotify_image_known_hosts[] = { "i.scdn.co", "image-cdn-fa.spotifycdn.com", "image-cdn-ak.spotifycdn.com",
+                                                  "image-cdn.spotifycdn.com", "i2o.scdn.co" };
+std::atomic<int> spotify_image_host{ 0 };
+
+bool
+is_spotify_image_host(const QString& host)
+{
+  for (const char* known : spotify_image_known_hosts)
+    if (host == QLatin1String(known))
+      return true;
+  return false;
+}
+
+// Только HTTP/1.1: по HTTP/2 сервер обложек отвечает REFUSED_STREAM, когда страница
 // разом просит десятки картинок, и часть обложек не появляется.
 class Http1Nam : public QNetworkAccessManager
 {
@@ -99,7 +121,53 @@ protected:
   {
     QNetworkRequest copy(request);
     copy.setAttribute(QNetworkRequest::Http2AllowedAttribute, false);
-    return QNetworkAccessManager::createRequest(op, copy, data);
+    // зависшее соединение не держит очередь (на хост их всего шесть): через 10 с — ошибка и повтор в QML
+    copy.setTransferTimeout(10000);
+    QUrl url = copy.url();
+    if (op != GetOperation || !is_spotify_image_host(url.host()) || !url.path().startsWith(QLatin1String("/image/")))
+      return QNetworkAccessManager::createRequest(op, copy, data);
+
+    // проверка запасных обложек: сеть, где ни одно зеркало Spotify не открывается (и кэш не выручает)
+    static const bool no_spotify_images = qEnvironmentVariableIsSet("MATERIALFY_TEST_NO_SPOTIFY_IMAGES");
+    if (no_spotify_images) {
+      url.setHost(QStringLiteral("spotify-images.invalid"));
+      copy.setUrl(url);
+      copy.setAttribute(QNetworkRequest::CacheLoadControlAttribute, QNetworkRequest::AlwaysNetwork);
+      return QNetworkAccessManager::createRequest(op, copy, data);
+    }
+    // картинка по id не меняется: из кэша — без перепроверки; уже скачанное по любому из адресов не качаем
+    copy.setAttribute(QNetworkRequest::CacheLoadControlAttribute, QNetworkRequest::PreferCache);
+    if (QAbstractNetworkCache* disk = cache()) {
+      for (const char* known : spotify_image_known_hosts) {
+        QUrl cached = url;
+        cached.setHost(QLatin1String(known));
+        if (disk->metaData(cached).isValid()) {
+          copy.setUrl(cached);
+          return QNetworkAccessManager::createRequest(op, copy, data);
+        }
+      }
+    }
+    const int host = spotify_image_host.load();
+    url.setHost(QLatin1String(spotify_image_hosts[host]));
+    copy.setUrl(url);
+    QNetworkReply* reply = QNetworkAccessManager::createRequest(op, copy, data);
+    QObject::connect(reply, &QNetworkReply::finished, reply, [reply, host] {
+      const auto error = reply->error();
+      const bool host_failed = error == QNetworkReply::OperationCanceledError // таймаут
+                               || error == QNetworkReply::TimeoutError || error == QNetworkReply::HostNotFoundError
+                               || error == QNetworkReply::ConnectionRefusedError
+                               || error == QNetworkReply::RemoteHostClosedError
+                               || error == QNetworkReply::SslHandshakeFailedError
+                               || error == QNetworkReply::TemporaryNetworkFailureError
+                               || error == QNetworkReply::UnknownNetworkError
+                               || error == QNetworkReply::ServiceUnavailableError
+                               || error == QNetworkReply::InternalServerError;
+      if (host_failed) {
+        int expected = host;
+        spotify_image_host.compare_exchange_strong(expected, (host + 1) % spotify_image_host_count);
+      }
+    });
+    return reply;
   }
 };
 

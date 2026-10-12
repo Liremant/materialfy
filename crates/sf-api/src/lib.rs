@@ -6,6 +6,7 @@ use std::fmt;
 pub mod client;
 pub mod gateway;
 pub mod http;
+pub mod image_hosts;
 pub mod limits;
 pub mod link;
 pub mod map;
