@@ -289,6 +289,12 @@ fn folder_tree(rootlist: &Rootlist) -> (Vec<String>, HashMap<String, Folder>) {
                     None => root.push(key),
                 }
             }
+            // папка внутри самой себя или уже встреченная дала бы цикл (и бесконечную рекурсию в collect_placed):
+            // её содержимое идёт в уже известную папку, а при вложении в себя — в текущую
+            RootlistEntry::FolderStart { id, .. } if stack.contains(id) || folders.get(id).is_some_and(|f| !f.id.is_empty()) => {
+                let into = if stack.contains(id) { stack.last().cloned().unwrap_or_default() } else { id.clone() };
+                stack.push(into);
+            }
             RootlistEntry::FolderStart { id, name } => {
                 let parent = stack.last().cloned().unwrap_or_default();
                 let key = format!("folder:{id}");
@@ -2949,13 +2955,26 @@ fn spotify_mosaic(images: &[models::Image]) -> bool {
 }
 
 fn collect_placed<'a>(folder: &'a Folder, folders: &'a HashMap<String, Folder>, placed: &mut HashSet<&'a str>) {
+    collect_placed_from(folder, folders, placed, &mut HashSet::new());
+}
+
+fn collect_placed_from<'a>(
+    folder: &'a Folder,
+    folders: &'a HashMap<String, Folder>,
+    placed: &mut HashSet<&'a str>,
+    seen: &mut HashSet<&'a str>,
+) {
+    // цикл папок (A внутри B внутри A) не уводит в бесконечную рекурсию
+    if !seen.insert(folder.id.as_str()) {
+        return;
+    }
     for child in &folder.children {
         if let Some(uri) = child.strip_prefix("playlist:") {
             placed.insert(uri);
         } else if let Some(id) = child.strip_prefix("folder:")
             && let Some(sub) = folders.get(id)
         {
-            collect_placed(sub, folders, placed);
+            collect_placed_from(sub, folders, placed, seen);
         }
     }
 }
@@ -3057,6 +3076,31 @@ mod tests {
         let mut placed = HashSet::new();
         collect_placed(&folders["f1"], &folders, &mut placed);
         assert!(placed.contains("spotify:playlist:c"));
+    }
+
+    #[test]
+    fn a_folder_inside_itself_does_not_loop() {
+        let rootlist = Rootlist {
+            entries: vec![
+                RootlistEntry::FolderStart { id: "f1".into(), name: "A".into() },
+                RootlistEntry::Playlist("spotify:playlist:a".into()),
+                RootlistEntry::FolderStart { id: "f1".into(), name: "A again".into() },
+                RootlistEntry::Playlist("spotify:playlist:b".into()),
+                RootlistEntry::FolderEnd,
+                RootlistEntry::FolderEnd,
+                RootlistEntry::FolderStart { id: "f1".into(), name: "A elsewhere".into() },
+                RootlistEntry::Playlist("spotify:playlist:c".into()),
+                RootlistEntry::FolderEnd,
+            ],
+            editable: Default::default(),
+        };
+        let (root, folders) = folder_tree(&rootlist);
+        assert_eq!(root, ["folder:f1"]);
+        let mut placed = HashSet::new();
+        collect_placed(&folders["f1"], &folders, &mut placed);
+        for uri in ["spotify:playlist:a", "spotify:playlist:b", "spotify:playlist:c"] {
+            assert!(placed.contains(uri), "{uri}");
+        }
     }
 
     #[test]
