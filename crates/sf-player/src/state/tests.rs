@@ -175,6 +175,22 @@ fn nothing_is_preloaded_before_the_current_track_plays() {
     assert_eq!(engine_commands(&mut core), [PlayerCommand::Preload("spotify:track:b".into())]);
 }
 
+/// Пока движок ещё тянет текущий трек, вперёд не заказываем: полоса нужна ему.
+#[test]
+fn nothing_is_preloaded_while_the_current_track_is_still_loading() {
+    let mut core = headless();
+    playing(&mut core, "spotify:track:a");
+    core.local.position_ms = 30_000;
+    core.local.loading = true;
+    loaded_queue(&mut core, "spotify:track:a", &["spotify:track:b"]);
+    core.tick();
+    assert!(engine_commands(&mut core).is_empty(), "текущий трек ещё качается");
+
+    core.local.loading = false;
+    core.tick();
+    assert_eq!(engine_commands(&mut core), [PlayerCommand::Preload("spotify:track:b".into())]);
+}
+
 /// На новом треке заказ вперёд вооружается заново: следующей становится песня после него.
 #[test]
 fn a_new_track_preloads_its_own_successor() {

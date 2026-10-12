@@ -1360,11 +1360,13 @@ impl Core {
         if !matches!(self.target(), Target::Local) {
             return;
         }
-        let Some(now) = self.now_playing() else {
+        // движок, а не оптимистичный превью: пока трек ещё качается, «играет» врёт
+        let Some(now) = self.now_playing_live() else {
             return;
         };
-        // пока трек сам ещё качается, вперёд не заказываем
-        if !now.playing || now.position_ms < PRELOAD_AFTER_MS {
+        // пока трек сам ещё качается, вперёд не заказываем — иначе следующая песня отбирает полосу
+        // у той, что вот-вот зазвучит, и старт затягивается на ровном месте
+        if !now.playing || now.loading || now.position_ms < PRELOAD_AFTER_MS {
             return;
         }
         let next = self
