@@ -15,12 +15,13 @@ Item {
 
     signal action()
 
-    function show(text, actionText, onAction) {
+    // holdMs — сколько держать (необязательно; по умолчанию duration или actionDuration)
+    function show(text, actionText, onAction, holdMs) {
         label.text = text
         root.actionText = actionText ?? ""
         _onAction = typeof onAction === "function" ? onAction : null
         shown = true
-        hideTimer.interval = root.actionText !== "" ? actionDuration : duration
+        hideTimer.interval = holdMs > 0 ? holdMs : root.actionText !== "" ? actionDuration : duration
         hideTimer.restart()
     }
     function hide() { shown = false }

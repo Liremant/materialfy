@@ -92,7 +92,7 @@ Item {
                     Player.shuffle = !Player.shuffle
             }
         } }
-        Fold { shown: !root.compact; IconButton { icon: "skip_previous"; iconColor: Theme.fgSurface; enabled: Player.hasTrack; onClicked: Player.previous() } }
+        IconButton { icon: "skip_previous"; iconColor: Theme.fgSurface; enabled: Player.hasTrack; onClicked: Player.previous() }
         Item {
             implicitWidth: 52
             implicitHeight: 52

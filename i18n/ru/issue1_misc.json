@@ -13,5 +13,7 @@
   "On by itself: graphics are drawn by the processor, without the video card": "Включился сам: графику рисует процессор, без видеокарты",
   "Turns on by itself when graphics are drawn by the processor": "Включается сам, когда графику рисует процессор",
   "Auto": "Авто",
-  "On": "Вкл"
+  "On": "Вкл",
+  "Materialfy closed unexpectedly last time": "В прошлый раз Materialfy закрылась с ошибкой",
+  "Report": "Сообщить"
 }
