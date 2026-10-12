@@ -67,6 +67,6 @@ Item {
         property color fill: root.color
         property color stroke: root.strokeColor
         property vector4d fade
-        fragmentShader: Qt.resolvedUrl("shaders/shape.frag.qsb")
+        fragmentShader: "shaders/shape.frag.qsb"
     }
 }

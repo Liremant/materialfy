@@ -98,6 +98,6 @@ Item {
                                            _k < 1 ? _k : 1, _k > 1 ? 1 / _k : 1)
         property color fill: root.placeholderColor
         property color stroke: "transparent"
-        fragmentShader: Qt.resolvedUrl("shaders/shapeimage.frag.qsb")
+        fragmentShader: "shaders/shapeimage.frag.qsb"
     }
 }
