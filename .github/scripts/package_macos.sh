@@ -18,7 +18,8 @@ QTBIN="$("$QMAKE" -query QT_INSTALL_BINS)"
 ARCH="${MATERIALFY_ARCH:-$(uname -m)}"
 
 [ -x "$EXE" ] || { echo "$EXE not found" >&2; exit 1; }
-rm -rf "$APP" "$OUT"/Materialfy*.dmg
+# only this architecture's dmg: CI packages arm64 and x86_64 one after the other into the same folder
+rm -rf "$APP" "$OUT/Materialfy-$VERSION-macos-$ARCH.dmg"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 install -m755 "$EXE" "$APP/Contents/MacOS/materialfy"

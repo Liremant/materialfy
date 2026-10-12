@@ -233,18 +233,12 @@ jobs:
           if-no-files-found: error
 
   macos:
-    name: macOS ${{ matrix.arch }}
+    # One Apple silicon runner builds both: arm64 natively and x86_64 cross-compiled (Qt for macOS is
+    # universal). The two dmg names stay per architecture because the in-app updater picks them by name.
+    name: macOS arm64 + x86_64
     needs: meta
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 120
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: arm64
-            runner: macos-latest
-          - arch: x86_64
-            runner: macos-15-intel
+    runs-on: macos-latest
+    timeout-minutes: 150
     env:
       VERSION: ${{ needs.meta.outputs.version }}
       MACOSX_DEPLOYMENT_TARGET: "13.0"
@@ -259,31 +253,42 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/Qt/${{ env.QT_VERSION }}/macos
-          key: qt-${{ env.QT_VERSION }}-macos-${{ matrix.arch }}-${{ hashFiles('.github/scripts/install_qt.py') }}
+          key: qt-${{ env.QT_VERSION }}-macos-universal-${{ hashFiles('.github/scripts/install_qt.py') }}
 
       - name: Install Qt ${{ env.QT_VERSION }}
         run: |
           read -ra addons <<< "$QT_ADDONS"
-          python3 .github/scripts/install_qt.py --host mac --version "$QT_VERSION" \
-            --addons "${addons[@]}" --out "$RUNNER_TEMP/Qt/$QT_VERSION/macos" --github
+          python3 .github/scripts/install_qt.py --host mac --version "$QT_VERSION"             --addons "${addons[@]}" --out "$RUNNER_TEMP/Qt/$QT_VERSION/macos" --github
 
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
       - uses: Swatinem/rust-cache@v2
         with:
-          key: macos-${{ matrix.arch }}-qt-${{ env.QT_VERSION }}
+          key: macos-universal-qt-${{ env.QT_VERSION }}
           save-if: ${{ github.event_name != 'pull_request' }}
 
-      - name: cargo build
+      - name: cargo build (arm64)
         run: cargo build --locked --release -p materialfy
+
+      - name: cargo build (x86_64)
+        run: cargo build --locked --release -p materialfy --target x86_64-apple-darwin
 
       - name: cargo test
         env:
           QT_QPA_PLATFORM: offscreen
         run: cargo test --locked --release --workspace
 
-      - name: Package Materialfy.app and dmg
+      # x86_64 first, so the Materialfy.app left behind for the smoke test is the native arm64 one
+      - name: Package dmg (x86_64)
         env:
-          MATERIALFY_ARCH: ${{ matrix.arch }}
+          MATERIALFY_ARCH: x86_64
+          MATERIALFY_EXE: ${{ github.workspace }}/target/x86_64-apple-darwin/release/materialfy
+        run: bash .github/scripts/package_macos.sh "$VERSION"
+
+      - name: Package dmg (arm64)
+        env:
+          MATERIALFY_ARCH: arm64
         run: bash .github/scripts/package_macos.sh "$VERSION"
 
       - name: Smoke test (window screenshot)
@@ -291,20 +296,19 @@ jobs:
         continue-on-error: true
         run: |
           # macOS has no coreutils timeout; the perl alarm kills the app if it hangs
-          perl -e 'alarm 90; exec @ARGV' target/dist/Materialfy.app/Contents/MacOS/materialfy \
-            --screenshot "$RUNNER_TEMP/shot.png" --offline --new-instance --delay 3000
+          perl -e 'alarm 90; exec @ARGV' target/dist/Materialfy.app/Contents/MacOS/materialfy             --screenshot "$RUNNER_TEMP/shot.png" --offline --new-instance --delay 3000
           test -s "$RUNNER_TEMP/shot.png"
 
       - name: Upload screenshot
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: smoke-macos-${{ matrix.arch }}
+          name: smoke-macos
           path: ${{ runner.temp }}/shot.png
           if-no-files-found: ignore
 
       - uses: actions/upload-artifact@v7
         with:
-          name: materialfy-macos-${{ matrix.arch }}
+          name: materialfy-macos
           path: target/dist/*.dmg
           if-no-files-found: error
