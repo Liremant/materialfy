@@ -53,7 +53,8 @@ DESKTOP
 fetch_tool() {
     local name="$1" url="$2"
     if [ ! -x "$TOOLS/$name" ]; then
-        curl -fsSL --retry 5 --retry-all-errors -o "$TOOLS/$name" "$url"
+        # GitHub release downloads sometimes answer 500 for minutes: retry for about three minutes
+        curl -fsSL --retry 12 --retry-delay 15 --retry-all-errors -o "$TOOLS/$name" "$url"
         chmod +x "$TOOLS/$name"
     fi
 }
