@@ -48,6 +48,10 @@ Item {
     // Экран под якорем (окно может стоять на двух мониторах сразу) в глобальных координатах; панель задач
     // снизу/справа срезается по доступной области рабочего стола (availableGeometry экрана в QML не видна)
     function _screenArea(g) {
+        // Wayland не сообщает, где на экране окно: mapToGlobal даёт координаты внутри окна, а геометрия
+        // монитора — глобальная (второй монитор начинается не с нуля), и меню уезжало. Там граница — само окно.
+        if (Qt.platform.pluginName.startsWith("wayland"))
+            return _windowArea()
         const w = root.Window.window
         let s = w ? w.screen : null
         for (const sc of Qt.application.screens) {
@@ -149,7 +153,9 @@ Item {
         property rect area: Qt.rect(0, 0, 0, 0)
         property Item card: null
 
-        popupType: T.Popup.Window
+        // На Wayland — внутри окна: композитор сам двигает отдельные всплывающие окна, и меню оказывалось
+        // не у кнопки. Границы там всё равно по окну (см. _screenArea).
+        popupType: Qt.platform.pluginName.startsWith("wayland") ? T.Popup.Item : T.Popup.Window
         modal: false
         dim: false
         focus: true

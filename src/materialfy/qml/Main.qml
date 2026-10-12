@@ -38,11 +38,10 @@ Window {
     color: Qt.platform.os === "windows" ? Theme.surface : "transparent"
 
     // Раскладка по размеру окна. Порог с гистерезисом: вход в режим — у порога, выход — на 24 px дальше,
-    // поэтому у границы режим не дёргается туда-обратно. Сжатие переключает сразу (старая раскладка уже
-    // не помещается), расширение — когда размер постоит 150 мс, а не на каждом шаге перетаскивания.
+    // поэтому у границы режим не дёргается туда-обратно. Переключается сразу в обе стороны, прямо во время
+    // перетаскивания края: режим меняется лишь при пересечении порога, а не на каждом шаге.
     property string layoutMode: _modeFor(width, height, "")
     readonly property bool mini: layoutMode === "mini"
-    readonly property var _modeRank: ({ mini: 0, compact: 1, full: 2 })
     function _modeFor(w, h, cur) {
         const band = 24
         const miniNow = cur === "mini" ? (w < 480 + band || h < 400 + band) : (w < 480 || h < 400)
@@ -52,23 +51,13 @@ Window {
     }
     function _reevaluateMode() {
         const next = _modeFor(width, height, layoutMode)
-        if (next === layoutMode)
-            modeSettle.stop()
-        else if (_modeRank[next] < _modeRank[layoutMode]) {
-            modeSettle.stop()
+        if (next !== layoutMode)
             layoutMode = next
-        } else
-            modeSettle.restart()
     }
     // размер и положение — из настроек; заодно разрывает привязку layoutMode (дальше — только _reevaluateMode)
     Component.onCompleted: _restoreGeometry()
     onWidthChanged: { _reevaluateMode(); if (_geoReady) geoSave.restart() }
     onHeightChanged: { _reevaluateMode(); if (_geoReady) geoSave.restart() }
-    Timer {
-        id: modeSettle
-        interval: 150
-        onTriggered: win.layoutMode = win._modeFor(win.width, win.height, win.layoutMode)
-    }
 
     // 0 — обычная сцена, 1 — мини-плеер; между ними — перекрёстное растворение с лёгким масштабом
     property real miniProgress: mini ? 1 : 0

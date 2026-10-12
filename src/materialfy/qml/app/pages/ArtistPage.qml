@@ -288,6 +288,11 @@ Page {
                 title: model.title
                 subtitle: [model.year || "", model.kind ? I18n.any(model.kind) : ""].filter(x => x).join(" · ")
                 explicit: model.explicit
+                // «Слушать» по наведению, как на главной: играющий альбом ставится на паузу
+                readonly property string albumUri: model.uri || ("spotify:album:" + model.albumId)
+                showPlay: true
+                playing: Player.playing && Player.contextUri === albumUri
+                onPlayClicked: Player.contextUri === albumUri ? Player.togglePlay() : Player.playContext(albumUri, "")
                 onClicked: Catalog.openAlbum(model.albumId)
             }
         }
@@ -310,6 +315,11 @@ Page {
                 title: model.title
                 subtitle: model.artists
                 explicit: model.explicit
+                // «Слушать» по наведению, как на главной: играющий альбом ставится на паузу
+                readonly property string albumUri: model.uri || ("spotify:album:" + model.albumId)
+                showPlay: true
+                playing: Player.playing && Player.contextUri === albumUri
+                onPlayClicked: Player.contextUri === albumUri ? Player.togglePlay() : Player.playContext(albumUri, "")
                 onClicked: Catalog.openAlbum(model.albumId)
             }
         }
