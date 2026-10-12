@@ -11,6 +11,8 @@ pub mod collection_session;
 pub mod fsio;
 /// локальная история прослушиваний (перенос history.rs)
 pub mod journal;
+/// полки главной аккаунта на диске: главная видна, пока сессия поднимается
+pub mod home_cache;
 /// главная, «Для тебя», топ, недавнее и подписи по URI через сессию (GraphQL и spclient), без Web API
 pub mod home_feed;
 /// реестр известных треков и «записей» (ISRC)
