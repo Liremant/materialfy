@@ -71,6 +71,10 @@ void post_raise_window();
 void post_quit();
 // Через delay мс: grabWindow().save(path) и выход
 void schedule_screenshot(QObject* window, const QString& path, int delay_ms);
+// Hidden to the tray or minimized for a few seconds: drop the scene graph and the graphics device
+// (QQuickWindow::releaseResources with non-persistent graphics), collect JS garbage, compact the heaps and
+// trim the working set. Showing the window rebuilds everything on the first frame.
+void install_memory_trim(QObject* window);
 
 // Самый быстрый монитор — основным (display.py). Строка для лога.
 QString prefer_fastest_screen();

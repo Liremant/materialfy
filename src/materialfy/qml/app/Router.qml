@@ -133,6 +133,11 @@ Item {
 
     Item { id: dummy; visible: false }
 
+    // Ушедшая страница оставляет в куче JS десятки МБ мусора (её модели, привязки): сборщик сам доходит до
+    // него не скоро, а память процесса всё это время занята. Полная сборка — через секунду после перехода,
+    // когда анимация закончилась (5–25 мс), и только если страницы правда уничтожены.
+    Timer { id: gcTimer; interval: 1000; onTriggered: gc() }
+
     ParallelAnimation {
         id: anim
 
@@ -168,6 +173,7 @@ Item {
             for (const item of root._leaving) {
                 if (kept.indexOf(item) < 0) {
                     item.destroy()
+                    gcTimer.restart()
                 } else if (item !== root.currentItem) {
                     item.visible = false
                     item.x = 0

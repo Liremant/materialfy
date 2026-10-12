@@ -57,10 +57,13 @@ Page {
             readonly property real above: 64      // верхняя панель над страницей
             readonly property real below: 120     // запас под шапкой на растворение
             readonly property color tone: Theme.surfaceContainer
+            // Высота слоя — ступенями 128 px, ниже фото — пустая полоса (cut): пока шапка дорастает,
+            // текстура слоя не пересоздаётся каждый кадр (см. HeroShapes)
+            readonly property real contentHeight: above + 8 + hero.height + below
             width: page.width
-            height: above + 8 + hero.height + below
+            height: Math.ceil(contentHeight / 128) * 128
             y: -above - page.flickable.contentY
-            visible: page.hasBanner && page.visible && page.flickable.contentY < height
+            visible: page.hasBanner && page.visible && page.flickable.contentY < contentHeight
             opacity: page.bannerShown ? 1 : 0
             Behavior on opacity { NumberAnimation { duration: Theme.motion.effectsSlow } }
             clip: true
@@ -69,22 +72,26 @@ Page {
             layer.effect: ShaderEffect {
                 property real fadeTop: 24 / Math.max(1, banner.height)
                 property real fadeBottom: banner.below * 1.3 / Math.max(1, banner.height)
+                property real cut: 1 - banner.contentHeight / Math.max(1, banner.height)
                 fragmentShader: Qt.resolvedUrl("../shaders/edgefade.frag.qsb")
             }
 
             Image {
                 id: bannerImage
                 width: parent.width
-                height: parent.height
+                height: banner.contentHeight
                 y: page.flickable.contentY * 0.35   // лёгкий параллакс
                 source: page.headerImage
-                sourceSize.width: 2400
+                // декодируется под размер на экране (PreserveAspectCrop — с запасом до покрытия), ступенями 256 px
+                sourceSize: Qt.size(Math.ceil(banner.width * Screen.devicePixelRatio / 256) * 256,
+                                    Math.ceil(banner.height * Screen.devicePixelRatio / 256) * 256)
                 fillMode: Image.PreserveAspectCrop
                 asynchronous: true
             }
             // сверху — чуть приглушить под кнопками панели, к низу шапки — почти поверхность
             Rectangle {
-                anchors.fill: parent
+                width: parent.width
+                height: banner.contentHeight
                 gradient: Gradient {
                     GradientStop { position: 0.0; color: Qt.alpha(banner.tone, 0.7) }
                     GradientStop { position: 0.12; color: Qt.alpha(banner.tone, 0.5) }
@@ -96,7 +103,8 @@ Page {
             }
             // слева, под текстом шапки, плотнее; справа фото остаётся ярким
             Rectangle {
-                anchors.fill: parent
+                width: parent.width
+                height: banner.contentHeight
                 gradient: Gradient {
                     orientation: Gradient.Horizontal
                     GradientStop { position: 0.0; color: Qt.alpha(banner.tone, 0.65) }

@@ -69,6 +69,7 @@ Item {
         id: layer
         required property int index
         anchors.fill: parent
+        eager: true                        // закрытый плеер держит обложку готовой: раскрытие без подгрузки
         duration: Theme.motion.spatialSlow
         shape: root.restShape
         pulse: index === root._front ? root.pulse : 0

@@ -15,6 +15,9 @@ Window {
     // затем раскрыть «Сейчас играет» (для скриншотов документации)
     property string autoPlay: ""
     property bool openNowPlaying: false
+    // --set browse=album:<id>,artist:<id>,back,home,panel,sidebar… — one step every 4 s once the session is up:
+    // open a page, go back, switch a section, toggle the right panel or the sidebar (memory measurements)
+    property string browse: ""
 
     // размер и положение — последние сохранённые (см. _restoreGeometry); окно показывается уже на месте
     width: 1280
@@ -342,6 +345,28 @@ Window {
                             win.autoPlay = ""
                             if (win.openNowPlaying)
                                 nowPlayingTimer.start()
+                        }
+                    }
+                    Timer {
+                        id: browseTimer
+                        property var steps: win.browse !== "" ? win.browse.split(",") : []
+                        interval: 4000
+                        repeat: true
+                        running: steps.length > 0 && ["ready", "error", "premiumRequired"].indexOf(Auth.playbackState) >= 0
+                        onTriggered: {
+                            const step = steps[0]
+                            steps = steps.slice(1)
+                            const [name, id] = step.split(":")
+                            if (name === "back")
+                                router.back()
+                            else if (name === "panel")
+                                Settings.rightPanelOpen = !Settings.rightPanelOpen
+                            else if (name === "sidebar")
+                                Settings.sidebarCollapsed = !Settings.sidebarCollapsed
+                            else if (!id)
+                                router.reset(name)
+                            else
+                                router.push(name, ({ [name + "Id"]: id }))
                         }
                     }
                     Timer {

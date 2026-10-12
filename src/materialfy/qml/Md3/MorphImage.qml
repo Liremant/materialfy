@@ -20,6 +20,13 @@ Item {
     property real maskRotation: 0
 
     function jumpTo(next) { m._ready = false; shape = next; m._set(next); m._ready = true }
+
+    // Картинка грузится, когда элемент впервые показан: скрытые плитки (свёрнутые ряды «Все»), закрытые
+    // панели не держат декодированные обложки. Показанная однажды не выгружается. eager — грузить сразу.
+    property bool eager: false
+    property bool _shownOnce: false
+    onVisibleChanged: if (visible) _shownOnce = true
+    Component.onCompleted: if (visible) _shownOnce = true
     property color placeholderColor: Theme.surfaceContainerHighest
 
     ShapeMorph {
@@ -33,12 +40,17 @@ Item {
         asynchronous: true
         fillMode: Image.PreserveAspectCrop
         // Грузим, когда размер уже известен: иначе первая загрузка шла с размером 0 (128 px), а сразу
-        // за ней — вторая под настоящий размер. Ступени по 128 px — шаги ресайза окна не перезагружают.
-        readonly property int _step: 128
+        // за ней — вторая под настоящий размер. Размер — с запасом до ступени: четверть старшей степени
+        // двойки (не меньше 16 px): 48 → 48, 168 → 192, 440 → 448 — шаги ресайза окна не перезагружают
+        // картинку каждый раз, а лишних пикселей не больше ~1,5×. Каждый пиксель стоит памяти трижды:
+        // QImage в кэше Qt Quick и текстура (у драйвера D3D11 — ещё и своя копия).
+        function _fit(px) {
+            const step = Math.max(16, Math.pow(2, Math.floor(Math.log2(Math.max(1, px)))) / 4)
+            return Math.max(16, Math.ceil(px / step) * step)
+        }
         readonly property bool _sized: root.width > 0 && root.height > 0
-        source: _sized ? root.source : ""
-        sourceSize: Qt.size(Math.max(_step, Math.ceil(root.width * Screen.devicePixelRatio / _step) * _step),
-                            Math.max(_step, Math.ceil(root.height * Screen.devicePixelRatio / _step) * _step))
+        source: _sized && (root.eager || root._shownOnce) ? root.source : ""
+        sourceSize: Qt.size(_fit(root.width * Screen.devicePixelRatio), _fit(root.height * Screen.devicePixelRatio))
         retainWhileLoading: true
         smooth: true
         property bool shown: false          // был хоть один кадр (при перезагрузке виден прежний)

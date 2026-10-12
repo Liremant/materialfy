@@ -11,6 +11,7 @@
 //! 8. initial properties (--size → width/height, --set), load(Main.qml | gallery/Gallery.qml | --qml);
 //!    нет корня → код 1; не --offline → services.auth.start();
 //! 9. у корня есть свойство trayWanted → setQuitOnLastWindowClosed(false); Windows: winframe::install(window);
+//!    install_memory_trim (в трее / свёрнуто — сцена и GPU-ресурсы освобождаются);
 //!    AppRequest::RaiseWindow → show/raise/requestActivate, AppRequest::Quit → app_quit;
 //! 10. --screenshot: через delay мс grabWindow().save(путь) и выход;
 //! 11. exec(); после — services.shutdown().
@@ -313,6 +314,8 @@ fn run_engine(cli: &Cli, rt: &tokio::runtime::Runtime, services: &Services) -> i
     }
     if cli.screenshot.is_none() {
         crate::winframe::install(root);
+        // SAFETY: root — живое окно движка, GUI-поток
+        unsafe { ffi::install_memory_trim(root) };
     }
     spawn_app_requests(rt.handle(), services);
     if cli.main_mode() && cfg!(any(target_os = "windows", target_os = "macos")) {

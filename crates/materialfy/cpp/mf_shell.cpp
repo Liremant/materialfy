@@ -18,6 +18,7 @@
 #include <QtGui/QIcon>
 #include <QtGui/QImage>
 #include <QtGui/QPainter>
+#include <QtGui/QPixmapCache>
 #include <QtGui/QScreen>
 #include <QtGui/QStyleHints>
 #include <QtGui/QWindow>
@@ -27,11 +28,14 @@
 #include <QtNetwork/QNetworkRequest>
 #include <QtQml/QQmlContext>
 #include <QtQml/QQmlEngine>
+#include <QtQml/qqml.h>
 #include <QtQml/QQmlNetworkAccessManagerFactory>
+#include <QtQuick/QQuickItem>
 #include <QtQuick/QQuickWindow>
 #include <QtWidgets/QApplication>
 
 #include <algorithm>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -48,6 +52,10 @@
 #endif
 #include <windows.h>
 #include <shobjidl.h>
+#endif
+
+#if defined(Q_OS_LINUX) && defined(__GLIBC__)
+#include <malloc.h>
 #endif
 
 #include "materialfy/src/qt/ffi.cxx.h"
@@ -406,6 +414,82 @@ schedule_screenshot(QObject* window, const QString& path, int delay_ms)
     if (target && !target->grabWindow().save(path))
       qWarning("could not save screenshot %s", qPrintable(path));
     QCoreApplication::quit();
+  });
+}
+
+namespace {
+// Return freed heap memory to the OS and shrink the working set (what Task Manager shows as "Memory")
+void
+trim_process_memory()
+{
+#if defined(Q_OS_WIN)
+  HEAP_OPTIMIZE_RESOURCES_INFORMATION info{ HEAP_OPTIMIZE_RESOURCES_CURRENT_VERSION, 0 };
+  HeapSetInformation(nullptr, HeapOptimizeResources, &info, sizeof(info));
+  HeapCompact(GetProcessHeap(), 0);
+  SetProcessWorkingSetSize(GetCurrentProcess(), static_cast<SIZE_T>(-1), static_cast<SIZE_T>(-1));
+#elif defined(Q_OS_LINUX) && defined(__GLIBC__)
+  malloc_trim(0);
+#endif
+}
+
+// Qt Quick Shapes (curve renderer) do not rebuild their geometry when the scene graph comes back after
+// releaseResources(): the new node stays empty until a path changes. Emitting QQuickPath::changed marks
+// every ShapePath dirty, and the next frame tessellates it again.
+void
+refresh_shapes(QQuickItem* item)
+{
+  if (item->inherits("QQuickShape")) {
+    for (QObject* child : item->children()) {
+      if (child->inherits("QQuickShapePath"))
+        QMetaObject::invokeMethod(child, "changed", Qt::DirectConnection);
+    }
+  }
+  for (QQuickItem* child : item->childItems())
+    refresh_shapes(child);
+}
+} // namespace
+
+void
+install_memory_trim(QObject* object)
+{
+  auto* window = qobject_cast<QQuickWindow*>(object);
+  if (!window)
+    return;
+  // Without these releaseResources() keeps the scene graph and the D3D/Vulkan/GL device of a hidden window
+  window->setPersistentGraphics(false);
+  window->setPersistentSceneGraph(false);
+  // A short minimize (switching windows) does not tear the scene down
+  auto* settle = new QTimer(window);
+  settle->setSingleShot(true);
+  settle->setInterval(3000);
+  QObject::connect(settle, &QTimer::timeout, window, [window] {
+    const auto v = window->visibility();
+    if (v != QWindow::Hidden && v != QWindow::Minimized)
+      return;
+    window->releaseResources();
+    if (auto* engine = qmlEngine(window)) {
+      engine->collectGarbage();
+      engine->trimComponentCache();
+    }
+    QPixmapCache::clear();
+    trim_process_memory();
+  });
+  // Every scene graph after the first one follows a release (ours or Qt's own on hide)
+  auto inits = std::make_shared<int>(0);
+  QObject::connect(
+    window,
+    &QQuickWindow::sceneGraphInitialized,
+    window,
+    [window, inits] {
+      if ((*inits)++ > 0)
+        refresh_shapes(window->contentItem());
+    },
+    Qt::QueuedConnection);
+  QObject::connect(window, &QWindow::visibilityChanged, settle, [settle](QWindow::Visibility v) {
+    if (v == QWindow::Hidden || v == QWindow::Minimized)
+      settle->start();
+    else
+      settle->stop();
   });
 }
 

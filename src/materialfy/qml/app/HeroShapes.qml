@@ -21,12 +21,17 @@ Item {
 
     visible: active && scroll < headerHeight + below
     y: -above - scroll
-    height: above + headerHeight + below
+    // Слой — по высоте ступенями 128 px, ниже шапки — пустая полоса (cut): пока шапка дорастает
+    // (анимация при открытии страницы), текстура слоя не пересоздаётся каждый кадр. Иначе драйвер
+    // D3D11 копит освобождённые текстуры — сотни МБ на секунды.
+    readonly property real _contentHeight: above + headerHeight + below
+    height: Math.ceil(_contentHeight / 128) * 128
 
     layer.enabled: visible
     layer.effect: ShaderEffect {
         property real fadeTop: root.above * 1.6 / Math.max(1, root.height)
         property real fadeBottom: root.below * 1.4 / Math.max(1, root.height)
+        property real cut: 1 - root._contentHeight / Math.max(1, root.height)
         fragmentShader: Qt.resolvedUrl("shaders/edgefade.frag.qsb")
     }
 
