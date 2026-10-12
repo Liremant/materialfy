@@ -337,6 +337,9 @@ Item {
         boundsBehavior: Flickable.StopAtBounds
         acceptedButtons: Qt.NoButton
         cacheBuffer: 800
+        // делегат — Loader со стабильным sourceComponent (меняется только при смене сетка/список),
+        // поэтому строки можно переиспользовать при прокрутке
+        reuseItems: true
         spacing: page.grid ? page.gapY : 0
 
         header: Item {

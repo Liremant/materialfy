@@ -137,7 +137,8 @@ Item {
         Item {
             Layout.preferredWidth: 36
             Layout.fillHeight: true
-            readonly property bool menuShown: root.hovered || moreButton.pressed || root.activeFocus
+            readonly property bool menuShown: root.hovered || root.activeFocus
+                                             || (menuLoader.item !== null && menuLoader.item.pressed)
             Label {
                 anchors.fill: parent
                 text: root._time(root.track.durationMs)
@@ -147,20 +148,27 @@ Item {
                 opacity: parent.menuShown ? 0 : 1
                 Behavior on opacity { NumberAnimation { duration: Theme.motion.effectsFast } }
             }
-            IconButton {
-                id: moreButton
+            // «⋯» создаётся с первого наведения и остаётся: строк много, а наведена одна
+            Loader {
+                id: menuLoader
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
                 width: 32
                 height: 32
-                icon: "more_horiz"
-                size: "xs"
-                iconSize: 22
-                iconWeight: 700
-                opacity: parent.menuShown ? 1 : 0
-                visible: opacity > 0
-                Behavior on opacity { NumberAnimation { duration: Theme.motion.effectsFast } }
-                onClicked: root.openMenuAt(moreButton)
+                // активная с клавиатуры строка тоже показывает «⋯», иначе она скрывает длительность без кнопки
+                active: root.hovered || root.activeFocus || item !== null
+                sourceComponent: IconButton {
+                    id: moreButton
+                    anchors.fill: parent
+                    icon: "more_horiz"
+                    size: "xs"
+                    iconSize: 22
+                    iconWeight: 700
+                    opacity: (root.hovered || moreButton.pressed || root.activeFocus) ? 1 : 0
+                    visible: opacity > 0
+                    Behavior on opacity { NumberAnimation { duration: Theme.motion.effectsFast } }
+                    onClicked: root.openMenuAt(moreButton)
+                }
             }
         }
     }

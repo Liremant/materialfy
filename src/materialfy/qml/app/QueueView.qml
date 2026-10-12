@@ -210,6 +210,7 @@ Item {
         boundsBehavior: Flickable.StopAtBounds
         acceptedButtons: Qt.NoButton
         cacheBuffer: 400
+        reuseItems: true      // состояние перетаскивания живёт здесь, не в делегате — строки можно переиспользовать
 
         section.property: "section"
         section.criteria: ViewSection.FullString
