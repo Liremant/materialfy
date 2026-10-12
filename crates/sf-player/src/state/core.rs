@@ -41,6 +41,8 @@ const TRACK_CACHE_LIMIT: usize = 2000;
 const KNOWN_CONTEXTS: usize = 200;
 /// Сколько ждать обещанный движок (ключи из хранилища, проверка /me, подключение librespot).
 const LOCAL_EXPECT_HOLD: Duration = Duration::from_secs(45);
+/// Сколько играет текущий трек, прежде чем тянуть следующую песню: сначала пусть скачается он сам.
+const PRELOAD_AFTER_MS: u32 = 3_000;
 /// Опросы без устройства, после которых удалённое устройство считается пропавшим.
 const LOST_AFTER_POLLS: u8 = 2;
 
@@ -381,6 +383,8 @@ pub struct Core {
     pub(crate) queue_recheck_at: Option<Instant>,
     pub(crate) queue_stale_retries: u32,
     queue_cleared: Option<(HashSet<String>, Instant)>,
+    /// (трек, который играет, следующая песня) — что уже заказано вперёд: на новом треке вооружаемся заново
+    preloaded: Option<(String, String)>,
     pub(crate) queue_shuffle_pending: Option<QueueShufflePending>,
     pub(crate) queue_reorder_pending: Option<Instant>,
     pub manual_queue: Vec<String>,
@@ -467,6 +471,7 @@ impl Core {
             queue_recheck_at: None,
             queue_stale_retries: 0,
             queue_cleared: None,
+            preloaded: None,
             queue_shuffle_pending: None,
             queue_reorder_pending: None,
             manual_queue: Vec::new(),
@@ -1329,6 +1334,7 @@ impl Core {
         if self.session_dirty && self.last_session_save.elapsed() > SESSION_SAVE_DELAY {
             self.save_session();
         }
+        self.preload_next_track();
         self.check_shown_track();
     }
 
@@ -1345,6 +1351,40 @@ impl Core {
             .map(|now| if now.track.cover_large.is_empty() { now.track.cover } else { now.track.cover_large })
             .unwrap_or_default();
         self.effects.push(Effect::Cover(url));
+    }
+
+    /// Тянет следующую песню очереди заранее, пока играет текущая: переход (или Next) тогда начинается без
+    /// ожидания загрузки — librespot держит впереди только один трек, поэтому заказываем голову очереди, а на
+    /// новом треке вооружаемся заново. На удалённом устройстве загрузкой распоряжается оно само.
+    fn preload_next_track(&mut self) {
+        if !matches!(self.target(), Target::Local) {
+            return;
+        }
+        // движок, а не оптимистичный превью: пока трек ещё качается, «играет» врёт
+        let Some(now) = self.now_playing_live() else {
+            return;
+        };
+        // пока трек сам ещё качается, вперёд не заказываем — иначе следующая песня отбирает полосу
+        // у той, что вот-вот зазвучит, и старт затягивается на ровном месте
+        if !now.playing || now.loading || now.position_ms < PRELOAD_AFTER_MS {
+            return;
+        }
+        let next = self
+            .queue
+            .as_ref()
+            .and_then(|queue| queue.next.first())
+            .map(|item| item.uri().to_owned())
+            .filter(|uri| !uri.is_empty() && *uri != now.track.uri);
+        let Some(next) = next else {
+            return;
+        };
+        let current = now.track.uri.clone();
+        let ordered = self.preloaded.as_ref().is_some_and(|(was, want)| *was == current && *want == next);
+        if ordered {
+            return;
+        }
+        self.preloaded = Some((current, next.clone()));
+        self.engine(PlayerCommand::Preload(next));
     }
 
     pub(crate) fn poll_remote(&mut self) {
