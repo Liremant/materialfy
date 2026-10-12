@@ -48,6 +48,9 @@ Item {
     Component.onCompleted: _sized = width > 0
     Behavior on _albumT { enabled: root._sized; NumberAnimation { duration: Theme.motion.spatialDefault; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.motion.emphasized } }
     property var track: null           // полный словарь трека для меню; без него — собирается из полей
+    // позиция в плейлисте (для «Убрать из этого плейлиста»); -1 — неизвестна (например, в поиске)
+    // и в словарь для меню тогда не попадает: Main.qml различает «нет» и число
+    property int pos: -1
     property bool highlighted: false   // вспышка «перейти к треку» / после добавления
 
     // Плейлист: кто и когда добавил. addedColumn: "" — нет колонки, "by" — «Добавил», "at" — «Добавлено»
@@ -69,12 +72,15 @@ Item {
     function trackData() {
         if (track)
             return track
-        return {
+        const data = {
             trackId: trackId, albumId: albumId, title: title, version: version, artists: artists,
             artistRefs: artistRefs ?? [], album: album, cover: cover, coverLarge: coverLarge, durationMs: durationMs,
             explicit: explicit, available: available, uri: uri, isEpisode: isEpisode, showId: showId,
             addedAt: addedAt, addedBy: addedBy, playCount: playCount
         }
+        if (pos >= 0)
+            data.pos = pos
+        return data
     }
 
     function openMenu(item, x, y) {
