@@ -1,5 +1,5 @@
 The parts of Materialfy taken from spotifast and yamusic-md3, and Materialfy releases up to and
-including 0.3.0, were published under the MIT License below. Later Materialfy code is licensed
+including 0.2.1, were published under the MIT License below. Later Materialfy code is licensed
 under GPL-3.0-or-later (see LICENSE in the repository root).
 
 MIT License
