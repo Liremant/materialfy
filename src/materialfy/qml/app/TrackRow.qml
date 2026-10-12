@@ -39,9 +39,14 @@ Item {
     onWidthChanged: {
         _wideAuto = _wideAuto ? width > 700 : width > 740
         _playsRoom = _playsRoom ? width > 580 : width > 620
+        _sized = width > 0
     }
     property real _albumT: wide ? 1 : 0
-    Behavior on _albumT { NumberAnimation { duration: Theme.motion.spatialDefault; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.motion.emphasized } }
+    // Колонка выезжает, когда строку растягивают; первая ширина (строку в раскладке создают нулевой) — сразу,
+    // иначе каждая новая строка полсекунды анимировала бы колонку и перекладывалась в каждом кадре
+    property bool _sized: false
+    Component.onCompleted: _sized = width > 0
+    Behavior on _albumT { enabled: root._sized; NumberAnimation { duration: Theme.motion.spatialDefault; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.motion.emphasized } }
     property var track: null           // полный словарь трека для меню; без него — собирается из полей
     property bool highlighted: false   // вспышка «перейти к треку» / после добавления
 

@@ -87,7 +87,11 @@ Item {
             kept.opacity = 0
             return { name: name, props: {}, item: kept }
         }
-        const item = comp.createObject(container, Object.assign({ router: root }, props ?? {}))
+        // Размер — сразу при создании: страница, созданная нулевой ширины, тут же «дорастала» до настоящей,
+        // и Behavior шапки (обложка, отступы), колонки альбома у строк и раскладки полсекунды анимировались
+        // и перекладывались в каждом кадре перехода
+        const item = comp.createObject(container, Object.assign({ router: root, width: container.width, height: container.height },
+                                                                props ?? {}))
         if (keep && !kept)
             _kept[name] = item
         // не anchors.fill: анимации переходов двигают x
