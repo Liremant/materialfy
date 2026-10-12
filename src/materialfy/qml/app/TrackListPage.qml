@@ -306,7 +306,7 @@ Item {
                     color: Theme.surfaceContainerHighest
                 }
                 TickAnimation {
-                    running: coverBackdrop.visible && page.visible && page._settled && !Theme.calm && Theme.reducedMotion !== true
+                    running: coverBackdrop.visible && page.visible && page._settled && !Theme.quiet && Theme.reducedMotion !== true
                              && list.contentY - list.originY < 300
                     onTriggered: coverBackdrop.rotation = (coverBackdrop.rotation + frameTime * 6) % 360
                 }

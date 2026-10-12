@@ -57,7 +57,7 @@ Item {
     }
 
     TickAnimation {
-        running: root.running && !Theme.calm
+        running: root.running && !Theme.quiet
         onTriggered: root._t += frameTime
     }
 

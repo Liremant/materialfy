@@ -96,7 +96,7 @@ QtObject {
     }
 
     property TickAnimation _breath: TickAnimation {
-        running: root.active && root._living && root.livingSpeed > 0 && !Theme.calm && !Theme.reducedMotion
+        running: root.active && root._living && root.livingSpeed > 0 && !Theme.quiet && !Theme.reducedMotion
         onTriggered: root.time += frameTime * root.livingSpeed
     }
 }

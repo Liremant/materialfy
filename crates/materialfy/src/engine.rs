@@ -12,6 +12,7 @@
 //!    нет корня → код 1; не --offline → services.auth.start();
 //! 9. у корня есть свойство trayWanted → setQuitOnLastWindowClosed(false); Windows: winframe::install(window);
 //!    install_memory_trim (в трее / свёрнуто — сцена и GPU-ресурсы освобождаются);
+//!    watch_software_rendering (программный рендер — у окна softwareRendering, декоративные эффекты выключены);
 //!    AppRequest::RaiseWindow → show/raise/requestActivate, AppRequest::Quit → app_quit;
 //! 10. --screenshot: через delay мс grabWindow().save(путь) и выход;
 //! 11. exec(); после — services.shutdown().
@@ -312,6 +313,8 @@ fn run_engine(cli: &Cli, rt: &tokio::runtime::Runtime, services: &Services) -> i
         }
         ffi::set_main_window(root);
     }
+    // SAFETY: root — живое окно движка, GUI-поток
+    unsafe { ffi::watch_software_rendering(root) };
     if cli.screenshot.is_none() {
         crate::winframe::install(root);
         // SAFETY: root — живое окно движка, GUI-поток

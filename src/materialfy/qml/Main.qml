@@ -29,6 +29,8 @@ Window {
     title: Player.hasTrack ? Player.title + " — " + Player.artist + " · Materialfy" : "Materialfy"
     // «Поверх всех окон» (кнопка мини-плеера, меню трека); не запоминается между запусками
     property bool pinnedOnTop: false
+    // Кадры рисует процессор (программный рендер) — ставит mf_shell.cpp, watch_software_rendering
+    property bool softwareRendering: false
     // Wayland: протокола «поверх всех окон» нет (GNOME, Weston флаг игнорируют), и окно не знает своих координат
     readonly property bool wayland: Qt.platform.pluginName.indexOf("wayland") === 0
     readonly property bool canPin: !wayland
@@ -452,6 +454,7 @@ Window {
         Component.onCompleted: Theme.wipe = themeWipe
     }
     Binding { target: Theme; property: "wipeDirection"; value: Player.direction }
+    Binding { target: Theme; property: "lowPower"; value: win.softwareRendering }
     // Окно не в фокусе (или свёрнуто) — декоративные анимации стоят
     // закреплённый мини-плеер висит на виду поверх других окон — его анимации не замирают и без фокуса
     Binding {

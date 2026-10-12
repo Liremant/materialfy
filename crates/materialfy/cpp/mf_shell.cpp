@@ -32,6 +32,11 @@
 #include <QtQml/QQmlNetworkAccessManagerFactory>
 #include <QtQuick/QQuickItem>
 #include <QtQuick/QQuickWindow>
+#include <QtQuick/QSGRendererInterface>
+#if QT_CONFIG(opengl)
+#include <QtGui/QOpenGLContext>
+#include <QtGui/QOpenGLFunctions>
+#endif
 #include <QtWidgets/QApplication>
 
 #include <algorithm>
@@ -51,6 +56,8 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#include <d3d11.h>
+#include <dxgi.h>
 #include <shobjidl.h>
 #endif
 
@@ -491,6 +498,91 @@ install_memory_trim(QObject* object)
     else
       settle->stop();
   });
+}
+
+namespace {
+bool
+is_software_device_name(QString name)
+{
+  name = name.toLower();
+  return name.contains(QLatin1String("llvmpipe")) || name.contains(QLatin1String("softpipe")) ||
+         name.contains(QLatin1String("swiftshader")) || name.contains(QLatin1String("lavapipe")) ||
+         name.contains(QLatin1String("basic render driver")) || name.contains(QLatin1String("gdi generic"));
+}
+
+// Поток рендера, сразу после создания графики окна: рисует ли кадры процессор
+bool
+detect_software_rendering(QQuickWindow* window)
+{
+  QSGRendererInterface* ri = window->rendererInterface();
+  if (!ri)
+    return false;
+  switch (ri->graphicsApi()) {
+    case QSGRendererInterface::Software:
+      return true;
+#if QT_CONFIG(opengl)
+    case QSGRendererInterface::OpenGL: {
+      QOpenGLContext* ctx = QOpenGLContext::currentContext();
+      if (!ctx)
+        return false;
+      const auto* renderer = reinterpret_cast<const char*>(ctx->functions()->glGetString(GL_RENDERER));
+      return renderer && is_software_device_name(QString::fromLatin1(renderer));
+    }
+#endif
+#if defined(Q_OS_WIN)
+    case QSGRendererInterface::Direct3D11: {
+      auto* device =
+        static_cast<ID3D11Device*>(ri->getResource(window, QSGRendererInterface::DeviceResource));
+      if (!device)
+        return false;
+      bool software = false;
+      IDXGIDevice* dxgi = nullptr;
+      if (SUCCEEDED(device->QueryInterface(__uuidof(IDXGIDevice), reinterpret_cast<void**>(&dxgi)))) {
+        IDXGIAdapter* adapter = nullptr;
+        if (SUCCEEDED(dxgi->GetAdapter(&adapter))) {
+          IDXGIAdapter1* adapter1 = nullptr;
+          if (SUCCEEDED(adapter->QueryInterface(__uuidof(IDXGIAdapter1), reinterpret_cast<void**>(&adapter1)))) {
+            DXGI_ADAPTER_DESC1 desc{};
+            if (SUCCEEDED(adapter1->GetDesc1(&desc)))
+              software = (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) ||
+                         is_software_device_name(QString::fromWCharArray(desc.Description));
+            adapter1->Release();
+          }
+          adapter->Release();
+        }
+        dxgi->Release();
+      }
+      return software;
+    }
+#endif
+    default:
+      return false;
+  }
+}
+} // namespace
+
+void
+watch_software_rendering(QObject* object)
+{
+  auto* window = qobject_cast<QQuickWindow*>(object);
+  if (!window)
+    return;
+  const QString forced = qEnvironmentVariable("MATERIALFY_SOFTWARE_RENDERING");
+  if (!forced.isEmpty()) {
+    window->setProperty("softwareRendering", forced != QLatin1String("0"));
+    return;
+  }
+  // sceneGraphInitialized приходит в потоке рендера, где контекст OpenGL текущий; свойство окна — в GUI-потоке
+  QObject::connect(
+    window,
+    &QQuickWindow::sceneGraphInitialized,
+    window,
+    [window] {
+      const bool software = detect_software_rendering(window);
+      QMetaObject::invokeMethod(
+        window, [window, software] { window->setProperty("softwareRendering", software); }, Qt::QueuedConnection);
+    },
+    Qt::DirectConnection);
 }
 
 QString

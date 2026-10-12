@@ -29,7 +29,7 @@ Item {
         color: root.enabled ? root.containerColor : Qt.alpha(Theme.fgSurface, Theme.stateLayer.disabledContainer)
 
         TickAnimation {
-            running: root.spin && root.playing && root.visible && !Theme.calm && !Theme.reducedMotion
+            running: root.spin && root.playing && root.visible && !Theme.quiet && !Theme.reducedMotion
             // поворот элемента, а не контура (angle) — без пересборки пути каждый кадр
             onTriggered: shape.rotation = (shape.rotation + frameTime * 30) % 360
         }
