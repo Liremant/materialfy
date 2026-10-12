@@ -32,17 +32,23 @@ Item {
         height: width
         color: root.color
         samples: 72
-        duration: 500
+        // программный рендер: фигуры сменяются без морфа, вращение — по часам Ticker (~30 Гц), а не в каждом
+        // кадре монитора: кадр там рисует процессор, а индикатор крутится всё время загрузки
+        duration: Theme.lowPower ? 0 : 500
         overshoot: 1.2
         shape: root._shapeAt(root._i)
         rotation: 0
 
         NumberAnimation on rotation {
-            running: root.active
+            running: root.active && !Theme.lowPower
             from: 0
             to: 360
             duration: 2600
             loops: Animation.Infinite
+        }
+        TickAnimation {
+            running: root.active && Theme.lowPower
+            onTriggered: shape.rotation = (shape.rotation + frameTime * 360 / 2.6) % 360
         }
     }
 
