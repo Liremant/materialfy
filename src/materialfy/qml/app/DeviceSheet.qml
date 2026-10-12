@@ -4,7 +4,7 @@ import Md3
 import Materialfy.Core
 
 // Лист устройств снизу для узкого окна (layoutMode === "compact"): scrim 32 %, surfaceContainerLow,
-// радиус 28 сверху, ручка; содержимое — то же, что у меню (DeviceMenu.Content), действия — кнопками.
+// радиус 28 сверху, ручка; содержимое — DeviceList, как во вкладке правой панели, действия — кнопками.
 // Закрывается по scrim, Esc и свайпу ручки вниз.
 T.Popup {
     id: root
@@ -119,7 +119,7 @@ T.Popup {
                 boundsBehavior: Flickable.StopAtBounds
                 interactive: contentHeight > height
 
-                DeviceMenu.Content {
+                DeviceList {
                     id: body
                     width: flick.width
                     touch: true

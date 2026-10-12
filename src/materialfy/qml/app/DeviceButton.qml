@@ -4,13 +4,20 @@ import Materialfy.Core
 
 // Кнопка устройств Spotify Connect. Играет здесь (или нигде) — IconButton speaker_group;
 // играет на другом устройстве — залитый чип primary с иконкой и именем; пропало — errorContainer;
-// идёт перенос — secondaryContainer с индикатором. Сама открывает DeviceMenu, в узком окне — DeviceSheet.
+// идёт перенос — secondaryContainer с индикатором. Открывает вкладку «Устройства» правой панели (DevicePanel),
+// а где панели нет (узкое окно, экран «Сейчас играет») — лист снизу DeviceSheet.
 Item {
     id: root
 
     property bool iconOnly: false          // узкий мини-плеер: в чипе только иконка
-    readonly property bool menuOpen: (menuLoader.item !== null && menuLoader.item.opened)
-                                     || (sheetLoader.item !== null && sheetLoader.item.sheet.opened)
+    property bool usePanel: true           // false — всегда лист (над правой панелью, как в «Сейчас играет»)
+    // правая панель сейчас помещается в окне (Main.qml: panelFits, layoutMode)
+    readonly property bool _panelFits: {
+        const w = root.Window.window
+        return usePanel && w !== null && w.panelFits === true && w.layoutMode === "full"
+    }
+    readonly property bool panelOpen: _panelFits && Settings.rightPanelOpen && Settings.rightPanelTab === "devices"
+    readonly property bool menuOpen: panelOpen || (sheetLoader.item !== null && sheetLoader.item.sheet.opened)
 
     readonly property string movingTo: Devices.transferringTo ?? ""
     readonly property bool moving: Player.transferring === true || movingTo !== ""
@@ -34,22 +41,21 @@ Item {
     readonly property string label: movingHere ? I18n.t("Here…") : moving ? (_targetName() || I18n.t("Moving…")) : _name
 
     function toggle() {
-        if (menuOpen) {
-            if (menuLoader.item) menuLoader.item.close()
-            if (sheetLoader.item) sheetLoader.item.sheet.close()
+        if (sheetLoader.item && sheetLoader.item.sheet.opened) {
+            sheetLoader.item.sheet.close()
             return
         }
-        // нажатие на кнопку уже закрыло меню (клик мимо карточки) — не открываем его снова
-        if (menuLoader.item && Date.now() - menuLoader.item.closedAt < 300)
+        if (_panelFits) {
+            if (panelOpen) {
+                Settings.rightPanelOpen = false
+            } else {
+                Settings.rightPanelTab = "devices"
+                Settings.rightPanelOpen = true
+            }
             return
-        const w = root.Window.window
-        if (w && w.layoutMode === "compact") {
-            sheetLoader.active = true
-            sheetLoader.item.sheet.openSheet()
-        } else {
-            menuLoader.active = true
-            menuLoader.item.openFor(root)
         }
+        sheetLoader.active = true
+        sheetLoader.item.sheet.openSheet()
     }
 
     implicitHeight: 40
@@ -133,7 +139,6 @@ Item {
         }
     }
 
-    Loader { id: menuLoader; active: false; sourceComponent: DeviceMenu {} }
     // Loader грузит только Item, а лист — Popup: оборачиваем
     Loader {
         id: sheetLoader

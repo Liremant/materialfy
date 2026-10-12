@@ -38,6 +38,8 @@ pub mod qobject {
         #[qproperty(bool, premium, READ, NOTIFY = account_changed)]
         #[qproperty(QString, personal_client_id, cxx_name = "personalClientId", READ, NOTIFY = personal_changed)]
         #[qproperty(QString, personal_state, cxx_name = "personalState", READ, NOTIFY = personal_changed)]
+        /// redirect URI to enter in the personal app's settings (the Web API apps share it)
+        #[qproperty(QString, personal_redirect_uri, cxx_name = "personalRedirectUri", READ, CONSTANT)]
         /// токен общего Web API: "none" | "authorizing" | "ready" | "error"
         #[qproperty(QString, web_state, cxx_name = "webState", READ, NOTIFY = web_changed)]
         type Auth = super::AuthRust;
@@ -145,6 +147,7 @@ pub struct AuthRust {
     premium: bool,
     personal_client_id: QString,
     personal_state: QString,
+    personal_redirect_uri: QString,
     web_state: QString,
 }
 
@@ -165,6 +168,7 @@ impl Default for AuthRust {
             premium: false,
             personal_client_id: QString::default(),
             personal_state: QString::default(),
+            personal_redirect_uri: QString::from(sf_services::Grant::shared_web_api().redirect_uri().as_str()),
             web_state: QString::default(),
             snapshot,
         }

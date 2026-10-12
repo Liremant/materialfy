@@ -421,8 +421,57 @@ Page {
                     label: "Client ID"
                     placeholderText: I18n.t("32 characters from the Spotify developer dashboard")
                     leadingIcon: "key"
-                    supportingText: I18n.t("App redirect URI: http://127.0.0.1:8989/login")
                     onAccepted: saveClientId.clicked()
+                }
+                // redirect URI для настроек своего приложения: его вписывают в developer.spotify.com как есть
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.maximumWidth: 480
+                    implicitHeight: redirectRow.implicitHeight + 16
+                    radius: Theme.shape.medium
+                    color: Theme.surfaceContainerHighest
+                    RowLayout {
+                        id: redirectRow
+                        anchors.fill: parent
+                        anchors.leftMargin: 16
+                        anchors.rightMargin: 4
+                        spacing: 8
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 2
+                            Label {
+                                Layout.fillWidth: true
+                                text: I18n.t("Redirect URI")
+                                type: "labelMedium"
+                                color: Theme.fgSurfaceVariant
+                            }
+                            Label {
+                                Layout.fillWidth: true
+                                text: Auth.personalRedirectUri
+                                type: "bodyLarge"
+                            }
+                        }
+                        IconButton {
+                            id: copyRedirect
+                            property bool done: false
+                            icon: done ? "check" : "content_copy"
+                            onClicked: {
+                                Auth.copyToClipboard(Auth.personalRedirectUri)
+                                done = true
+                                copiedTimer.restart()
+                            }
+                            Timer { id: copiedTimer; interval: 1600; onTriggered: copyRedirect.done = false }
+                        }
+                    }
+                }
+                Label {
+                    Layout.fillWidth: true
+                    Layout.maximumWidth: 480
+                    text: I18n.t("Copy it into Redirect URIs of your app on developer.spotify.com exactly as shown, then paste the app's Client ID above.")
+                    type: "bodySmall"
+                    color: Theme.fgSurfaceVariant
+                    wrapMode: Text.WordWrap
+                    elide: Text.ElideNone
                 }
                 Row {
                     spacing: 8
@@ -1146,7 +1195,8 @@ Page {
         icon: "info"
 
         SettingRow {
-            title: "Materialfy 0.1"
+            title: Updater.buildCommit !== "" ? I18n.t("Materialfy {0}", Updater.appVersion) + " · " + Updater.buildCommit
+                                              : I18n.t("Materialfy {0}", Updater.appVersion)
             description: I18n.t("An unofficial Spotify client in Material 3 Expressive style. Playback requires Spotify Premium; no lossless or offline downloads.")
         }
         Label {

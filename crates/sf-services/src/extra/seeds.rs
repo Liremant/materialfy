@@ -175,12 +175,14 @@ pub fn build(sources: &SeedSources<'_>, hidden: &dyn Fn(&str) -> bool) -> Vec<Ra
         artists.push(RadioSeed { uri, label: artist.name.clone(), cover: artist.cover.clone(), kind: "artist".into() });
     }
 
+    // The DJ looks like a playlist but Spotify builds no station from it: it plays only as itself (Home's DJ tile)
+    let not_dj = |uri: &str| uri != crate::data::home_feed::DJ_URI;
     let mut collections = Group::new(COLLECTIONS_MAX);
-    for seed in pinned(sources, &["album", "playlist"]) {
+    for seed in pinned(sources, &["album", "playlist"]).into_iter().filter(|s| not_dj(&s.uri)) {
         collections.push(seed);
     }
     for context in sources.recent_contexts {
-        let Some(uri) = context.context_uri.as_deref() else { continue };
+        let Some(uri) = context.context_uri.as_deref().filter(|u| not_dj(u)) else { continue };
         let Some(kind @ ("album" | "playlist")) = uri_kind(uri) else { continue };
         if let Some(seed) = known_seed(sources, uri).or_else(|| {
             (!context.title.is_empty()).then(|| RadioSeed {
@@ -195,6 +197,9 @@ pub fn build(sources: &SeedSources<'_>, hidden: &dyn Fn(&str) -> bool) -> Vec<Ra
     }
     for playlist in sources.playlists {
         let uri = if playlist.uri.is_empty() { format!("spotify:playlist:{}", playlist.playlist_id) } else { playlist.uri.clone() };
+        if !not_dj(&uri) {
+            continue;
+        }
         collections.push(RadioSeed { uri, label: playlist.title.clone(), cover: playlist.cover.clone(), kind: "playlist".into() });
     }
 
@@ -320,6 +325,17 @@ mod tests {
         assert_eq!(groups[2].items[1].label, "Альбом X");
         // неизвестный закреплённый исполнитель без подписи не показывается
         assert_eq!(uris(&groups[1]), ["spotify:artist:a", "spotify:artist:b"]);
+    }
+
+    #[test]
+    fn the_dj_is_never_a_station_seed() {
+        let dj = crate::data::home_feed::DJ_URI;
+        let contexts = [PlayContext::with_uri("playlist", dj).titled("DJ"), PlayContext::with_uri("album", "spotify:album:x").titled("X")];
+        let playlists = [PlaylistItem { playlist_id: "37i9dQZF1EYkqdzj48dyYq".into(), title: "DJ".into(), ..Default::default() }];
+        let pins = [dj.to_owned()];
+        let sources = SeedSources { recent_contexts: &contexts, playlists: &playlists, pins: &pins, ..Default::default() };
+        let groups = build(&sources, &|_| false);
+        assert_eq!(uris(&groups[2]), ["spotify:album:x"]);
     }
 
     #[test]

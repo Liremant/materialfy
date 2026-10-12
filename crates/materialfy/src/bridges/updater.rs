@@ -29,6 +29,10 @@ pub mod qobject {
         #[qobject]
         #[qproperty(QString, state, READ, NOTIFY = state_changed)]
         #[qproperty(QString, current_version, cxx_name = "currentVersion", READ, NOTIFY = state_changed)]
+        /// version of this build (Cargo.toml), unlike currentVersion never faked
+        #[qproperty(QString, app_version, cxx_name = "appVersion", READ, CONSTANT)]
+        /// short commit hash of a CI build ("" for local builds)
+        #[qproperty(QString, build_commit, cxx_name = "buildCommit", READ, CONSTANT)]
         /// "installer" | "portable" | "appimage" | "mac" | "manual" | "dev"
         #[qproperty(QString, install_kind, cxx_name = "installKind", READ, CONSTANT)]
         #[qproperty(QString, version, READ, NOTIFY = state_changed)]
@@ -115,6 +119,8 @@ pub struct UpdaterRust {
     snapshot: UpdateSnapshot,
     state: QString,
     current_version: QString,
+    app_version: QString,
+    build_commit: QString,
     install_kind: QString,
     version: QString,
     notes: QString,
@@ -279,6 +285,8 @@ impl cxx_qt::Initialize for qobject::Updater {
         {
             let mut this = self.as_mut().rust_mut();
             this.install_kind = qs(service.install_kind().code());
+            this.app_version = qs(env!("CARGO_PKG_VERSION"));
+            this.build_commit = qs(option_env!("MATERIALFY_COMMIT").unwrap_or_default());
             this.debug_sheet = debug.contains("sheet");
             this.debug_download = debug.contains("download");
             this.eta = -1;

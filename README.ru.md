@@ -8,10 +8,12 @@
 </picture>
 
 [![Build](https://github.com/fatyzzz/materialfy/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/fatyzzz/materialfy/actions/workflows/build.yml)
+[![Release](https://img.shields.io/github/v/release/fatyzzz/materialfy?label=release)](https://github.com/fatyzzz/materialfy/releases/latest)
 
 Настольный клиент Spotify на Rust и Qt Quick, интерфейс в стиле Material 3 Expressive.<br>
 Windows и Linux, macOS в экспериментальном режиме.
 
+[Скачать](#скачать) ·
 [Скриншоты](#скриншоты) ·
 [Возможности](#возможности) ·
 [Ограничения](#чего-нет-и-почему) ·
@@ -33,6 +35,23 @@ Materialfy ставят вместо официального настольно
 Проект собран из двух MIT-проектов: Spotify-часть взята из [spotifast](https://github.com/crmne/spotifast)
 (crmne), интерфейс из [yamusic-md3](https://github.com/yaskorinov/yamusic-md3) (yaskorinov). Подробнее в разделе
 [Происхождение и лицензия](#происхождение-и-лицензия).
+
+## Скачать
+
+Готовые сборки всех версий лежат на [странице Releases](https://github.com/fatyzzz/materialfy/releases).
+Файл для своей системы возьмите из [последнего релиза](https://github.com/fatyzzz/materialfy/releases/latest):
+
+| Система | Файл |
+| --- | --- |
+| Windows 10/11, x64 | `Materialfy-<версия>-Setup.exe` (инсталлер, права администратора не нужны) или `Materialfy-<версия>-windows-x64-portable.zip` |
+| Linux x86_64 | `Materialfy-<версия>-x86_64.AppImage` или `materialfy-<версия>-linux-x86_64.tar.gz` |
+| Linux aarch64 | `Materialfy-<версия>-aarch64.AppImage` или `materialfy-<версия>-linux-aarch64.tar.gz` |
+| macOS 13+, Apple silicon | `Materialfy-<версия>-macos-arm64.dmg` (экспериментально) |
+| macOS 13+, Intel | `Materialfy-<версия>-macos-x86_64.dmg` (экспериментально) |
+
+Контрольные суммы лежат в том же релизе в `SHA256SUMS.txt`. С версии 0.2.1 программа сама проверяет Releases
+на новые версии («Настройки» → «Обновления»). Инсталлер, portable-папка и AppImage скачивают и ставят обновление
+на месте, на macOS открывается новый `.dmg`, а копия из `tar.gz` только даёт ссылку на страницу релиза.
 
 ## Скриншоты
 
@@ -133,9 +152,7 @@ Materialfy ставят вместо официального настольно
 
 ## Установка
 
-Готовых сборок пока нет, программу нужно собрать из исходников. После первого тега `v*`
-[`release.yml`](.github/workflows/release.yml) выложит на странице Releases инсталлер и portable-архив для
-Windows, AppImage и `tar.gz` для Linux и `.dmg` для macOS.
+Быстрее всего взять готовую сборку из раздела [Скачать](#скачать). Собрать из исходников можно так:
 
 ### Windows
 
@@ -227,8 +244,8 @@ Spotify выдаёт два отдельных разрешения, и прог
 3. Новое приложение работает в режиме разработки и пускает только пользователей из списка. Добавьте свой
    email от аккаунта Spotify в «User Management».
 4. Скопируйте Client ID (32 символа) со страницы приложения.
-5. В Materialfy: «Настройки» → «Аккаунт» → «Личное приложение Spotify» → «Настроить». Вставьте Client ID,
-   нажмите «Сохранить» и подтвердите доступ в браузере.
+5. В Materialfy: «Настройки» → «Аккаунт» → «Личное приложение Spotify» → «Настроить». В форме показан redirect
+   URI из шага 2 с кнопкой копирования. Вставьте Client ID, нажмите «Сохранить» и подтвердите доступ в браузере.
 
 Часть запросов Web API и со своим Client ID идёт через общий: чужие плейлисты, список ваших плейлистов,
 поиск плейлистов, популярные треки и похожие исполнители на странице исполнителя.

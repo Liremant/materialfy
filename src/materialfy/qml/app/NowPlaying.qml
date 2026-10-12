@@ -159,7 +159,7 @@ Item {
             spacing: 12
             IconButton { icon: "keyboard_arrow_down"; style: "tonal"; onClicked: root.hide() }
             Item { Layout.fillWidth: true }
-            DeviceButton { iconOnly: root.layoutCompact }
+            DeviceButton { iconOnly: root.layoutCompact; usePanel: false }   // правая панель — под этим экраном
             ButtonGroup {
                 model: [{ icon: "title" }, { icon: "queue_music" }]
                 autoSelect: false

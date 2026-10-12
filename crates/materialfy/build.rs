@@ -26,6 +26,13 @@ fn main() {
     println!("cargo::rerun-if-changed=src");
     println!("cargo::rerun-if-changed=cpp");
 
+    // Settings → About shows the commit of CI builds (GitHub Actions sets GITHUB_SHA); local builds go without
+    println!("cargo::rerun-if-env-changed=GITHUB_SHA");
+    if let Ok(sha) = std::env::var("GITHUB_SHA") {
+        let short: String = sha.chars().filter(char::is_ascii_hexdigit).take(7).collect();
+        println!("cargo::rustc-env=MATERIALFY_COMMIT={short}");
+    }
+
     // winframe.cpp собирается везде (вне Windows — заглушка), чтобы привязки в qt/ffi.rs не зависели от ОС
     let cpp = ["cpp/mf_shell.cpp", "cpp/register.cpp", "cpp/winframe.cpp"];
 

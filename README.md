@@ -8,10 +8,12 @@
 </picture>
 
 [![Build](https://github.com/fatyzzz/materialfy/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/fatyzzz/materialfy/actions/workflows/build.yml)
+[![Release](https://img.shields.io/github/v/release/fatyzzz/materialfy?label=release)](https://github.com/fatyzzz/materialfy/releases/latest)
 
 Desktop Spotify client built with Rust and Qt Quick, with a Material 3 Expressive interface.<br>
 Windows and Linux; macOS is experimental.
 
+[Download](#download) ·
 [Screenshots](#screenshots) ·
 [Features](#features) ·
 [Limitations](#whats-missing-and-why) ·
@@ -33,6 +35,23 @@ The project is assembled from two MIT-licensed projects: the Spotify side comes 
 [spotifast](https://github.com/crmne/spotifast) (crmne), the interface from
 [yamusic-md3](https://github.com/yaskorinov/yamusic-md3) (yaskorinov). See
 [Origin and license](#origin-and-license) for details.
+
+## Download
+
+Ready builds of every version are on the [Releases page](https://github.com/fatyzzz/materialfy/releases).
+Take the file for your system from the [latest release](https://github.com/fatyzzz/materialfy/releases/latest):
+
+| System | File |
+| --- | --- |
+| Windows 10/11, x64 | `Materialfy-<version>-Setup.exe` (installer, no admin rights needed) or `Materialfy-<version>-windows-x64-portable.zip` |
+| Linux x86_64 | `Materialfy-<version>-x86_64.AppImage` or `materialfy-<version>-linux-x86_64.tar.gz` |
+| Linux aarch64 | `Materialfy-<version>-aarch64.AppImage` or `materialfy-<version>-linux-aarch64.tar.gz` |
+| macOS 13+, Apple silicon | `Materialfy-<version>-macos-arm64.dmg` (experimental) |
+| macOS 13+, Intel | `Materialfy-<version>-macos-x86_64.dmg` (experimental) |
+
+`SHA256SUMS.txt` in the same release lists the checksums. Starting with 0.2.1 the app checks Releases for new
+versions on its own (Settings → Updates). The installer, the portable folder and the AppImage download and
+apply an update in place; on macOS the new `.dmg` opens; a copy from `tar.gz` only links to the release page.
 
 ## Screenshots
 
@@ -133,9 +152,7 @@ Taken with a Premium account and music playing; the colours follow the cover of 
 
 ## Installation
 
-There are no prebuilt releases yet, so the app has to be built from source. After the first `v*` tag,
-[`release.yml`](.github/workflows/release.yml) will publish a Windows installer and portable archive, a Linux
-AppImage and `tar.gz`, and a macOS `.dmg` on the Releases page.
+The quickest way is a ready build from [Download](#download). To build from source instead:
 
 ### Windows
 
@@ -226,8 +243,8 @@ If the shared key keeps hitting limits, register your own Spotify app. Its limit
 3. A new app runs in development mode and only lets in users from its list. Add the email of your Spotify
    account under "User Management".
 4. Copy the Client ID (32 characters) from the app page.
-5. In Materialfy: Settings → Account → Personal Spotify app → Set up. Paste the Client ID, click Save and
-   confirm access in the browser.
+5. In Materialfy: Settings → Account → Personal Spotify app → Set up. The form shows the redirect URI from step 2
+   with a copy button. Paste the Client ID, click Save and confirm access in the browser.
 
 Even with your own Client ID, some Web API requests go through the shared one: other people's playlists, the
 list of your playlists, playlist search, and popular tracks and related artists on the artist page.

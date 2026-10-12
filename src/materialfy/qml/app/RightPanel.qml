@@ -3,9 +3,18 @@ import QtQuick.Layouts
 import Md3
 import Materialfy.Core
 
-// Правая выдвижная панель: очередь / текст песни.
+// Правая выдвижная панель: очередь / текст песни / устройства Connect.
 Surface {
     id: root
+
+    // Вкладки (Settings.rightPanelTab). Подпись — только у выбранной: три подписи в 340 px не помещаются.
+    readonly property var tabs: [
+        { key: "queue", text: I18n.t("Queue"), icon: "queue_music" },
+        { key: "lyrics", text: I18n.t("Song lyrics"), icon: "title" },
+        { key: "devices", text: I18n.t("Devices"), icon: "speaker_group" }
+    ]
+    readonly property int tabIndex: Math.max(0, tabs.findIndex(t => t.key === Settings.rightPanelTab))
+    readonly property string tab: tabs[tabIndex].key
 
     level: "container"
     translucency: Settings.ambientBackground && Player.cover !== "" ? 0.3 : 0
@@ -19,10 +28,10 @@ Surface {
         RowLayout {
             Layout.fillWidth: true
             ButtonGroup {
-                model: [{ text: I18n.t("Queue"), icon: "queue_music" }, { text: I18n.t("Song lyrics"), icon: "title" }]
+                model: root.tabs.map((t, i) => ({ icon: t.icon, text: i === root.tabIndex ? t.text : "" }))
                 autoSelect: false
-                currentIndex: Settings.rightPanelTab === "lyrics" ? 1 : 0
-                onActivated: i => Settings.rightPanelTab = i === 1 ? "lyrics" : "queue"
+                currentIndex: root.tabIndex
+                onActivated: i => Settings.rightPanelTab = root.tabs[i].key
             }
             Item { Layout.fillWidth: true }
             IconButton { icon: "close"; onClicked: Settings.rightPanelOpen = false }
@@ -34,14 +43,23 @@ Surface {
 
             QueueView {
                 anchors.fill: parent
-                visible: Settings.rightPanelTab !== "lyrics"
+                visible: root.tab === "queue"
             }
             LyricsView {
                 anchors.fill: parent
                 anchors.bottomMargin: 16
-                visible: Settings.rightPanelTab === "lyrics" && Settings.rightPanelOpen
+                visible: root.tab === "lyrics" && Settings.rightPanelOpen
                 fontSize: 22
                 anchorPos: 0.3
+            }
+            // загружается при первом открытии вкладки
+            Loader {
+                anchors.fill: parent
+                active: root.tab === "devices" || item !== null
+                visible: root.tab === "devices"
+                sourceComponent: DevicePanel {
+                    shown: root.tab === "devices" && Settings.rightPanelOpen
+                }
             }
         }
     }
