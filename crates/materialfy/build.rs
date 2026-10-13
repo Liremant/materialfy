@@ -33,8 +33,9 @@ fn main() {
         println!("cargo::rustc-env=MATERIALFY_COMMIT={short}");
     }
 
-    // winframe.cpp и taskbar.cpp собираются везде (вне Windows — заглушка), чтобы привязки в qt/ffi.rs не зависели от ОС
-    let cpp = ["cpp/mf_shell.cpp", "cpp/register.cpp", "cpp/taskbar.cpp", "cpp/winframe.cpp"];
+    // winframe.cpp, taskbar.cpp и floating.cpp собираются везде (вне Windows — заглушка), чтобы привязки
+    // в qt/ffi.rs и winframe.rs не зависели от ОС
+    let cpp = ["cpp/mf_shell.cpp", "cpp/register.cpp", "cpp/taskbar.cpp", "cpp/winframe.cpp", "cpp/floating.cpp"];
 
     // Без QmlModule: он требует, чтобы все мосты лежали в одном каталоге (QTBUG-93443);
     // типы Materialfy.Core регистрирует cpp/register.cpp.

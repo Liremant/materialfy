@@ -2,7 +2,8 @@
 //! (cpp/winframe.cpp). См. контракт §7. На других ОС — пусто: ресайз делает QML ResizeEdges через
 //! startSystemResize, углы скругляет QML WindowFrame (окно прозрачное).
 //! Там же — кнопки «Назад / Пауза / Дальше» под эскизом окна на панели задач Windows (cpp/taskbar.cpp)
-//! и QML-синглтон WindowShell (свернуть окно, не теряя «развёрнуто» / «на весь экран»).
+//! и QML-синглтон WindowShell (свернуть окно, не теряя «развёрнуто» / «на весь экран»; окна плеера вне главного
+//! окна — островок и виджет в панели задач, cpp/floating.cpp).
 
 /// Ширина зоны ресайза, логические пиксели (как ResizeEdges.grip).
 pub const GRIP: i32 = 6;
@@ -16,6 +17,12 @@ pub mod qobject {
         unsafe fn window_minimize(window: *mut QObject);
         include!("taskbar.h");
         unsafe fn taskbar_install(window: *mut QObject) -> bool;
+        include!("floating.h");
+        unsafe fn floating_tool_window(window: *mut QObject) -> bool;
+        unsafe fn floating_set_mask(window: *mut QObject, x: i32, y: i32, w: i32, h: i32);
+        fn floating_fullscreen_busy() -> bool;
+        unsafe fn floating_taskbar_place(window: *mut QObject, width: i32, embed: bool) -> i32;
+        unsafe fn floating_taskbar_detach(window: *mut QObject);
     }
 
     unsafe extern "RustQt" {
@@ -27,6 +34,31 @@ pub mod qobject {
 
         #[qinvokable]
         unsafe fn minimize(self: &WindowShell, window: *mut QObject);
+
+        /// Показать и поднять главное окно (из трея, свёрнутое — тоже), как второй запуск приложения
+        #[qinvokable]
+        #[cxx_name = "raiseMain"]
+        fn raise_main(self: &WindowShell);
+        /// Окно-островок: не в панели задач и Alt+Tab, не забирает фокус (Windows; иначе false)
+        #[qinvokable]
+        #[cxx_name = "makeToolWindow"]
+        unsafe fn make_tool_window(self: &WindowShell, window: *mut QObject) -> bool;
+        /// Мышь ловит и рисуется только прямоугольник (логические px окна); w <= 0 — всё окно
+        #[qinvokable]
+        #[cxx_name = "setMask"]
+        unsafe fn set_mask(self: &WindowShell, window: *mut QObject, x: i32, y: i32, w: i32, h: i32);
+        /// На переднем плане полноэкранное приложение или презентация (Windows)
+        #[qinvokable]
+        #[cxx_name = "fullscreenBusy"]
+        fn fullscreen_busy(self: &WindowShell) -> bool;
+        /// Встроить окно в панель задач Windows и поставить на место: 1 — встроено, 2 — поверх панели,
+        /// 0 — некуда, -1 — окно потеряно (перезапуск Explorer), создать заново. См. cpp/floating.h
+        #[qinvokable]
+        #[cxx_name = "taskbarPlace"]
+        unsafe fn taskbar_place(self: &WindowShell, window: *mut QObject, width: i32, embed: bool) -> i32;
+        #[qinvokable]
+        #[cxx_name = "taskbarDetach"]
+        unsafe fn taskbar_detach(self: &WindowShell, window: *mut QObject);
     }
 }
 
@@ -38,6 +70,41 @@ impl qobject::WindowShell {
         if !window.is_null() {
             // SAFETY: окно из QML (живой QObject), вызов из GUI-потока
             unsafe { qobject::window_minimize(window) };
+        }
+    }
+
+    fn raise_main(&self) {
+        crate::qt::ffi::ffi::post_raise_window();
+    }
+
+    unsafe fn make_tool_window(&self, window: *mut cxx_qt::QObject) -> bool {
+        // SAFETY: окно из QML (живой QObject), вызов из GUI-потока
+        !window.is_null() && unsafe { qobject::floating_tool_window(window) }
+    }
+
+    unsafe fn set_mask(&self, window: *mut cxx_qt::QObject, x: i32, y: i32, w: i32, h: i32) {
+        if !window.is_null() {
+            // SAFETY: то же
+            unsafe { qobject::floating_set_mask(window, x, y, w, h) };
+        }
+    }
+
+    fn fullscreen_busy(&self) -> bool {
+        qobject::floating_fullscreen_busy()
+    }
+
+    unsafe fn taskbar_place(&self, window: *mut cxx_qt::QObject, width: i32, embed: bool) -> i32 {
+        if window.is_null() {
+            return 0;
+        }
+        // SAFETY: то же
+        unsafe { qobject::floating_taskbar_place(window, width, embed) }
+    }
+
+    unsafe fn taskbar_detach(&self, window: *mut cxx_qt::QObject) {
+        if !window.is_null() {
+            // SAFETY: то же
+            unsafe { qobject::floating_taskbar_detach(window) };
         }
     }
 }
