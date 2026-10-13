@@ -58,7 +58,11 @@ Item {
         enabled: root.visible
         function onLevelChanged() {
             root.avgLevel += (Player.level - root.avgLevel) * 0.06
-            root.beat = Math.max(0, Math.min(1, (Player.level - root.avgLevel) * 4))
+            const b = Math.max(0, Math.min(1, (Player.level - root.avgLevel) * 4))
+            // значимые сдвиги только: каждый старт Behavior перерисовывает всё мини-окно,
+            // а события уровня приходят 30–60 раз в секунду
+            if (Math.abs(b - root.beat) > 0.04)
+                root.beat = b
         }
     }
     Connections {

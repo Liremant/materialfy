@@ -106,6 +106,15 @@ Item {
 
     TickAnimation {
         running: root.running && root._flowing && root.ready && !Theme.quiet
-        onTriggered: root._t += frameTime * (0.15 + 0.85 * Math.min(1, root.flow))
+        // обновляем шейдер только когда _t реально сдвинулся: движение еле заметное,
+        // а каждый кадр униформы — перерисовка всей площади окна; так — ~8 Гц вместо 30
+        property real _acc: 0
+        onTriggered: {
+            _acc += frameTime * (0.15 + 0.85 * Math.min(1, root.flow))
+            if (_acc >= 0.002) {
+                root._t += _acc
+                _acc = 0
+            }
+        }
     }
 }

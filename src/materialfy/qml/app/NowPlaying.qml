@@ -254,7 +254,11 @@ Item {
                     target: Player
                     function onLevelChanged() {
                         left.avgLevel += (Player.level - left.avgLevel) * 0.06
-                        left.beat = Math.max(0, Math.min(1, (Player.level - left.avgLevel) * 4))
+                        const b = Math.max(0, Math.min(1, (Player.level - left.avgLevel) * 4))
+                        // пишем только значимые сдвиги: каждый старт Behavior перерисовывает всё окно,
+                        // а события уровня приходят 30–60 раз в секунду
+                        if (Math.abs(b - left.beat) > 0.04)
+                            left.beat = b
                     }
                 }
 
