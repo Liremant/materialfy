@@ -38,6 +38,30 @@ pub enum SettingKey {
     CoverSpin,
     CoverPulse,
     CalmWhenInactive,
+    /// текст песни: "normal" (классика) | "spicy" (крупная строка со сглаженным градиентом) | "karaoke" (текущая строка крупнее)
+    LyricsMode,
+    /// множитель размера шрифта текста (базовый размер задаёт место вызова)
+    LyricsFontScale,
+    /// затемняющая подложка за текстом: "none" | "soft" | "strong"
+    LyricsScrim,
+    /// выравнивание текста песни: "auto" | "left" | "center"
+    LyricsTextAlign,
+    /// режим заполнения: "auto" | "word" | "line" | "off"
+    LyricsFillMode,
+    /// фильтр видимых строк: "auto" | "all" | "three" | "one"
+    LyricsVisibleLines,
+    /// множитель градиента и свечения (0..2)
+    LyricsHighlight,
+    /// степень размытия неактивных строк (0..1)
+    LyricsBlurAmount,
+    /// множитель межстрочного интервала (0.8..1.6)
+    LyricsLineSpacing,
+    /// анимации прокрутки и переходов текста
+    LyricsAnimate,
+    /// показывать метку источника текста
+    LyricsShowSource,
+    /// сдвиг синхронизации в миллисекундах (-500..500)
+    LyricsSyncMs,
     /// "system" | "full" | "reduced" → Theme.reducedMotion
     Animations,
     /// режим для слабых ПК: "auto" (сам, когда кадры рисует процессор) | "on" | "off" → Theme.lowPower
@@ -126,7 +150,7 @@ pub enum SettingType {
 }
 
 impl SettingKey {
-    pub const ALL: [SettingKey; 53] = [
+    pub const ALL: [SettingKey; 65] = [
         SettingKey::ThemeMode,
         SettingKey::SchemeVariant,
         SettingKey::AccentFromCover,
@@ -140,6 +164,18 @@ impl SettingKey {
         SettingKey::CoverSpin,
         SettingKey::CoverPulse,
         SettingKey::CalmWhenInactive,
+        SettingKey::LyricsMode,
+        SettingKey::LyricsFontScale,
+        SettingKey::LyricsScrim,
+        SettingKey::LyricsTextAlign,
+        SettingKey::LyricsFillMode,
+        SettingKey::LyricsVisibleLines,
+        SettingKey::LyricsHighlight,
+        SettingKey::LyricsBlurAmount,
+        SettingKey::LyricsLineSpacing,
+        SettingKey::LyricsAnimate,
+        SettingKey::LyricsShowSource,
+        SettingKey::LyricsSyncMs,
         SettingKey::Animations,
         SettingKey::LowPowerMode,
         SettingKey::Language,
@@ -199,6 +235,18 @@ impl SettingKey {
             CoverSpin => "coverSpin",
             CoverPulse => "coverPulse",
             CalmWhenInactive => "calmWhenInactive",
+            LyricsMode => "lyricsMode",
+            LyricsFontScale => "lyricsFontScale",
+            LyricsScrim => "lyricsScrim",
+            LyricsTextAlign => "lyricsTextAlign",
+            LyricsFillMode => "lyricsFillMode",
+            LyricsVisibleLines => "lyricsVisibleLines",
+            LyricsHighlight => "lyricsHighlight",
+            LyricsBlurAmount => "lyricsBlurAmount",
+            LyricsLineSpacing => "lyricsLineSpacing",
+            LyricsAnimate => "lyricsAnimate",
+            LyricsShowSource => "lyricsShowSource",
+            LyricsSyncMs => "lyricsSyncMs",
             Animations => "animations",
             LowPowerMode => "lowPowerMode",
             Language => "language",
@@ -272,6 +320,18 @@ impl SettingKey {
             CoverSpin => Bool(true),
             CoverPulse => Bool(true),
             CalmWhenInactive => Bool(true),
+            LyricsMode => Str("normal".into()),
+            LyricsFontScale => Float(1.0),
+            LyricsScrim => Str("none".into()),
+            LyricsTextAlign => Str("auto".into()),
+            LyricsFillMode => Str("auto".into()),
+            LyricsVisibleLines => Str("auto".into()),
+            LyricsHighlight => Float(1.0),
+            LyricsBlurAmount => Float(1.0),
+            LyricsLineSpacing => Float(1.0),
+            LyricsAnimate => Bool(true),
+            LyricsShowSource => Bool(true),
+            LyricsSyncMs => Int(0),
             Animations => Str("system".into()),
             LowPowerMode => Str("auto".into()),
             Language => Str("system".into()),
@@ -334,6 +394,18 @@ impl SettingKey {
                 SettingValue::Float(((speed.clamp(0.5, 2.0) * 20.0).round() / 20.0).clamp(0.5, 2.0))
             }
             (SettingKey::Crossfade, SettingValue::Int(seconds)) => SettingValue::Int(seconds.clamp(0, CROSSFADE_MAX_S)),
+            (SettingKey::LyricsHighlight, SettingValue::Float(v)) => {
+                SettingValue::Float(if v.is_finite() { v.clamp(0.0, 2.0) } else { 1.0 })
+            }
+            (SettingKey::LyricsBlurAmount, SettingValue::Float(v)) => {
+                SettingValue::Float(if v.is_finite() { v.clamp(0.0, 1.0) } else { 1.0 })
+            }
+            (SettingKey::LyricsLineSpacing, SettingValue::Float(v)) => {
+                SettingValue::Float(if v.is_finite() { v.clamp(0.8, 1.6) } else { 1.0 })
+            }
+            (SettingKey::LyricsSyncMs, SettingValue::Int(ms)) => {
+                SettingValue::Int(ms.clamp(-500, 500))
+            }
             (SettingKey::UpdateChannel, SettingValue::Str(channel)) => {
                 SettingValue::Str(if channel.trim().eq_ignore_ascii_case("beta") { "beta" } else { "stable" }.into())
             }
@@ -942,7 +1014,7 @@ mod tests {
 
     #[test]
     fn schema() {
-        assert_eq!(SettingKey::ALL.len(), 53);
+        assert_eq!(SettingKey::ALL.len(), 65);
         for key in SettingKey::ALL {
             assert_eq!(SettingKey::from_name(key.name()), Some(key));
             assert_eq!(key.default_value().value_type(), key.value_type());
@@ -1214,7 +1286,10 @@ mod tests {
         for name in [
             "themeMode", "schemeVariant", "accentFromCover", "customSeed", "windowButtons", "trackTransition",
             "backdropMode", "nowPlayingBlur", "nowPlayingDrift", "ambientBackground", "coverSpin", "coverPulse",
-            "calmWhenInactive", "animations", "lowPowerMode", "rightPanelOpen", "rightPanelTab", "sidebarCollapsed", "windowWidth",
+            "calmWhenInactive", "lyricsMode", "lyricsFontScale", "lyricsScrim",
+            "lyricsTextAlign", "lyricsFillMode", "lyricsVisibleLines", "lyricsHighlight", "lyricsBlurAmount",
+            "lyricsLineSpacing", "lyricsAnimate", "lyricsShowSource", "lyricsSyncMs",
+            "animations", "lowPowerMode", "rightPanelOpen", "rightPanelTab", "sidebarCollapsed", "windowWidth",
             "windowHeight", "windowX", "windowY", "windowMaximized", "closeToTray", "wheelStep", "libraryView",
             "librarySort", "homeHidden", "bitrate", "normalisation", "gapless", "autoplay", "volume", "audioDevice",
             "audioCache", "audioCacheMb", "playbackAuthorized", "deviceName", "webClientId", "proxyMode", "proxyHost",

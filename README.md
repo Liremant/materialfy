@@ -110,6 +110,8 @@ Taken with a Premium account and music playing; the colours follow the cover of 
   recent releases from artists you follow.
 - Podcasts: show and episode pages, listening progress, chapters, skip back 10 seconds and forward 30.
 - Synced lyrics. The app takes lyrics from Spotify first and falls back to LRCLIB, NetEase and Musixmatch.
+  Three styles to choose from (classic, Spicy, karaoke), text size
+  and background scrim.
 - Material You color scheme from the current track's cover or from a chosen accent color, light and dark themes.
   Animations can be shortened or follow the system setting.
 - Three window layouts: full, compact for a narrow window, and a mini player with an "Always on top" option

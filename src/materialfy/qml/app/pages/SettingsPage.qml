@@ -23,6 +23,7 @@ Page {
         { key: "network", text: I18n.t("Network"), icon: "lan" },
         { key: "storage", text: I18n.t("Storage"), icon: "database" },
         { key: "appearance", text: I18n.t("Appearance"), icon: "palette" },
+        { key: "lyrics", text: I18n.t("Lyrics"), icon: "lyrics" },
         { key: "updates", text: I18n.t("Updates"), icon: "download" }
     ]
     property string currentSection: "account"
@@ -61,6 +62,7 @@ Page {
         case "network": return networkCard
         case "storage": return storageCard
         case "appearance": return appearanceCard
+        case "lyrics": return lyricsCard
         case "updates": return updatesCard
         }
         return null
@@ -1165,6 +1167,171 @@ Page {
             title: I18n.t("Ambient background")
             description: I18n.t("The playing track’s cover, blurred behind the whole window as a soft colored glow")
             Switch { checked: Settings.ambientBackground; onToggled: c => Settings.ambientBackground = c }
+        }
+    }
+
+    // ================= Текст песни =================
+    SettingsCard {
+        id: lyricsCard
+        title: I18n.t("Lyrics style")
+        icon: "lyrics"
+
+        SettingRow {
+            title: I18n.t("Style")
+            description: Settings.lyricsMode === "spicy" ? I18n.t("Spicy style: the singing line is larger, with a soft gradient sweep and a glow")
+                         : Settings.lyricsMode === "karaoke" ? I18n.t("Karaoke: larger singing line with sharp word-by-word fill")
+                         : I18n.t("As it was: cascade scroll, blurred neighbouring lines")
+            ButtonGroup {
+                model: [I18n.t("Classic"), I18n.t("Spicy"), I18n.t("Karaoke")]
+                autoSelect: false
+                size: page.compact ? "xs" : "s"
+                currentIndex: Math.max(0, ["normal", "spicy", "karaoke"].indexOf(Settings.lyricsMode))
+                onActivated: i => Settings.lyricsMode = ["normal", "spicy", "karaoke"][i]
+            }
+        }
+        SettingRow {
+            title: I18n.t("Lyrics size")
+            description: I18n.t("{0}% of the default size", Math.round(Settings.lyricsFontScale * 100))
+            Slider {
+                wheelEnabled: false     // колесо прокручивает страницу, а не меняет настройку
+                width: 220
+                from: 0.7
+                to: 1.6
+                stepSize: 0.05
+                value: Settings.lyricsFontScale
+                valueText: v => Math.round(v * 100) + " %"
+                onMoved: v => Settings.lyricsFontScale = Math.round(v * 20) / 20
+            }
+        }
+        SettingRow {
+            title: I18n.t("Text alignment")
+            description: Settings.lyricsTextAlign === "left" ? I18n.t("Left aligned")
+                         : Settings.lyricsTextAlign === "center" ? I18n.t("Centered text")
+                         : I18n.t("Automatic: style default (left)")
+            ButtonGroup {
+                model: [I18n.t("Automatic"), I18n.t("Left"), I18n.t("Center")]
+                autoSelect: false
+                size: page.compact ? "xs" : "s"
+                currentIndex: Math.max(0, ["auto", "left", "center"].indexOf(Settings.lyricsTextAlign))
+                onActivated: i => Settings.lyricsTextAlign = ["auto", "left", "center"][i]
+            }
+        }
+        SettingRow {
+            title: I18n.t("Fill mode")
+            description: Settings.lyricsFillMode === "word" ? I18n.t("Word by word: words fill as they are sung")
+                         : Settings.lyricsFillMode === "line" ? I18n.t("Whole line: the active line lights up all at once")
+                         : Settings.lyricsFillMode === "off" ? I18n.t("Off: lines stay fully lit without progress fill")
+                         : I18n.t("Automatic: follows the style (word by word)")
+            ButtonGroup {
+                model: [I18n.t("Automatic"), I18n.t("Word by word"), I18n.t("Whole line"), I18n.t("Off")]
+                autoSelect: false
+                size: page.compact ? "xs" : "s"
+                currentIndex: Math.max(0, ["auto", "word", "line", "off"].indexOf(Settings.lyricsFillMode))
+                onActivated: i => Settings.lyricsFillMode = ["auto", "word", "line", "off"][i]
+            }
+        }
+        SettingRow {
+            title: I18n.t("Visible lines")
+            description: Settings.lyricsVisibleLines === "all" ? I18n.t("All lines: the full song text is visible")
+                         : Settings.lyricsVisibleLines === "three" ? I18n.t("Three lines: previous, active and next lines")
+                         : Settings.lyricsVisibleLines === "one" ? I18n.t("One line: only the active line is visible")
+                         : I18n.t("Automatic: follows the style (all lines)")
+            ButtonGroup {
+                model: [I18n.t("Automatic"), I18n.t("All lines"), I18n.t("Three"), I18n.t("One")]
+                autoSelect: false
+                size: page.compact ? "xs" : "s"
+                currentIndex: Math.max(0, ["auto", "all", "three", "one"].indexOf(Settings.lyricsVisibleLines))
+                onActivated: i => Settings.lyricsVisibleLines = ["auto", "all", "three", "one"][i]
+            }
+        }
+        SettingRow {
+            title: I18n.t("Highlight intensity")
+            description: Settings.lyricsHighlight <= 0.01 ? I18n.t("Sharp cut with no gradient or glow")
+                         : I18n.t("{0}%: scales the gradient width and glow", Math.round(Settings.lyricsHighlight * 100))
+            Slider {
+                wheelEnabled: false
+                width: 220
+                from: 0
+                to: 2.0
+                stepSize: 0.05
+                value: Settings.lyricsHighlight
+                valueText: v => Math.round(v * 100) + " %"
+                onMoved: v => Settings.lyricsHighlight = Math.round(v * 20) / 20
+            }
+        }
+    }
+
+    SettingsCard {
+        title: I18n.t("Reading")
+        icon: "visibility"
+
+        SettingRow {
+            title: I18n.t("Blur other lines")
+            description: Settings.lyricsBlurAmount <= 0.01 ? I18n.t("No blur on inactive lines")
+                         : I18n.t("{0}% blur on inactive lines", Math.round(Settings.lyricsBlurAmount * 100))
+            Slider {
+                wheelEnabled: false
+                width: 220
+                from: 0
+                to: 1.0
+                stepSize: 0.05
+                value: Settings.lyricsBlurAmount
+                valueText: v => v > 0.01 ? Math.round(v * 100) + " %" : I18n.t("off")
+                onMoved: v => Settings.lyricsBlurAmount = Math.round(v * 20) / 20
+            }
+        }
+        SettingRow {
+            title: I18n.t("Line spacing")
+            description: I18n.t("{0}% of the style spacing", Math.round(Settings.lyricsLineSpacing * 100))
+            Slider {
+                wheelEnabled: false
+                width: 220
+                from: 0.8
+                to: 1.6
+                stepSize: 0.05
+                value: Settings.lyricsLineSpacing
+                valueText: v => Math.round(v * 100) + " %"
+                onMoved: v => Settings.lyricsLineSpacing = Math.round(v * 20) / 20
+            }
+        }
+        SettingRow {
+            title: I18n.t("Animations")
+            description: I18n.t("Smooth scrolling, cascade transitions and line shifts. Turn off for instant updates")
+            Switch { checked: Settings.lyricsAnimate; onToggled: c => Settings.lyricsAnimate = c }
+        }
+        SettingRow {
+            title: I18n.t("Lyrics source label")
+            description: I18n.t("Shows the source badge (e.g. “Spotify · line by line”)")
+            Switch { checked: Settings.lyricsShowSource; onToggled: c => Settings.lyricsShowSource = c }
+        }
+        SettingRow {
+            title: I18n.t("Background scrim")
+            description: Settings.lyricsScrim === "soft" ? I18n.t("Soft tinted backing behind the lyrics")
+                         : Settings.lyricsScrim === "strong" ? I18n.t("Prominent tinted backing behind the lyrics")
+                         : I18n.t("Transparent: lyrics sit directly over the backdrop")
+            ButtonGroup {
+                model: [I18n.t("None"), I18n.t("Soft"), I18n.t("Strong")]
+                autoSelect: false
+                size: page.compact ? "xs" : "s"
+                currentIndex: Math.max(0, ["none", "soft", "strong"].indexOf(Settings.lyricsScrim))
+                onActivated: i => Settings.lyricsScrim = ["none", "soft", "strong"][i]
+            }
+        }
+        SettingRow {
+            title: I18n.t("Sync adjustment")
+            description: Settings.lyricsSyncMs === 0 ? I18n.t("Exact sync with playback (0 ms)")
+                         : (Settings.lyricsSyncMs > 0 ? I18n.t("Lyrics lead playback by {0} ms", Settings.lyricsSyncMs)
+                         : I18n.t("Lyrics lag playback by {0} ms", Math.abs(Settings.lyricsSyncMs)))
+            Slider {
+                wheelEnabled: false
+                width: 220
+                from: -500
+                to: 500
+                stepSize: 25
+                value: Settings.lyricsSyncMs
+                valueText: v => (v > 0 ? "+" : "") + Math.round(v) + " ms"
+                onMoved: v => Settings.lyricsSyncMs = Math.round(v / 25) * 25
+            }
         }
     }
 
