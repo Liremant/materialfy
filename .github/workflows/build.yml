@@ -140,8 +140,18 @@ jobs:
   linux:
     name: Linux ${{ matrix.arch }}
     needs: meta
-    # x86_64 on the own runner (WSL) for pushes and tags, like Windows above; aarch64 stays in the cloud
-    runs-on: ${{ (matrix.arch == 'x86_64' && github.event_name != 'pull_request' && vars.USE_SELF_HOSTED != 'false') && fromJSON('["self-hosted","Linux","materialfy"]') || matrix.runner }}
+    runs-on: ${{ matrix.runner }}
+    # x86_64 is built inside Ubuntu 22.04, the oldest LTS still in standard support: the binary and the system
+    # libraries linuxdeploy bundles then need glibc 2.35 and GCC 11's libstdc++, so the AppImage runs on any
+    # current distribution (built on the runner's own 24.04 it needed glibc 2.39 and failed the AppImage
+    # catalog test); Qt 6.12 for x86_64 needs glibc 2.34. Qt's arm64 build is made on Ubuntu 24.04, so its
+    # qmake doesn't even start on 22.04: aarch64 stays on the 24.04 runner itself. A container job can't use
+    # the WSL runner, so x86_64 is in the cloud too (free for a public repository).
+    container: ${{ matrix.container }}
+    # in a container `run` steps default to sh (dash); the steps use bash syntax
+    defaults:
+      run:
+        shell: bash
     timeout-minutes: 120
     strategy:
       fail-fast: false
@@ -149,23 +159,28 @@ jobs:
         include:
           - arch: x86_64
             runner: ubuntu-24.04
+            container: ubuntu:22.04
             qt_host: linux
             qt_dir: gcc_64
           - arch: aarch64
             runner: ubuntu-24.04-arm
+            container: ''
             qt_host: linux_arm64
             qt_dir: gcc_arm64
     env:
       VERSION: ${{ needs.meta.outputs.version }}
     steps:
-      - uses: actions/checkout@v7
-
-      # libasound2-dev (cpal), libpulse-dev (librespot pulseaudio backend), xcb/GL for Qt and linuxdeploy,
-      # xvfb + mesa for the smoke test
+      # The container starts bare and as root (no sudo there; the runner itself needs it): git (checkout,
+      # version stamp), curl and python3 (Qt installer, rustup) come first. libasound2-dev (cpal), libpulse-dev
+      # (librespot pulseaudio backend), xcb/GL for Qt and linuxdeploy, xvfb + mesa for the smoke test.
       - name: Install system packages
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo apt-get update -q
-          sudo apt-get install -y --no-install-recommends \
+          SUDO=$(command -v sudo || true)
+          $SUDO apt-get update -q
+          $SUDO apt-get install -y --no-install-recommends \
+            ca-certificates curl git python3 xz-utils unzip \
             build-essential pkg-config lld p7zip-full patchelf file desktop-file-utils \
             libasound2-dev libpulse-dev libdbus-1-dev \
             libgl-dev libegl-dev libopengl-dev libxkbcommon-dev libxkbcommon-x11-0 \
@@ -174,6 +189,8 @@ jobs:
             libxcb-render-util0 libxcb-shape0 libxcb-xfixes0 libxcb-sync1 libxcb-xkb1 libxcb-xinerama0 \
             libxcb-glx0 libx11-xcb1 \
             xvfb xauth libgl1-mesa-dri libegl-mesa0 libglx-mesa0
+
+      - uses: actions/checkout@v7
 
       - name: Cache Qt
         uses: actions/cache@v6

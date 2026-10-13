@@ -2,10 +2,12 @@
 
 <div align="center">
 
+<h1>
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/brand/wordmark-on-dark.svg">
   <img src="docs/brand/wordmark.svg" width="420" alt="Materialfy">
 </picture>
+</h1>
 
 [![Build](https://github.com/fatyzzz/materialfy/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/fatyzzz/materialfy/actions/workflows/build.yml)
 [![Release](https://img.shields.io/github/v/release/fatyzzz/materialfy?label=release)](https://github.com/fatyzzz/materialfy/releases/latest)
