@@ -124,6 +124,8 @@ pub enum SettingKey {
     // Поведение
     CloseToTray,
     WheelStep,
+    /// плеер поверх всего вне главного окна: "off" | "island" (островок у верхнего края экрана) | "taskbar" (в панели задач Windows)
+    FloatingPlayer,
     // Updates
     /// check GitHub Releases for a new version on startup and every 6 h (no network when off)
     AutoUpdateCheck,
@@ -150,7 +152,7 @@ pub enum SettingType {
 }
 
 impl SettingKey {
-    pub const ALL: [SettingKey; 65] = [
+    pub const ALL: [SettingKey; 66] = [
         SettingKey::ThemeMode,
         SettingKey::SchemeVariant,
         SettingKey::AccentFromCover,
@@ -213,6 +215,7 @@ impl SettingKey {
         SettingKey::RadioSeeds,
         SettingKey::CloseToTray,
         SettingKey::WheelStep,
+        SettingKey::FloatingPlayer,
         SettingKey::AutoUpdateCheck,
         SettingKey::UpdateChannel,
         SettingKey::SkippedVersion,
@@ -284,6 +287,7 @@ impl SettingKey {
             RadioSeeds => "radioSeeds",
             CloseToTray => "closeToTray",
             WheelStep => "wheelStep",
+            FloatingPlayer => "floatingPlayer",
             AutoUpdateCheck => "autoUpdateCheck",
             UpdateChannel => "updateChannel",
             SkippedVersion => "skippedVersion",
@@ -369,6 +373,7 @@ impl SettingKey {
             RadioSeeds => Str(String::new()),
             CloseToTray => Bool(true),
             WheelStep => Int(150),
+            FloatingPlayer => Str("off".into()),
             AutoUpdateCheck => Bool(true),
             UpdateChannel => Str("stable".into()),
             SkippedVersion => Str(String::new()),
@@ -427,6 +432,13 @@ impl SettingKey {
                     "three" => "three",
                     "one" => "one",
                     _ => "all",
+                }.into())
+            }
+            (SettingKey::FloatingPlayer, SettingValue::Str(s)) => {
+                SettingValue::Str(match s.as_str() {
+                    "island" => "island",
+                    "taskbar" => "taskbar",
+                    _ => "off",
                 }.into())
             }
             (SettingKey::UpdateChannel, SettingValue::Str(channel)) => {
@@ -1037,7 +1049,7 @@ mod tests {
 
     #[test]
     fn schema() {
-        assert_eq!(SettingKey::ALL.len(), 65);
+        assert_eq!(SettingKey::ALL.len(), 66);
         for key in SettingKey::ALL {
             assert_eq!(SettingKey::from_name(key.name()), Some(key));
             assert_eq!(key.default_value().value_type(), key.value_type());
@@ -1063,6 +1075,9 @@ mod tests {
         assert_eq!(SettingKey::LyricsVisibleLines.normalize(Str("auto".into())), Str("all".into()));
         assert_eq!(SettingKey::LyricsVisibleLines.normalize(Str("three".into())), Str("three".into()));
         assert_eq!(SettingKey::LyricsVisibleLines.normalize(Str("one".into())), Str("one".into()));
+        assert_eq!(SettingKey::FloatingPlayer.normalize(Str("island".into())), Str("island".into()));
+        assert_eq!(SettingKey::FloatingPlayer.normalize(Str("taskbar".into())), Str("taskbar".into()));
+        assert_eq!(SettingKey::FloatingPlayer.normalize(Str("notch".into())), Str("off".into()));
     }
 
     #[test]
@@ -1321,7 +1336,7 @@ mod tests {
             "lyricsTextAlign", "lyricsFillMode", "lyricsVisibleLines", "lyricsHighlight", "lyricsBlurAmount",
             "lyricsLineSpacing", "lyricsAnimate", "lyricsShowSource", "lyricsSyncMs",
             "animations", "lowPowerMode", "rightPanelOpen", "rightPanelTab", "sidebarCollapsed", "windowWidth",
-            "windowHeight", "windowX", "windowY", "windowMaximized", "closeToTray", "wheelStep", "libraryView",
+            "windowHeight", "windowX", "windowY", "windowMaximized", "closeToTray", "wheelStep", "floatingPlayer", "libraryView",
             "librarySort", "homeHidden", "bitrate", "normalisation", "gapless", "autoplay", "volume", "audioDevice",
             "audioCache", "audioCacheMb", "playbackAuthorized", "deviceName", "webClientId", "proxyMode", "proxyHost",
             "proxyPort", "proxyUsername", "pins", "hiddenTracks", "radioSeeds", "language", "autoUpdateCheck",

@@ -88,6 +88,8 @@ pub mod qobject {
         #[qproperty(QString, proxy_username, cxx_name = "proxyUsername", READ, NOTIFY = proxy_username_changed)]
         #[qproperty(bool, close_to_tray, cxx_name = "closeToTray", READ, WRITE = set_close_to_tray, NOTIFY = close_to_tray_changed)]
         #[qproperty(i32, wheel_step, cxx_name = "wheelStep", READ, WRITE = set_wheel_step, NOTIFY = wheel_step_changed)]
+        /// "off" | "island" | "taskbar" — плеер вне главного окна (FloatingIsland / TaskbarPlayer)
+        #[qproperty(QString, floating_player, cxx_name = "floatingPlayer", READ, WRITE = set_floating_player, NOTIFY = floating_player_changed)]
         #[qproperty(QStringList, audio_devices, cxx_name = "audioDevices", READ, NOTIFY = audio_devices_changed)]
         #[qproperty(QMap_QString_QVariant, cache_usage, cxx_name = "cacheUsage", READ, NOTIFY = cache_usage_changed)]
         #[qproperty(bool, engine_restart_pending, cxx_name = "engineRestartPending", READ, NOTIFY = engine_restart_pending_changed)]
@@ -157,6 +159,7 @@ pub mod qobject {
         fn set_web_client_id(self: Pin<&mut Settings>, value: QString);
         fn set_close_to_tray(self: Pin<&mut Settings>, value: bool);
         fn set_wheel_step(self: Pin<&mut Settings>, value: i32);
+        fn set_floating_player(self: Pin<&mut Settings>, value: QString);
 
         #[qsignal]
         #[cxx_name = "themeModeChanged"]
@@ -335,6 +338,9 @@ pub mod qobject {
         #[qsignal]
         #[cxx_name = "wheelStepChanged"]
         fn wheel_step_changed(self: Pin<&mut Settings>);
+        #[qsignal]
+        #[cxx_name = "floatingPlayerChanged"]
+        fn floating_player_changed(self: Pin<&mut Settings>);
         #[qsignal]
         #[cxx_name = "audioDevicesChanged"]
         fn audio_devices_changed(self: Pin<&mut Settings>);
@@ -567,6 +573,7 @@ settings! {
     web_client_id: QString = WebClientId, set_web_client_id, web_client_id_changed;
     close_to_tray: bool = CloseToTray, set_close_to_tray, close_to_tray_changed;
     wheel_step: i32 = WheelStep, set_wheel_step, wheel_step_changed;
+    floating_player: QString = FloatingPlayer, set_floating_player, floating_player_changed;
     @readonly {
         proxy_mode: QString = ProxyMode, proxy_mode_changed;
         proxy_host: QString = ProxyHost, proxy_host_changed;
