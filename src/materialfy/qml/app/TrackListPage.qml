@@ -90,7 +90,10 @@ Item {
         target: page.shownModel
         ignoreUnknownSignals: true
         function onCountChanged() { Qt.callLater(page._revealTrack) }
-        function onModelReset() { Qt.callLater(page._revealTrack) }
+        function onModelReset() {
+            Qt.callLater(page._revealTrack)
+            page._animateIn()               // первичное заполнение — каскад (скролл его уже не получает)
+        }
     }
     Timer { id: flashReset; interval: Theme.reducedMotion === true ? 1000 : 1600; onTriggered: { page._flashId = ""; page._flashRow = -1 } }
 
@@ -136,6 +139,19 @@ Item {
     // самый тяжёлый момент (создание страницы и строк, переход), не добавляем к нему перерисовки
     property bool _settled: false
     Timer { interval: 900; running: page.visible && !page._settled; onTriggered: page._settled = true }
+
+    // Каскад первичного заполнения: строки списка появляются по очереди (25 мс шаг, не больше 12 ходов).
+    // Распределяет декоды обложек и отрисовку строк по кадрам — открытие тяжёлого плейлиста
+    // перестаёт запирать GUI-поток на «всё разом». При скролле каскада нет: делегат,
+    // созданный после cascadeOff, показывается мгновенно (у LibraryPage тот же приём).
+    property bool _cascade: false
+    function _animateIn() {
+        if (Theme.reducedMotion === true)
+            return
+        _cascade = true
+        cascadeOff.restart()
+    }
+    Timer { id: cascadeOff; interval: 900; onTriggered: page._cascade = false }
 
     HeroShapes {
         width: page.width - page.contentRightInset
@@ -207,6 +223,21 @@ Item {
             required property int index
             required property var model
             width: ListView.view.width
+            // каскад первичного заполнения (см. _animateIn): только fade — transform занят драгом.
+            // Главный выигрыш не в анимации: строки, созданные до конца каскада, держат opacity 0,
+            // и отрисовка первых кадров разбита по ходам 25 мс вместо одного сплошного
+            opacity: 1
+            Component.onCompleted: {
+                if (!page._cascade)
+                    return
+                opacity = 0
+                rowAppear.start()
+            }
+            SequentialAnimation {
+                id: rowAppear
+                PauseAnimation { duration: Math.min(row.index, 12) * 25 }
+                NumberAnimation { target: row; property: "opacity"; to: 1; duration: Theme.motion.spatialDefault; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.motion.emphasizedDecelerate }
+            }
             number: index + 1
             trackId: model.trackId
             title: model.title
