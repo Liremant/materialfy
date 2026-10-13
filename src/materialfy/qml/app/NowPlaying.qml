@@ -12,6 +12,10 @@ Item {
     id: root
 
     property bool open: false
+    // Уровни звука нужны (Player.levelsWanted ставит Main.qml — их просит и островок): у другого устройства
+    // уровня нет — пульт не просит его и не «дышит»; мини-плееру (MiniMode) тоже — там обложка и фон дышат в такт
+    readonly property bool wantsLevels: ((visible && open) || (Window.window && Window.window.layoutMode === "mini"))
+        && Settings.coverPulse && Player.playing && Player.isLocal === true && !Theme.quiet
     property point origin: Qt.point(width / 2, height - 60)
     property string tab: "lyrics"          // lyrics | queue
     // узкое окно: одна колонка; текст/очередь открываются вместо плеера (sheetOpen) переключателем сверху
@@ -225,15 +229,8 @@ Item {
 
                 Item { Layout.fillHeight: true }
 
-                // «Дыхание» в такт: уровень звука плеера; доля над скользящим средним — удар.
-                // У другого устройства уровня нет — пульт не просит его и не «дышит»
-                Binding {
-                    target: Player
-                    property: "levelsWanted"
-                    // уровни нужны и мини-плееру (MiniMode): там обложка и фон тоже дышат в такт
-                    value: ((root.visible && root.open) || (root.Window.window && root.Window.window.layoutMode === "mini"))
-                           && Settings.coverPulse && Player.playing && Player.isLocal === true && !Theme.quiet
-                }
+                // «Дыхание» в такт: уровень звука плеера (просит Main.qml по root.wantsLevels); доля над
+                // скользящим средним — удар
                 property real avgLevel: 0
                 property real beat: 0
                 Behavior on beat { NumberAnimation { duration: 110; easing.type: Easing.OutQuad } }

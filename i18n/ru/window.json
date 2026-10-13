@@ -3,5 +3,19 @@
   "Maximize": "Развернуть",
   "Restore down": "Свернуть в окно",
   "Close": "Закрыть",
-  "Expand": "Развернуть"
+  "Expand": "Развернуть",
+  "Floating player": "Плеер поверх окон",
+  "Island": "Островок",
+  "Taskbar": "Панель задач",
+  "A black island at the top of the screen, over all windows. Point at it for the controls": "Чёрный островок у верхнего края экрана поверх всех окон. Наведите на него мышь — появится управление",
+  "In the Windows taskbar, left of the clock": "В панели задач Windows, слева от часов",
+  "The track and controls outside the window, even when it’s minimized or in the tray": "Трек и управление вне окна — даже когда оно свёрнуто или в трее",
+  "Open Materialfy": "Открыть Materialfy",
+  "Turn off floating player": "Выключить плеер поверх окон",
+  "Floating player style": "Стиль оформления",
+  "Off": "Выкл",
+  "Black": "Чёрный",
+  "Color": "Цветной",
+  "OLED pure black notch with cover accents": "Чёрный OLED-островок с акцентами в цвете обложки",
+  "Adaptive palette based on the current album art": "Адаптивная палитра под цвет текущей обложки"
 }

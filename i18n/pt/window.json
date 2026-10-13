@@ -3,5 +3,19 @@
   "Maximize": "Maximizar",
   "Restore down": "Restaurar",
   "Close": "Fechar",
-  "Expand": "Expandir"
+  "Expand": "Expandir",
+  "Floating player": "Player flutuante",
+  "Island": "Ilha",
+  "Taskbar": "Barra de tarefas",
+  "A black island at the top of the screen, over all windows. Point at it for the controls": "Uma ilha preta no topo da tela, sobre todas as janelas. Aponte o mouse para ver os controles",
+  "In the Windows taskbar, left of the clock": "Na barra de tarefas do Windows, à esquerda do relógio",
+  "The track and controls outside the window, even when it’s minimized or in the tray": "A faixa e os controles fora da janela, mesmo minimizada ou na bandeja",
+  "Open Materialfy": "Abrir o Materialfy",
+  "Turn off floating player": "Desativar o player flutuante",
+  "Floating player style": "Estilo do player flutuante",
+  "Off": "Desativado",
+  "Black": "Preto",
+  "Color": "Colorido",
+  "OLED pure black notch with cover accents": "Notch preto OLED com realces na cor da capa",
+  "Adaptive palette based on the current album art": "Paleta adaptável baseada na arte do álbum atual"
 }
