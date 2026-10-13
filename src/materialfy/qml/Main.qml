@@ -18,6 +18,14 @@ Window {
     // --set browse=album:<id>,artist:<id>,back,home,panel,sidebar… — one step every 4 s once the session is up:
     // open a page, go back, switch a section, toggle the right panel or the sidebar (memory measurements)
     property string browse: ""
+    // --set floatingPlayer=island|taskbar|off — вместо настройки (снимки); --set islandState=compact|minimal|expanded —
+    // вид островка; --set taskbarEmbed=false — виджет панели задач сразу поверх панели, без встраивания;
+    // --set floatingShot=<path.png> — снимок окна островка или виджета (и при --screenshot), --set taskbarTheme=dark|light
+    property string floatingPlayer: ""
+    property string islandState: ""
+    property bool taskbarEmbed: true
+    property string floatingShot: ""
+    property string taskbarTheme: ""
 
     // размер и положение — последние сохранённые (см. _restoreGeometry); окно показывается уже на месте
     width: 1280
@@ -37,6 +45,16 @@ Window {
     // Wayland: протокола «поверх всех окон» нет (GNOME, Weston флаг игнорируют), и окно не знает своих координат
     readonly property bool wayland: Qt.platform.pluginName.indexOf("wayland") === 0
     readonly property bool canPin: !wayland
+    // Плеер вне окна (Settings → Окно → «Плеер поверх окон»): островок — Windows и X11 (на Wayland окно не может
+    // встать у края экрана само), панель задач — только Windows
+    readonly property string floatingMode: {
+        const mode = floatingPlayer !== "" ? floatingPlayer : Settings.floatingPlayer
+        if (mode === "island" && !wayland && (Qt.platform.os === "windows" || Qt.platform.os === "linux"))
+            return mode
+        if (mode === "taskbar" && Qt.platform.os === "windows")
+            return mode
+        return "off"
+    }
     flags: Qt.Window | Qt.FramelessWindowHint | (pinnedOnTop ? Qt.WindowStaysOnTopHint : 0)
     // Linux/macOS: окно прозрачное, фон и скруглённые углы рисует WindowFrame (альфа-канал окна
     // включается цветом при создании, поэтому цвет не меняется по ходу работы)
@@ -446,6 +464,46 @@ Window {
         Component.onCompleted: Theme.wipe = themeWipe
     }
     Binding { target: Theme; property: "wipeDirection"; value: Player.direction }
+    // Уровень звука — полноэкранному плееру и мини-режиму («дыхание» обложки) и полоскам островка
+    Binding {
+        target: Player
+        property: "levelsWanted"
+        value: nowPlaying.wantsLevels || (islandWindow.object !== null && islandWindow.object.wantsLevels)
+    }
+
+    // ---- Плеер вне окна: живёт рядом с главным окном, и пока оно свёрнуто или в трее ----
+    // Нет трека — окна нет. Снимок (--screenshot) снимает только главное окно — там они не нужны (кроме floatingShot).
+    readonly property bool _floatingAllowed: Player.hasTrack
+        && (floatingShot !== "" || !Qt.application.arguments.some(a => a.startsWith("--screenshot")))
+    Instantiator {
+        id: islandWindow
+        active: win.floatingMode === "island" && win._floatingAllowed
+        delegate: FloatingIsland {
+            mainWindow: win
+            forcedState: win.islandState
+            shotPath: win.floatingShot
+        }
+    }
+    Instantiator {
+        id: taskbarWindow
+        active: win.floatingMode === "taskbar" && win._floatingAllowed && !_taskbarReset
+        property bool _taskbarReset: false
+        delegate: TaskbarPlayer {
+            embed: win.taskbarEmbed
+            shotPath: win.floatingShot
+            forcedTheme: win.taskbarTheme
+            // Explorer перезапустился и унёс окно с собой — создать заново (не из обработчика самого окна)
+            onLost: taskbarRecreate.start()
+        }
+    }
+    Timer {
+        id: taskbarRecreate
+        interval: 0
+        onTriggered: {
+            taskbarWindow._taskbarReset = true
+            taskbarWindow._taskbarReset = false
+        }
+    }
     Binding {
         target: Theme
         property: "lowPower"
