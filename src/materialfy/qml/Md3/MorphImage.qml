@@ -87,43 +87,9 @@ Item {
             return Math.max(16, Math.ceil(px / step) * step)
         }
         readonly property bool _sized: root.width > 0 && root.height > 0
-        // Гейт декода: реальный источник подставляется, только когда ImageGate дал слот.
-        // _hold — запрошено и ждёт очереди; null-источник никуда не уходит, заявка снимается.
-        property bool _gateOn: false
-        property bool _hold: false
-        readonly property string _want: !_sized || !(root.eager || root._shownOnce) || root.source.toString() === "" ? ""
+        source: !_sized || !(root.eager || root._shownOnce) || root.source.toString() === "" ? ""
               : root._fallback.toString() !== "" ? root._fallback
               : root._tries > 0 ? root.source + "#r" + root._tries : root.source
-        function qmlContinue() {
-            _gateOn = true
-            image.source = _want
-        }
-        function _releaseGate() {
-            if (_hold) {
-                _hold = false
-                ImageGate.release(root)
-            }
-        }
-        on_WantChanged: {
-            if (_want === "") {
-                _releaseGate()
-                _gateOn = false
-                image.source = ""
-            } else if (!_hold && !_gateOn) {
-                if (ImageGate.acquire(root)) {
-                    _gateOn = true
-                    image.source = _want
-                } else {
-                    _hold = true
-                }
-            } else if (_gateOn) {
-                image.source = _want
-            }
-        }
-        // обложка ушла из виду (делегат переиспользован/скрыт) — слот отдаём очереди
-        onVisibleChanged: if (!root.visible) _releaseGate()
-        Component.onDestruction: _releaseGate()
-        source: _gateOn ? _want : ""
         sourceSize: Qt.size(_fit(root.width * Screen.devicePixelRatio), _fit(root.height * Screen.devicePixelRatio))
         retainWhileLoading: true
         smooth: true
@@ -133,10 +99,6 @@ Item {
                 shown = true
             else if (status === Image.Error || status === Image.Null)
                 shown = false
-            if (status === Image.Ready || status === Image.Error) {
-                _gateOn = false
-                _releaseGate()
-            }
             if (status === Image.Error)
                 root._failed()
         }
