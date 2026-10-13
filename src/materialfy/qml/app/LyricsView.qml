@@ -29,11 +29,11 @@ Item {
     readonly property bool karaoke: mode === "karaoke"
 
     // Параметры внешнего вида и поведения: настройки переопределяют значения по умолчанию стиля
-    readonly property string align: Settings.lyricsTextAlign === "auto" ? "left" : Settings.lyricsTextAlign
+    readonly property string align: Settings.lyricsTextAlign
     readonly property real blurAmount: Settings.lyricsBlurAmount
     readonly property bool blurInactive: blurAmount > 0.001
-    readonly property string linesMode: Settings.lyricsVisibleLines === "auto" ? "all" : Settings.lyricsVisibleLines
-    readonly property string fillMode: Settings.lyricsFillMode === "auto" ? "word" : Settings.lyricsFillMode
+    readonly property string linesMode: Settings.lyricsVisibleLines
+    readonly property string fillMode: Settings.lyricsFillMode
     readonly property bool motion: Settings.lyricsAnimate && !Theme.reducedMotion
     readonly property real activeScale: spicy ? 1.30 : (karaoke ? 1.20 : 1.0)
     readonly property real idleScale: spicy ? 0.97 : 1.0
@@ -661,21 +661,45 @@ Item {
                     x += w
                     widths[row] = x
                 }
+                let maxW = 0
+                for (let r = 0; r <= row; r++)
+                    if ((widths[r] ?? 0) > maxW) maxW = widths[r]
                 if (root.align === "center")
                     for (let i = 0; i < pos.length; i++)
-                        pos[i].x += Math.max(0, (avail - (widths[pos[i].row] ?? 0)) / 2)
-                return { pos: pos, rows: row + 1 }
+                        pos[i].x += Math.max(0, (maxW - (widths[pos[i].row] ?? 0)) / 2)
+                return { pos: pos, rows: row + 1, lineWidth: maxW }
             }
 
-            Repeater {
-                id: wordRep
-                model: line.isGap ? [] : line.modelData.w
-                delegate: LyricWord {
-                    lineActive: line.filling
-                    fontSize: line.lineSize
-                    rowH: line.rowH
-                    x: wordsBox.layout.pos[index]?.x ?? 0
-                    y: (wordsBox.layout.pos[index]?.row ?? 0) * line.rowH
+            Item {
+                id: lineWords
+                x: root.align === "center" ? Math.max(0, (wordsBox.width - (wordsBox.layout?.lineWidth ?? 0)) / 2) : 0
+                width: Math.max(1, wordsBox.layout?.lineWidth ?? 0)
+                height: wordsBox.height
+
+                // В режиме «line» шейдер заливки накладывается на всю строку целиком, а не по словам
+                layer.enabled: line.filling && root.fillMode === "line"
+                layer.effect: ShaderEffect {
+                    readonly property real dur: Math.max(0.001, line.modelData.e - line.modelData.t)
+                    readonly property real rawProgress: root.pos <= line.modelData.t ? 0 : (root.pos >= line.modelData.e ? 1 : (root.pos - line.modelData.t) / dur)
+                    readonly property real featherPx: line.lineSize * 0.45
+                    readonly property real baseFeather: root.karaoke ? 0.002 : (root.spicy ? 0.32 : Math.min(0.5, featherPx / Math.max(1, lineWords.width) / 2))
+                    property real feather: Math.max(0.001, baseFeather * root.highlightMultiplier)
+                    property real progress: -feather + rawProgress * (1 + 2 * feather)
+                    property real dimAlpha: root.dimAlpha
+                    property real glow: 0
+                    fragmentShader: root.fillShader
+                }
+
+                Repeater {
+                    id: wordRep
+                    model: line.isGap ? [] : line.modelData.w
+                    delegate: LyricWord {
+                        lineActive: line.filling
+                        fontSize: line.lineSize
+                        rowH: line.rowH
+                        x: wordsBox.layout.pos[index]?.x ?? 0
+                        y: (wordsBox.layout.pos[index]?.row ?? 0) * line.rowH
+                    }
                 }
             }
         }
@@ -785,14 +809,14 @@ Item {
                 }
             }
 
-            layer.enabled: word.lineActive && root.fillMode !== "off"
+            layer.enabled: word.lineActive && root.fillMode === "word"
             layer.effect: ShaderEffect {
                 readonly property real featherPx: word.fontSize * 0.45
-                readonly property real baseFeather: root.spicy ? 0.32 : Math.min(0.5, featherPx / Math.max(1, label.width) / 2)
+                readonly property real baseFeather: root.karaoke ? 0.002 : (root.spicy ? 0.32 : Math.min(0.5, featherPx / Math.max(1, label.width) / 2))
                 property real feather: Math.max(0.001, baseFeather * root.highlightMultiplier)
-                property real progress: root.fillMode === "line" ? (1.0 + feather) : (-feather + word.progress * (1 + 2 * feather))
+                property real progress: -feather + word.progress * (1 + 2 * feather)
                 property real dimAlpha: root.dimAlpha
-                property real glow: root.fillMode === "word" ? word.glow : 0
+                property real glow: word.glow
                 fragmentShader: root.fillShader
             }
         }
