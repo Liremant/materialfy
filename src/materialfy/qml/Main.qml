@@ -510,21 +510,11 @@ Window {
         snackbar.show(text, actionText ?? "", onAction ?? null)
     }
 
-    // «Радио по треку / исполнителю»: сид на орбите главной, переход к сцене, «Слушать» в Snackbar
+    // «Радио по треку / исполнителю»: станция сразу играет, без перехода и без вопроса; сид выбран и на
+    // орбите главной, чтобы там было видно, что звучит. Пустой title — подпись подставит сервис.
     function radioFrom(seedUri, title) {
-        // мини-режим остаётся мини: волна сразу играет, без перехода к сцене на главной
-        if (win.mini) {
-            Radio.playStation(seedUri, title)
-            return
-        }
         Radio.select(seedUri)
-        if (nowPlaying.open)
-            nowPlaying.hide()
-        if (router.rootName !== "home" || router.depth > 1)
-            router.reset("home")
-        else if (router.currentItem && router.currentItem.scrollToTop)
-            router.currentItem.scrollToTop()
-        notify(I18n.t("“{0}” radio: 50 tracks", title), I18n.t("Play"), () => Radio.play())
+        Radio.playStation(seedUri, title)
     }
 
     function trackMenuAction(id, track, item) {
