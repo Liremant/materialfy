@@ -668,7 +668,7 @@ Window {
             if (nowPlaying.open)
                 nowPlaying.hide()
             router.reset("search")
-            Qt.callLater(() => router.currentItem && router.currentItem.focusSearch && router.currentItem.focusSearch())
+            // фокус берёт сама SearchPage в Component.onCompleted — при инкубации reset currentItem ещё старый
         }
     }
     Shortcut { sequence: "Ctrl+,"; onActivated: router.reset("settings") }

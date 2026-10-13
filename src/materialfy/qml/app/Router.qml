@@ -23,28 +23,38 @@ Item {
     property var _components: ({})
     property var _leaving: []               // элементы, которые уничтожить после анимации
     property Item _out: null
+    property var _pending: null             // незавершённая инкубация: { name, props, comp, incubator, prev, kind }
 
     function _same(entry, name, props) {
         return entry && entry.name === name && JSON.stringify(entry.props ?? {}) === JSON.stringify(props ?? {})
     }
 
+    // Повторный запрос той же страницы, пока она ещё строится, — не новый push, а то же самое
+    function _pendingSame(name, props) {
+        return _pending !== null && _pending.name === name && JSON.stringify(_pending.props) === JSON.stringify(props ?? {})
+    }
+
     function push(name, props) {
-        if (_same(current, name, props))
+        if (_same(current, name, props) || _pendingSame(name, props))
             return
-        const entry = _make(name, props)
-        if (!entry)
-            return
+        if (_pending)
+            _cancelPending()                // push A → push B: недостроенную A отменяем и строим B
         const prev = currentItem
+        const entry = _make(name, props, "forward")
+        if (!entry)
+            return                          // инкубация уже запущена (или ошибка — уже в логе), продолжение — в _onIncubated
         stack = stack.concat([entry])
         _animate(prev, entry.item, "forward")
     }
 
     // Переход в раздел верхнего уровня: стек сбрасывается.
     function reset(name, props) {
-        if (depth === 1 && _same(current, name, props))
+        if (depth === 1 && (_same(current, name, props) || _pendingSame(name, props)))
             return
+        if (_pending)
+            _cancelPending()                // reset всё равно переписывает стек — инкубация больше не нужна
         const prev = currentItem
-        const entry = _make(name, props)
+        const entry = _make(name, props, "fade")
         if (!entry)
             return
         _leaving = _leaving.concat(stack.map(e => e.item).filter(i => i !== prev))
@@ -55,6 +65,11 @@ Item {
     }
 
     function back() {
+        if (_pending !== null) {
+            // Страница ещё не попала в стек: отмена инкубации и есть «назад», стек не трогаем
+            _cancelPending()
+            return true
+        }
         if (depth < 2)
             return false
         const popped = stack[stack.length - 1]
@@ -66,7 +81,8 @@ Item {
         return true
     }
 
-    function _make(name, props) {
+    // null-возврат при живой _pending — не ошибка, а «строится асинхронно»; kind нужен _onIncubated
+    function _make(name, props, kind) {
         const url = pages[name]
         if (!url) {
             console.error("Router: no such page", name)
@@ -89,16 +105,72 @@ Item {
         }
         // Размер — сразу при создании: страница, созданная нулевой ширины, тут же «дорастала» до настоящей,
         // и Behavior шапки (обложка, отступы), колонки альбома у строк и раскладки полсекунды анимировались
-        // и перекладывались в каждом кадре перехода
-        const item = comp.createObject(container, Object.assign({ router: root, width: container.width, height: container.height },
-                                                                props ?? {}))
-        if (keep && !kept)
-            _kept[name] = item
-        // не anchors.fill: анимации переходов двигают x
+        // и перекладывались в каждом кадре перехода. Инкубации это касается так же — начальные width/height
+        // и непрозрачность 0, чтобы недостроенная страница не мигнула, а binding цепляем уже на Ready.
+        if (keep) {
+            // Главная строится синхронно: одна дорогая сборка против асинхронной на каждый вход
+            const item = comp.createObject(container, Object.assign({ router: root, width: container.width, height: container.height },
+                                                                    props ?? {}))
+            if (!kept)
+                _kept[name] = item
+            // не anchors.fill: анимации переходов двигают x
+            item.width = Qt.binding(() => container.width)
+            item.height = Qt.binding(() => container.height)
+            item.opacity = 0
+            return { name: name, props: props ?? {}, item: item }
+        }
+        _incubate(comp, name, props, kind)
+        return null
+    }
+
+    function _incubate(comp, name, props, kind) {
+        const incubator = comp.incubateObject(
+            container,
+            Object.assign({ router: root, width: container.width, height: container.height }, props ?? {}, { opacity: 0 }),
+            Qt.Asynchronous)
+        _pending = { name: name, props: props ?? {}, comp: comp, incubator: incubator, prev: currentItem, kind: kind }
+        incubator.onStatusChanged = function() { _onIncubated(incubator) }
+    }
+
+    function _onIncubated(incubator) {
+        const p = _pending
+        if (p === null || p.incubator !== incubator)
+            return                              // отменено или уже разобрано — cancel() уничтожил недостроенное сам
+        if (incubator.status === Component.Loading)
+            return
+        _pending = null
+        if (incubator.status !== Component.Ready) {
+            console.error("Router:", p.comp.errorString())
+            return
+        }
+        const item = incubator.object
+        // Кадра с чужим размером нет: до Ready страница прозрачна, binding навешиваем тем же кадром, что и анимацию
         item.width = Qt.binding(() => container.width)
         item.height = Qt.binding(() => container.height)
         item.opacity = 0
-        return { name: name, props: props ?? {}, item: item }
+        const entry = { name: p.name, props: p.props, item: item }
+        if (p.kind === "forward") {
+            stack = stack.concat([entry])
+            _animate(p.prev, item, "forward")
+        } else {
+            _leaving = _leaving.concat(stack.map(e => e.item).filter(i => i !== p.prev))
+            if (p.prev)
+                _leaving = _leaving.concat([p.prev])
+            stack = [entry]
+            _animate(p.prev, item, "fade")
+        }
+    }
+
+    function _cancelPending() {
+        const p = _pending
+        if (p === null)
+            return
+        _pending = null
+        p.incubator.cancel()
+        // cancel() убирает недостроенное; но если статус уже успел дойти до Ready — объект остался, добиваем сами
+        const orphan = p.incubator.object
+        if (orphan)
+            orphan.destroy()
     }
 
     function _animate(from, to, kind) {
