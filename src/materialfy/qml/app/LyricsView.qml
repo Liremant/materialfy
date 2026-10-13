@@ -225,8 +225,10 @@ Item {
     }
 
     function seekTo(t) {
-        Player.seekMs(Math.round(Math.max(0, t + 0.02) * 1000))
-        sync(Math.max(0, t + 0.02))
+        // строки показаны со сдвигом синхронизации — перематываем туда, где строка и правда звучит
+        const at = Math.max(0, t + 0.02 - Settings.lyricsSyncMs / 1000)
+        Player.seekMs(Math.round(at * 1000))
+        sync(at)
         tick()
     }
 
@@ -540,10 +542,12 @@ Item {
         // Появление нового текста: строки выплывают снизу волной, начиная от активной.
         // Непопадающие в диапазон строки мягко растворяются до 0, сохраняя раскладку.
         property real appear: 0
-        opacity: appear * (inLineRange ? 1 : 0)
-        Behavior on opacity {
+        // анимируется только выход из диапазона видимых строк: «волна» появления идёт своим ходом
+        property real rangeOpacity: inLineRange ? 1 : 0
+        Behavior on rangeOpacity {
             NumberAnimation { duration: root.motion ? 260 : 0; easing.type: Easing.OutCubic }
         }
+        opacity: appear * rangeOpacity
         transform: [
             Translate { id: shift },
             Translate { y: (1 - line.appear) * root.fontSize * 1.1 }
@@ -771,7 +775,7 @@ Item {
                 : Theme.fontAxes(word.fontSize, 700)
             color: root.textColor
             transformOrigin: Item.Bottom
-            scale: !root.spicy ? (1 + 0.045 * word.glow) : 1.0
+            scale: !root.spicy && root.fillMode === "word" ? (1 + 0.045 * word.glow) : 1.0
 
             transform: Translate {
                 y: (!root.spicy && word.lineActive && root.fillMode === "word") ? -root.liftPx * root.easeOut(word.progress * 1.6) : 0
@@ -785,7 +789,7 @@ Item {
             layer.effect: ShaderEffect {
                 readonly property real featherPx: word.fontSize * 0.45
                 readonly property real baseFeather: root.spicy ? 0.32 : Math.min(0.5, featherPx / Math.max(1, label.width) / 2)
-                property real feather: baseFeather * root.highlightMultiplier
+                property real feather: Math.max(0.001, baseFeather * root.highlightMultiplier)
                 property real progress: root.fillMode === "line" ? (1.0 + feather) : (-feather + word.progress * (1 + 2 * feather))
                 property real dimAlpha: root.dimAlpha
                 property real glow: root.fillMode === "word" ? word.glow : 0

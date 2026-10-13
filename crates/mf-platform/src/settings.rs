@@ -394,6 +394,9 @@ impl SettingKey {
                 SettingValue::Float(((speed.clamp(0.5, 2.0) * 20.0).round() / 20.0).clamp(0.5, 2.0))
             }
             (SettingKey::Crossfade, SettingValue::Int(seconds)) => SettingValue::Int(seconds.clamp(0, CROSSFADE_MAX_S)),
+            (SettingKey::LyricsFontScale, SettingValue::Float(v)) => {
+                SettingValue::Float(if v.is_finite() { v.clamp(0.7, 1.6) } else { 1.0 })
+            }
             (SettingKey::LyricsHighlight, SettingValue::Float(v)) => {
                 SettingValue::Float(if v.is_finite() { v.clamp(0.0, 2.0) } else { 1.0 })
             }

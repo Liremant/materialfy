@@ -1170,6 +1170,36 @@ Page {
         }
     }
 
+    SettingsCard {
+        title: I18n.t("Window")
+        icon: "web_asset"
+
+        SettingRow {
+            title: I18n.t("Compact sidebar")
+            description: I18n.t("Icons only. Turns on automatically in a narrow window")
+            Switch { checked: Settings.sidebarCollapsed; onToggled: c => Settings.sidebarCollapsed = c }
+        }
+        SettingRow {
+            title: I18n.t("Minimize to tray on close")
+            description: I18n.t("Closing the window hides it in the tray and the music keeps playing. Quit from the tray menu or with Ctrl+Q")
+            Switch { checked: Settings.closeToTray; onToggled: c => Settings.closeToTray = c }
+        }
+        SettingRow {
+            title: I18n.t("Mouse wheel scroll step")
+            description: I18n.t("{0} px per notch; grows up to ×2 when scrolling fast", Settings.wheelStep)
+            Slider {
+                wheelEnabled: false     // колесо прокручивает страницу, а не меняет настройку
+                width: 220
+                from: 60
+                to: 480
+                stepSize: 20
+                value: Settings.wheelStep
+                valueText: v => Math.round(v) + " px"
+                onMoved: v => Settings.wheelStep = Math.round(v)
+            }
+        }
+    }
+
     // ================= Текст песни =================
     SettingsCard {
         id: lyricsCard
@@ -1331,36 +1361,6 @@ Page {
                 value: Settings.lyricsSyncMs
                 valueText: v => (v > 0 ? "+" : "") + Math.round(v) + " ms"
                 onMoved: v => Settings.lyricsSyncMs = Math.round(v / 25) * 25
-            }
-        }
-    }
-
-    SettingsCard {
-        title: I18n.t("Window")
-        icon: "web_asset"
-
-        SettingRow {
-            title: I18n.t("Compact sidebar")
-            description: I18n.t("Icons only. Turns on automatically in a narrow window")
-            Switch { checked: Settings.sidebarCollapsed; onToggled: c => Settings.sidebarCollapsed = c }
-        }
-        SettingRow {
-            title: I18n.t("Minimize to tray on close")
-            description: I18n.t("Closing the window hides it in the tray and the music keeps playing. Quit from the tray menu or with Ctrl+Q")
-            Switch { checked: Settings.closeToTray; onToggled: c => Settings.closeToTray = c }
-        }
-        SettingRow {
-            title: I18n.t("Mouse wheel scroll step")
-            description: I18n.t("{0} px per notch; grows up to ×2 when scrolling fast", Settings.wheelStep)
-            Slider {
-                wheelEnabled: false     // колесо прокручивает страницу, а не меняет настройку
-                width: 220
-                from: 60
-                to: 480
-                stepSize: 20
-                value: Settings.wheelStep
-                valueText: v => Math.round(v) + " px"
-                onMoved: v => Settings.wheelStep = Math.round(v)
             }
         }
     }
