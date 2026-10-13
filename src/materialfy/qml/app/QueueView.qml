@@ -210,7 +210,8 @@ Item {
         boundsBehavior: Flickable.StopAtBounds
         acceptedButtons: Qt.NoButton
         cacheBuffer: 400
-        reuseItems: true      // состояние перетаскивания живёт здесь, не в делегате — строки можно переиспользовать
+      // без reuseItems: замер на живой очереди показал регрессию — при частых диффах плеера
+      // переклейка данных на переиспользуемые делегаты дороже обновления биндингов на месте
 
         section.property: "section"
         section.criteria: ViewSection.FullString
