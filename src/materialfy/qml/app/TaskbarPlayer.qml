@@ -27,11 +27,13 @@ Window {
     property int placement: 0
 
     // Тема самой панели задач (Параметры → Персонализация → Цвета → «Режим Windows»), не приложения
+    readonly property bool colorMode: Settings.floatingPlayerStyle === "color"
     readonly property bool darkBar: forcedTheme !== "" ? forcedTheme === "dark"
         : Settings.systemTaskbarTheme !== "" ? Settings.systemTaskbarTheme === "dark"
         : Qt.styleHints.colorScheme !== Qt.ColorScheme.Light
-    readonly property color ink: darkBar ? "#ffffff" : "#1b1b1b"
-    readonly property color inkDim: darkBar ? Qt.rgba(1, 1, 1, 0.7) : Qt.rgba(0, 0, 0, 0.62)
+    readonly property color ink: colorMode ? Theme.fgPrimaryContainer : (darkBar ? "#ffffff" : "#1b1b1b")
+    readonly property color inkDim: colorMode ? Qt.alpha(Theme.fgPrimaryContainer, 0.72) : (darkBar ? Qt.rgba(1, 1, 1, 0.7) : Qt.rgba(0, 0, 0, 0.62))
+    readonly property color pillBg: colorMode ? Theme.primaryContainer : "transparent"
 
     width: slotWidth
     height: 40
@@ -80,12 +82,12 @@ Window {
         anchors.fill: parent
 
         HoverHandler { id: hover }
-        // Слой наведения, как у кнопок панели задач
+        // Слой подложки (в цветном режиме — пилюля primaryContainer, в чёрном — слой наведения)
         Rectangle {
             anchors.fill: parent
-            radius: 6
-            color: root.ink
-            opacity: hover.hovered ? 0.07 : 0
+            radius: root.colorMode ? height / 2 : 6
+            color: root.colorMode ? root.pillBg : root.ink
+            opacity: root.colorMode ? 1 : (hover.hovered ? 0.07 : 0)
             Behavior on opacity { NumberAnimation { duration: Theme.motion.effectsFast } }
         }
 

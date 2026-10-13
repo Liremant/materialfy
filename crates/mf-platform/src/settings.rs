@@ -126,6 +126,12 @@ pub enum SettingKey {
     WheelStep,
     /// плеер поверх всего вне главного окна: "off" | "island" (островок у верхнего края экрана) | "taskbar" (в панели задач Windows)
     FloatingPlayer,
+    /// вид островка и виджета: "black" (чёрный, как железо) | "color" (тёмный тон обложки со свечением)
+    FloatingPlayerStyle,
+    /// место виджета в панели задач: "tray" (у трея) | "left" | "appsLeft" | "appsRight" | доля 0..1 свободной ширины ("0.42")
+    TaskbarWidgetPos,
+    /// сколько раз под раскрытым островком показана подсказка с клавишами (до 3)
+    FloatingKeyHints,
     // Updates
     /// check GitHub Releases for a new version on startup and every 6 h (no network when off)
     AutoUpdateCheck,
@@ -152,7 +158,7 @@ pub enum SettingType {
 }
 
 impl SettingKey {
-    pub const ALL: [SettingKey; 66] = [
+    pub const ALL: [SettingKey; 69] = [
         SettingKey::ThemeMode,
         SettingKey::SchemeVariant,
         SettingKey::AccentFromCover,
@@ -216,6 +222,9 @@ impl SettingKey {
         SettingKey::CloseToTray,
         SettingKey::WheelStep,
         SettingKey::FloatingPlayer,
+        SettingKey::FloatingPlayerStyle,
+        SettingKey::TaskbarWidgetPos,
+        SettingKey::FloatingKeyHints,
         SettingKey::AutoUpdateCheck,
         SettingKey::UpdateChannel,
         SettingKey::SkippedVersion,
@@ -288,6 +297,9 @@ impl SettingKey {
             CloseToTray => "closeToTray",
             WheelStep => "wheelStep",
             FloatingPlayer => "floatingPlayer",
+            FloatingPlayerStyle => "floatingPlayerStyle",
+            TaskbarWidgetPos => "taskbarWidgetPos",
+            FloatingKeyHints => "floatingKeyHints",
             AutoUpdateCheck => "autoUpdateCheck",
             UpdateChannel => "updateChannel",
             SkippedVersion => "skippedVersion",
@@ -374,6 +386,9 @@ impl SettingKey {
             CloseToTray => Bool(true),
             WheelStep => Int(150),
             FloatingPlayer => Str("off".into()),
+            FloatingPlayerStyle => Str("black".into()),
+            TaskbarWidgetPos => Str("tray".into()),
+            FloatingKeyHints => Int(0),
             AutoUpdateCheck => Bool(true),
             UpdateChannel => Str("stable".into()),
             SkippedVersion => Str(String::new()),
@@ -441,6 +456,20 @@ impl SettingKey {
                     _ => "off",
                 }.into())
             }
+            (SettingKey::FloatingPlayerStyle, SettingValue::Str(s)) => {
+                SettingValue::Str(if s == "color" { "color" } else { "black" }.into())
+            }
+            (SettingKey::TaskbarWidgetPos, SettingValue::Str(s)) => SettingValue::Str(
+                if matches!(s.as_str(), "left" | "appsLeft" | "appsRight" | "tray") {
+                    s
+                } else {
+                    match s.trim().parse::<f64>() {
+                        Ok(f) if f.is_finite() => format!("{:.4}", f.clamp(0.0, 1.0)),
+                        _ => "tray".into(),
+                    }
+                },
+            ),
+            (SettingKey::FloatingKeyHints, SettingValue::Int(n)) => SettingValue::Int(n.clamp(0, 3)),
             (SettingKey::UpdateChannel, SettingValue::Str(channel)) => {
                 SettingValue::Str(if channel.trim().eq_ignore_ascii_case("beta") { "beta" } else { "stable" }.into())
             }
@@ -1049,7 +1078,7 @@ mod tests {
 
     #[test]
     fn schema() {
-        assert_eq!(SettingKey::ALL.len(), 66);
+        assert_eq!(SettingKey::ALL.len(), 69);
         for key in SettingKey::ALL {
             assert_eq!(SettingKey::from_name(key.name()), Some(key));
             assert_eq!(key.default_value().value_type(), key.value_type());
@@ -1078,6 +1107,13 @@ mod tests {
         assert_eq!(SettingKey::FloatingPlayer.normalize(Str("island".into())), Str("island".into()));
         assert_eq!(SettingKey::FloatingPlayer.normalize(Str("taskbar".into())), Str("taskbar".into()));
         assert_eq!(SettingKey::FloatingPlayer.normalize(Str("notch".into())), Str("off".into()));
+        assert_eq!(SettingKey::FloatingPlayerStyle.normalize(Str("color".into())), Str("color".into()));
+        assert_eq!(SettingKey::FloatingPlayerStyle.normalize(Str("pink".into())), Str("black".into()));
+        assert_eq!(SettingKey::TaskbarWidgetPos.normalize(Str("appsRight".into())), Str("appsRight".into()));
+        assert_eq!(SettingKey::TaskbarWidgetPos.normalize(Str("0.5".into())), Str("0.5000".into()));
+        assert_eq!(SettingKey::TaskbarWidgetPos.normalize(Str("7".into())), Str("1.0000".into()));
+        assert_eq!(SettingKey::TaskbarWidgetPos.normalize(Str("middle".into())), Str("tray".into()));
+        assert_eq!(SettingKey::FloatingKeyHints.normalize(Int(9)), Int(3));
     }
 
     #[test]
@@ -1336,7 +1372,8 @@ mod tests {
             "lyricsTextAlign", "lyricsFillMode", "lyricsVisibleLines", "lyricsHighlight", "lyricsBlurAmount",
             "lyricsLineSpacing", "lyricsAnimate", "lyricsShowSource", "lyricsSyncMs",
             "animations", "lowPowerMode", "rightPanelOpen", "rightPanelTab", "sidebarCollapsed", "windowWidth",
-            "windowHeight", "windowX", "windowY", "windowMaximized", "closeToTray", "wheelStep", "floatingPlayer", "libraryView",
+            "windowHeight", "windowX", "windowY", "windowMaximized", "closeToTray", "wheelStep", "floatingPlayer", "floatingPlayerStyle",
+            "taskbarWidgetPos", "floatingKeyHints", "libraryView",
             "librarySort", "homeHidden", "bitrate", "normalisation", "gapless", "autoplay", "volume", "audioDevice",
             "audioCache", "audioCacheMb", "playbackAuthorized", "deviceName", "webClientId", "proxyMode", "proxyHost",
             "proxyPort", "proxyUsername", "pins", "hiddenTracks", "radioSeeds", "language", "autoUpdateCheck",

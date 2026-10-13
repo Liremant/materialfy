@@ -104,6 +104,8 @@ END
             // taskbar.cpp: ITaskbarList3 (COM), тема панели задач из реестра
             println!("cargo::rustc-link-lib=ole32");
             println!("cargo::rustc-link-lib=advapi32");
+            // floating.cpp: границы кнопок панели задач — UI Automation (COM, BSTR)
+            println!("cargo::rustc-link-lib=oleaut32");
         }
         // dlsym (display.rs: QWindowSystemInterface::handlePrimaryScreenChanged)
         Ok("linux") => println!("cargo::rustc-link-lib=dl"),

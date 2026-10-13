@@ -38,11 +38,12 @@ Window {
     readonly property real expandedH: 152
     readonly property real ear: 8          // вогнутое скругление у края экрана
 
-    // Цвета «железа»: тело чёрное, текст белый; акцент — от обложки, светлый тон (на чёрном тёмный не читается)
-    readonly property color body: "#000000"
-    readonly property color ink: "#ffffff"
-    readonly property color inkDim: Qt.rgba(1, 1, 1, 0.62)
-    readonly property color accent: Theme.dark ? Theme.primary : Theme.inversePrimary
+    // Цвета: Чёрный (OLED аппаратный) или Цветной (адаптивная тональная палитра)
+    readonly property bool colorMode: Settings.floatingPlayerStyle === "color"
+    readonly property color body: colorMode ? Theme.surfaceContainerHighest : "#000000"
+    readonly property color ink: colorMode ? Theme.fgSurface : "#ffffff"
+    readonly property color inkDim: colorMode ? Theme.fgSurfaceVariant : Qt.rgba(1, 1, 1, 0.62)
+    readonly property color accent: colorMode ? Theme.primary : (Theme.dark ? Theme.primary : Theme.inversePrimary)
 
     // Без анимации размеров: reduced motion и режим для слабых ПК
     readonly property bool still: Theme.reducedMotion || Theme.lowPower

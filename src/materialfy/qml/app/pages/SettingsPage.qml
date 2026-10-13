@@ -1184,6 +1184,42 @@ Page {
             description: I18n.t("Closing the window hides it in the tray and the music keeps playing. Quit from the tray menu or with Ctrl+Q")
             Switch { checked: Settings.closeToTray; onToggled: c => Settings.closeToTray = c }
         }
+        // Плеер вне окна: островок — Windows и X11 (на Wayland окно не встанет у края экрана само),
+        // панель задач — только Windows; где нет ни того ни другого, строки нет
+        SettingRow {
+            id: floatingRow
+            readonly property var modes: ["off"]
+                .concat(Qt.platform.os === "windows" || (Qt.platform.os === "linux" && !Qt.platform.pluginName.startsWith("wayland")) ? ["island"] : [])
+                .concat(Qt.platform.os === "windows" ? ["taskbar"] : [])
+            visible: modes.length > 1
+            title: I18n.t("Floating player")
+            description: Settings.floatingPlayer === "island" && modes.indexOf("island") >= 0
+                         ? I18n.t("A black island at the top of the screen, over all windows. Point at it for the controls")
+                         : Settings.floatingPlayer === "taskbar" && modes.indexOf("taskbar") >= 0
+                         ? I18n.t("In the Windows taskbar, left of the clock")
+                         : I18n.t("The track and controls outside the window, even when it’s minimized or in the tray")
+            ButtonGroup {
+                model: floatingRow.modes.map(m => m === "island" ? I18n.t("Island") : m === "taskbar" ? I18n.t("Taskbar") : I18n.t("Off"))
+                autoSelect: false
+                size: page.compact ? "xs" : "s"
+                currentIndex: Math.max(0, floatingRow.modes.indexOf(Settings.floatingPlayer))
+                onActivated: i => Settings.floatingPlayer = floatingRow.modes[i]
+            }
+        }
+        SettingRow {
+            visible: floatingRow.visible && Settings.floatingPlayer !== "off"
+            title: I18n.t("Floating player style")
+            description: Settings.floatingPlayerStyle === "color"
+                         ? I18n.t("Adaptive palette based on the current album art")
+                         : I18n.t("OLED pure black notch with cover accents")
+            ButtonGroup {
+                model: [I18n.t("Black"), I18n.t("Color")]
+                autoSelect: false
+                size: page.compact ? "xs" : "s"
+                currentIndex: Settings.floatingPlayerStyle === "color" ? 1 : 0
+                onActivated: i => Settings.floatingPlayerStyle = i === 1 ? "color" : "black"
+            }
+        }
         SettingRow {
             title: I18n.t("Mouse wheel scroll step")
             description: I18n.t("{0} px per notch; grows up to ×2 when scrolling fast", Settings.wheelStep)

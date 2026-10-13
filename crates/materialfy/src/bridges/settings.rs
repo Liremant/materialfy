@@ -90,6 +90,12 @@ pub mod qobject {
         #[qproperty(i32, wheel_step, cxx_name = "wheelStep", READ, WRITE = set_wheel_step, NOTIFY = wheel_step_changed)]
         /// "off" | "island" | "taskbar" — плеер вне главного окна (FloatingIsland / TaskbarPlayer)
         #[qproperty(QString, floating_player, cxx_name = "floatingPlayer", READ, WRITE = set_floating_player, NOTIFY = floating_player_changed)]
+        /// "black" | "color" — вид островка и виджета
+        #[qproperty(QString, floating_player_style, cxx_name = "floatingPlayerStyle", READ, WRITE = set_floating_player_style, NOTIFY = floating_player_style_changed)]
+        /// место виджета в панели задач: "tray" | "left" | "appsLeft" | "appsRight" | доля "0.42"
+        #[qproperty(QString, taskbar_widget_pos, cxx_name = "taskbarWidgetPos", READ, WRITE = set_taskbar_widget_pos, NOTIFY = taskbar_widget_pos_changed)]
+        /// сколько раз показана подсказка с клавишами под островком (0..3)
+        #[qproperty(i32, floating_key_hints, cxx_name = "floatingKeyHints", READ, WRITE = set_floating_key_hints, NOTIFY = floating_key_hints_changed)]
         #[qproperty(QStringList, audio_devices, cxx_name = "audioDevices", READ, NOTIFY = audio_devices_changed)]
         #[qproperty(QMap_QString_QVariant, cache_usage, cxx_name = "cacheUsage", READ, NOTIFY = cache_usage_changed)]
         #[qproperty(bool, engine_restart_pending, cxx_name = "engineRestartPending", READ, NOTIFY = engine_restart_pending_changed)]
@@ -160,6 +166,9 @@ pub mod qobject {
         fn set_close_to_tray(self: Pin<&mut Settings>, value: bool);
         fn set_wheel_step(self: Pin<&mut Settings>, value: i32);
         fn set_floating_player(self: Pin<&mut Settings>, value: QString);
+        fn set_floating_player_style(self: Pin<&mut Settings>, value: QString);
+        fn set_taskbar_widget_pos(self: Pin<&mut Settings>, value: QString);
+        fn set_floating_key_hints(self: Pin<&mut Settings>, value: i32);
 
         #[qsignal]
         #[cxx_name = "themeModeChanged"]
@@ -341,6 +350,15 @@ pub mod qobject {
         #[qsignal]
         #[cxx_name = "floatingPlayerChanged"]
         fn floating_player_changed(self: Pin<&mut Settings>);
+        #[qsignal]
+        #[cxx_name = "floatingPlayerStyleChanged"]
+        fn floating_player_style_changed(self: Pin<&mut Settings>);
+        #[qsignal]
+        #[cxx_name = "taskbarWidgetPosChanged"]
+        fn taskbar_widget_pos_changed(self: Pin<&mut Settings>);
+        #[qsignal]
+        #[cxx_name = "floatingKeyHintsChanged"]
+        fn floating_key_hints_changed(self: Pin<&mut Settings>);
         #[qsignal]
         #[cxx_name = "audioDevicesChanged"]
         fn audio_devices_changed(self: Pin<&mut Settings>);
@@ -574,6 +592,9 @@ settings! {
     close_to_tray: bool = CloseToTray, set_close_to_tray, close_to_tray_changed;
     wheel_step: i32 = WheelStep, set_wheel_step, wheel_step_changed;
     floating_player: QString = FloatingPlayer, set_floating_player, floating_player_changed;
+    floating_player_style: QString = FloatingPlayerStyle, set_floating_player_style, floating_player_style_changed;
+    taskbar_widget_pos: QString = TaskbarWidgetPos, set_taskbar_widget_pos, taskbar_widget_pos_changed;
+    floating_key_hints: i32 = FloatingKeyHints, set_floating_key_hints, floating_key_hints_changed;
     @readonly {
         proxy_mode: QString = ProxyMode, proxy_mode_changed;
         proxy_host: QString = ProxyHost, proxy_host_changed;
