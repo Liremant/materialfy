@@ -44,11 +44,11 @@ pub enum SettingKey {
     LyricsFontScale,
     /// затемняющая подложка за текстом: "none" | "soft" | "strong"
     LyricsScrim,
-    /// выравнивание текста песни: "auto" | "left" | "center"
+    /// выравнивание текста песни: "left" | "center"
     LyricsTextAlign,
-    /// режим заполнения: "auto" | "word" | "line" | "off"
+    /// режим заполнения: "word" | "line" | "off"
     LyricsFillMode,
-    /// фильтр видимых строк: "auto" | "all" | "three" | "one"
+    /// фильтр видимых строк: "all" | "three" | "one"
     LyricsVisibleLines,
     /// множитель градиента и свечения (0..2)
     LyricsHighlight,
@@ -323,9 +323,9 @@ impl SettingKey {
             LyricsMode => Str("normal".into()),
             LyricsFontScale => Float(1.0),
             LyricsScrim => Str("none".into()),
-            LyricsTextAlign => Str("auto".into()),
-            LyricsFillMode => Str("auto".into()),
-            LyricsVisibleLines => Str("auto".into()),
+            LyricsTextAlign => Str("left".into()),
+            LyricsFillMode => Str("word".into()),
+            LyricsVisibleLines => Str("all".into()),
             LyricsHighlight => Float(1.0),
             LyricsBlurAmount => Float(1.0),
             LyricsLineSpacing => Float(1.0),
@@ -408,6 +408,26 @@ impl SettingKey {
             }
             (SettingKey::LyricsSyncMs, SettingValue::Int(ms)) => {
                 SettingValue::Int(ms.clamp(-500, 500))
+            }
+            (SettingKey::LyricsTextAlign, SettingValue::Str(s)) => {
+                SettingValue::Str(match s.as_str() {
+                    "center" => "center",
+                    _ => "left",
+                }.into())
+            }
+            (SettingKey::LyricsFillMode, SettingValue::Str(s)) => {
+                SettingValue::Str(match s.as_str() {
+                    "line" => "line",
+                    "off" => "off",
+                    _ => "word",
+                }.into())
+            }
+            (SettingKey::LyricsVisibleLines, SettingValue::Str(s)) => {
+                SettingValue::Str(match s.as_str() {
+                    "three" => "three",
+                    "one" => "one",
+                    _ => "all",
+                }.into())
             }
             (SettingKey::UpdateChannel, SettingValue::Str(channel)) => {
                 SettingValue::Str(if channel.trim().eq_ignore_ascii_case("beta") { "beta" } else { "stable" }.into())
@@ -1035,6 +1055,14 @@ mod tests {
         assert_eq!(SettingKey::PlaybackSpeed.normalize(Float(f64::NAN)), Float(1.0));
         assert_eq!(SettingKey::Crossfade.normalize(Int(-3)), Int(0));
         assert_eq!(SettingKey::Crossfade.normalize(Int(40)), Int(CROSSFADE_MAX_S));
+        assert_eq!(SettingKey::LyricsTextAlign.normalize(Str("auto".into())), Str("left".into()));
+        assert_eq!(SettingKey::LyricsTextAlign.normalize(Str("center".into())), Str("center".into()));
+        assert_eq!(SettingKey::LyricsFillMode.normalize(Str("auto".into())), Str("word".into()));
+        assert_eq!(SettingKey::LyricsFillMode.normalize(Str("line".into())), Str("line".into()));
+        assert_eq!(SettingKey::LyricsFillMode.normalize(Str("off".into())), Str("off".into()));
+        assert_eq!(SettingKey::LyricsVisibleLines.normalize(Str("auto".into())), Str("all".into()));
+        assert_eq!(SettingKey::LyricsVisibleLines.normalize(Str("three".into())), Str("three".into()));
+        assert_eq!(SettingKey::LyricsVisibleLines.normalize(Str("one".into())), Str("one".into()));
     }
 
     #[test]

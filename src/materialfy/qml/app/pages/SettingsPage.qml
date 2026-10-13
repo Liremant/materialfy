@@ -1235,43 +1235,40 @@ Page {
         }
         SettingRow {
             title: I18n.t("Text alignment")
-            description: Settings.lyricsTextAlign === "left" ? I18n.t("Left aligned")
-                         : Settings.lyricsTextAlign === "center" ? I18n.t("Centered text")
-                         : I18n.t("Automatic: style default (left)")
+            description: Settings.lyricsTextAlign === "center" ? I18n.t("Centered text")
+                         : I18n.t("Left aligned")
             ButtonGroup {
-                model: [I18n.t("Automatic"), I18n.t("Left"), I18n.t("Center")]
+                model: [I18n.t("Left"), I18n.t("Center")]
                 autoSelect: false
                 size: page.compact ? "xs" : "s"
-                currentIndex: Math.max(0, ["auto", "left", "center"].indexOf(Settings.lyricsTextAlign))
-                onActivated: i => Settings.lyricsTextAlign = ["auto", "left", "center"][i]
+                currentIndex: Math.max(0, ["left", "center"].indexOf(Settings.lyricsTextAlign))
+                onActivated: i => Settings.lyricsTextAlign = ["left", "center"][i]
             }
         }
         SettingRow {
             title: I18n.t("Fill mode")
-            description: Settings.lyricsFillMode === "word" ? I18n.t("Word by word: words fill as they are sung")
-                         : Settings.lyricsFillMode === "line" ? I18n.t("Whole line: the active line lights up all at once")
+            description: Settings.lyricsFillMode === "line" ? I18n.t("Whole line: the active line lights up all at once")
                          : Settings.lyricsFillMode === "off" ? I18n.t("Off: lines stay fully lit without progress fill")
-                         : I18n.t("Automatic: follows the style (word by word)")
+                         : I18n.t("Word by word: words fill as they are sung")
             ButtonGroup {
-                model: [I18n.t("Automatic"), I18n.t("Word by word"), I18n.t("Whole line"), I18n.t("Off")]
+                model: [I18n.t("Word by word"), I18n.t("Whole line"), I18n.t("Off")]
                 autoSelect: false
                 size: page.compact ? "xs" : "s"
-                currentIndex: Math.max(0, ["auto", "word", "line", "off"].indexOf(Settings.lyricsFillMode))
-                onActivated: i => Settings.lyricsFillMode = ["auto", "word", "line", "off"][i]
+                currentIndex: Math.max(0, ["word", "line", "off"].indexOf(Settings.lyricsFillMode))
+                onActivated: i => Settings.lyricsFillMode = ["word", "line", "off"][i]
             }
         }
         SettingRow {
             title: I18n.t("Visible lines")
-            description: Settings.lyricsVisibleLines === "all" ? I18n.t("All lines: the full song text is visible")
-                         : Settings.lyricsVisibleLines === "three" ? I18n.t("Three lines: previous, active and next lines")
+            description: Settings.lyricsVisibleLines === "three" ? I18n.t("Three lines: previous, active and next lines")
                          : Settings.lyricsVisibleLines === "one" ? I18n.t("One line: only the active line is visible")
-                         : I18n.t("Automatic: follows the style (all lines)")
+                         : I18n.t("All lines: the full song text is visible")
             ButtonGroup {
-                model: [I18n.t("Automatic"), I18n.t("All lines"), I18n.t("Three"), I18n.t("One")]
+                model: [I18n.t("All lines"), I18n.t("Three"), I18n.t("One")]
                 autoSelect: false
                 size: page.compact ? "xs" : "s"
-                currentIndex: Math.max(0, ["auto", "all", "three", "one"].indexOf(Settings.lyricsVisibleLines))
-                onActivated: i => Settings.lyricsVisibleLines = ["auto", "all", "three", "one"][i]
+                currentIndex: Math.max(0, ["all", "three", "one"].indexOf(Settings.lyricsVisibleLines))
+                onActivated: i => Settings.lyricsVisibleLines = ["all", "three", "one"][i]
             }
         }
         SettingRow {
