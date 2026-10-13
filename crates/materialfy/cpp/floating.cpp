@@ -39,8 +39,10 @@ floating_set_mask(QObject* object, int x, int y, int w, int h)
 #include <shellapi.h>
 
 #include <QtCore/QPointer>
+#include <QtGui/QGuiApplication>
 
 #include <cmath>
+#include <string>
 
 namespace mf {
 
@@ -58,6 +60,15 @@ release_host(QWindow* window)
   delete tray_host.data();
 }
 
+// HWND окна — только у платформы windows: у offscreen (снимки) winId — просто счётчик, не дескриптор
+HWND
+native(QWindow* window)
+{
+  if (!window || QGuiApplication::platformName() != QLatin1String("windows"))
+    return nullptr;
+  return reinterpret_cast<HWND>(window->winId());
+}
+
 int
 px(double logical, double scale)
 {
@@ -69,10 +80,7 @@ px(double logical, double scale)
 bool
 floating_tool_window(QObject* object)
 {
-  auto* window = qobject_cast<QWindow*>(object);
-  if (!window)
-    return false;
-  auto hwnd = reinterpret_cast<HWND>(window->winId());
+  HWND hwnd = native(qobject_cast<QWindow*>(object));
   if (!hwnd)
     return false;
   // Qt ставит то же по флагам Tool и WindowDoesNotAcceptFocus; здесь — наверняка: без WS_EX_APPWINDOW окна нет
@@ -105,16 +113,18 @@ int
 floating_taskbar_place(QObject* object, int width, bool embed)
 {
   auto* window = qobject_cast<QWindow*>(object);
-  if (!window)
+  HWND hwnd = native(window);
+  if (!hwnd)
     return 0;
-  auto hwnd = reinterpret_cast<HWND>(window->winId());
-  if (!hwnd || !IsWindow(hwnd)) {
+  if (!IsWindow(hwnd)) {
     // HWND ушёл вместе со старой панелью: окно — сиротой, чтобы удаление обёртки его не задело
     release_host(window);
     return -1;
   }
 
-  HWND tray = FindWindowW(L"Shell_TrayWnd", nullptr);
+  // MATERIALFY_TASKBAR_CLASS — класс окна-панели вместо Shell_TrayWnd: проверка перезапуска Explorer на окне-подделке
+  static const std::wstring tray_class = qEnvironmentVariable("MATERIALFY_TASKBAR_CLASS", QStringLiteral("Shell_TrayWnd")).toStdWString();
+  HWND tray = FindWindowW(tray_class.c_str(), nullptr);
   RECT bar{};
   if (!tray || !GetWindowRect(tray, &bar)) {
     // Explorer перезапускается — панели пока нет
