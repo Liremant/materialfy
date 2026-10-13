@@ -27,10 +27,12 @@ on:
         required: false
         default: ""
 
-# A newer push to the same branch / PR cancels the run in progress (never for release tags).
+# A newer push to the same pull request cancels the run in progress. Pushes to a branch are left
+# alone: the build on main is what the badge in the README reports, so cancelling it means the
+# badge only ever shows the state of a run that never finished.
 concurrency:
   group: build-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
