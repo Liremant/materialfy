@@ -121,7 +121,7 @@ Item {
             }
         }
         // обложка ушла из виду (делегат переиспользован/скрыт) — слот отдаём очереди
-        on_VisibleChanged: if (!root.visible) _releaseGate()
+        onVisibleChanged: if (!root.visible) _releaseGate()
         Component.onDestruction: _releaseGate()
         source: _gateOn ? _want : ""
         sourceSize: Qt.size(_fit(root.width * Screen.devicePixelRatio), _fit(root.height * Screen.devicePixelRatio))
