@@ -1070,8 +1070,8 @@ Page {
 
         SettingRow {
             id: activeScaleRow
-            // Ajuste em 0 = "quem decide é o estilo": o valor mostrado é o que o estilo atual usa
-            readonly property real styleScale: Settings.lyricsMode === "spicy" ? 1.12 : (Settings.lyricsMode === "karaoke" ? 1.20 : 1.0)
+            // Настройка 0 = по стилю: отображается значение текущего стиля
+            readonly property real styleScale: Settings.lyricsMode === "spicy" ? 1.12 : (Settings.lyricsMode === "karaoke" ? 1.16 : 1.0)
             readonly property real activeScaleVal: Settings.lyricsActiveScale > 0 ? Settings.lyricsActiveScale : styleScale
             title: I18n.t("Active line scale")
             description: Math.round(activeScaleVal * 100) <= 100
@@ -1239,7 +1239,7 @@ Page {
 
         SettingRow {
             id: idleScaleRow
-            // Ajuste em 0 = "quem decide é o estilo": o valor mostrado é o que o estilo atual usa
+            // Настройка 0 = по стилю (100% = без сжатия)
             readonly property real effective: Settings.lyricsIdleScale > 0 ? Settings.lyricsIdleScale : 1.0
             title: I18n.t("Inactive lines size")
             description: I18n.t("{0}%: how much the lines around the singing one stay smaller", Math.round(effective * 100))
@@ -1257,8 +1257,8 @@ Page {
 
         SettingRow {
             id: scrollMsRow
-            // -1 = o estilo decide (spicy 420, karaoke 480, clássico 650)
-            readonly property int styleMs: Settings.lyricsMode === "spicy" ? 420 : (Settings.lyricsMode === "karaoke" ? 480 : 650)
+            // -1 = стиль решает сам (spicy 420, karaoke 440, обычный 600)
+            readonly property int styleMs: Settings.lyricsMode === "spicy" ? 420 : (Settings.lyricsMode === "karaoke" ? 440 : 600)
             readonly property int effectiveMs: Settings.lyricsScrollMs >= 0 ? Settings.lyricsScrollMs : styleMs
             title: I18n.t("Scroll speed")
             description: I18n.t("{0} ms: how long the text takes to move to the next line", effectiveMs)
@@ -1276,8 +1276,8 @@ Page {
 
         SettingRow {
             id: staggerRow
-            // -1 = o estilo decide (spicy 28, karaoke 32, clássico 45); 0 = bloco inteiro junto
-            readonly property int styleMs: Settings.lyricsMode === "spicy" ? 28 : (Settings.lyricsMode === "karaoke" ? 32 : 45)
+            // -1 = стиль решает сам (spicy 28, karaoke 26, обычный 42); 0 = весь блок вместе
+            readonly property int styleMs: Settings.lyricsMode === "spicy" ? 28 : (Settings.lyricsMode === "karaoke" ? 26 : 42)
             readonly property int effectiveMs: Settings.lyricsStaggerMs >= 0 ? Settings.lyricsStaggerMs : styleMs
             title: I18n.t("Cascade delay")
             description: I18n.t("{0} ms between neighbouring lines; 0 moves the whole block together", effectiveMs)
