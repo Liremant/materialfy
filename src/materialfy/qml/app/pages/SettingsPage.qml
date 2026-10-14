@@ -1154,8 +1154,8 @@ Page {
         }
 
         SettingRow {
-            title: I18n.t("Word glow halo")
-            description: I18n.t("Soft blur halo around sung words in Spicy style. Turn off to reduce GPU load")
+            title: I18n.t("Word glow")
+            description: I18n.t("Extra brightness for sung words in Spicy style. Turn off to reduce GPU load")
             Switch { checked: Settings.lyricsGlowHalo; onToggled: c => Settings.lyricsGlowHalo = c }
         }
 

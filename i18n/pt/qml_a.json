@@ -368,6 +368,6 @@
   "{0} ms between neighbouring lines; 0 moves the whole block together": "{0} ms entre linhas vizinhas; 0 move o bloco todo junto",
   "Inactive lines size": "Tamanho das linhas inativas",
   "{0}%: how much the lines around the singing one stay smaller": "{0}%: quanto as linhas ao redor da que está cantando ficam menores",
-  "Word glow halo": "Halo de brilho das palavras",
-  "Soft blur halo around sung words in Spicy style. Turn off to reduce GPU load": "Halo suave com desfoque ao redor das palavras cantadas no estilo Spicy. Desative para reduzir o uso da GPU"
+  "Word glow": "Brilho das palavras",
+  "Extra brightness for sung words in Spicy style. Turn off to reduce GPU load": "Brilho extra nas palavras cantadas no estilo Spicy. Desative para reduzir o uso da GPU"
 }

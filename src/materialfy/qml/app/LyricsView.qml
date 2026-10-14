@@ -481,7 +481,7 @@ Item {
     }
 
     // Верхнее затухание не заходит на целевую строку (используем scrollIndex, как и colTargetY)
-    readonly property real fadeTopTarget: {
+    readonly property real fadeTopPxTarget: {
         const want = viewport.height * fadeTopPct
         const idx = Math.max(0, scrollIndex)
         const it = lineRep.count > idx ? lineRep.itemAt(idx) : null
@@ -489,10 +489,7 @@ Item {
             return want
         return Math.max(0, Math.min(want, colTargetY + restY(idx) - lineGap * 0.25))
     }
-    property real fadeTopPx: fadeTopTarget
-    Behavior on fadeTopPx {
-        NumberAnimation { duration: root.motion ? 240 : 0; easing.type: Easing.OutCubic }
-    }
+    readonly property real fadeTopPx: fadeTopPxTarget
     readonly property real fadeBottomPx: viewport.height * fadeBottomPct
 
     // Прокрутка: колонка сразу встаёт в цель, а каждая строка получает компенсирующий сдвиг,
@@ -629,11 +626,13 @@ Item {
         Behavior on lineScale {
             enabled: root.motion && !Theme.lowPower
             NumberAnimation {
+                id: scaleAnim
                 duration: root.karaoke ? 380 : (root.spicy ? 320 : 300)
                 easing.type: Easing.BezierSpline
                 easing.bezierCurve: root.scrollBezier
             }
         }
+        readonly property bool scaling: scaleAnim.running
         readonly property real lineSize: root.activeFontPx
         readonly property real rowH: root.rowH
 
@@ -767,17 +766,9 @@ Item {
                 }
             }
 
-            transform: [
-                Scale {
-                    origin.x: root.align === "center" ? wordsBox.width / 2 : (root.align === "right" ? wordsBox.width : 0)
-                    origin.y: wordsBox.height / 2
-                    xScale: line.lineScale
-                    yScale: line.lineScale
-                },
-                Translate {
-                    y: wordsBox.wholeLineLift
-                }
-            ]
+            transform: Translate {
+                y: wordsBox.wholeLineLift
+            }
 
             // Плавная прозрачность строки без скачков при включении/выключении шейдера слов:
             // wordsBox.opacity всегда следует плавной кривой fadeOpacity (0.35 ↔ 1.0),
@@ -800,19 +791,11 @@ Item {
             readonly property real childDim: Math.min(1.0, root.dimAlpha / Math.max(0.15, fadeOpacity))
             opacity: fadeOpacity
 
-            // Активная и наведённая строки полностью чёткие, а соседние строки плавно размываются
-            // пропорционально расстоянию (как applyBlur в Spicy Lyrics).
-            readonly property real rawBlur: (line.isTarget || line.filling || line.hovered)
-                ? 0.0
-                : Math.min(1, ((root.spicy ? 0.15 : 0.12) + (root.spicy ? 0.13 : 0.11) * Math.max(0, line.dist - 1)) * root.blurAmount)
-            property real lineBlur: rawBlur
-            Behavior on lineBlur {
-                enabled: root.motion && !Theme.lowPower
-                NumberAnimation { duration: root.spicy ? 220 : (root.karaoke ? 300 : 260); easing.type: Easing.OutCubic }
-            }
-
-            readonly property bool blurred: root.blurInactive && line.inLineRange && line.dist < 12
-                && (lineBlur > 0.001 || rawBlur > 0.001)
+            // Неактивные строки размываются статически без анимации blur,
+            // чтобы Qt отрисовывал FBO один раз и кэшировал текстуру.
+            readonly property real lineBlur: (root.spicy ? 0.34 : 0.28) * root.blurAmount
+            readonly property bool blurred: root.blurInactive && line.inLineRange && line.dist < 6
+                && !line.isTarget && !line.filling && !line.hovered && !line.scaling
             layer.enabled: blurred
             layer.smooth: true
             layer.effect: MultiEffect {
@@ -862,6 +845,13 @@ Item {
                     : (root.align === "right" ? Math.max(0, wordsBox.width - (wordsBox.layout?.lineWidth ?? 0)) : 0)
                 width: Math.max(1, wordsBox.layout?.lineWidth ?? 0)
                 height: wordsBox.height
+
+                transform: Scale {
+                    origin.x: root.align === "center" ? lineWords.width / 2 : (root.align === "right" ? lineWords.width : 0)
+                    origin.y: lineWords.height / 2
+                    xScale: line.lineScale
+                    yScale: line.lineScale
+                }
 
                 Repeater {
                     id: wordRep
@@ -1052,30 +1042,12 @@ Item {
         implicitWidth: label.implicitWidth + (spaced ? spaceMetrics.advanceWidth * (fontSize / Math.max(1, root.activeFontPx)) : 0)
         implicitHeight: rowH
 
-        // Мягкий световой ореол вокруг поющегося слова в Spicy (аналог --text-shadow-blur-radius в Spicy Lyrics).
-        // FBO с MultiEffect на каждое слово сильно нагружает iGPU и может приводить к GPU hang, поэтому отключаемо.
-        Text {
-            id: glowHalo
-            visible: Settings.lyricsGlowHalo && root.spicy && word.glow > 0.015 && !Theme.lowPower && root.motion
-            anchors.centerIn: label
-            text: word.txt
-            font.family: Theme.fontFamily
-            font.pixelSize: word.fontSize
-            font.weight: Theme.variableFont ? Font.Normal : Font.Bold
-            font.variableAxes: Theme.fontAxes(word.fontSize, 700)
-            color: root.textColor
-            opacity: Math.min(0.68, word.glow * 0.58)
-            scale: label.scale * 1.04
-            transform: Translate { y: wordTranslate.y }
-            layer.enabled: visible
-            layer.smooth: true
-            layer.effect: MultiEffect {
-                blurEnabled: true
-                blurMax: 20
-                blur: 0.78
-                autoPaddingEnabled: true
-            }
-        }
+        // Свечение слова управляется настройкой Settings.lyricsGlowHalo: если отключено — 0
+        readonly property real effectiveGlow: Settings.lyricsGlowHalo ? word.glow : 0
+        // Слой шейдера включается ТОЛЬКО во время прохождения заливки по слову или пока не угасло свечение.
+        // До и после этого слово рисуется нативным текстом без FBO и без шейдера.
+        readonly property bool sweeping: word.useWordShader
+            && ((progress > 0 && progress < 1) || effectiveGlow > 0.005)
 
         Text {
             id: label
@@ -1093,26 +1065,22 @@ Item {
             font.weight: Theme.variableFont ? Font.Normal : Font.Bold
             font.variableAxes: Theme.fontAxes(word.fontSize, 700)
             color: root.textColor
+            // Неспетое слово на активной/выходящей строке затемняется нативно; спетое — полностью непрозрачно
+            opacity: word.useWordShader ? (word.sweeping ? 1.0 : (word.progress >= 1 ? 1.0 : word.shaderDimAlpha)) : 1.0
             transformOrigin: Item.Center
             scale: word.sungScale
-            Behavior on scale {
-                enabled: root.motion && !Theme.lowPower
-                NumberAnimation { duration: 95; easing.type: Easing.OutQuad }
-            }
 
             transform: Translate {
                 id: wordTranslate
                 y: word.sungLiftEm * word.fontSize
                 Behavior on y {
-                    enabled: root.motion && !Theme.lowPower
+                    // Behavior работает только вне активной строки (на активной sungLiftEm меняется непрерывно)
+                    enabled: !word.lineActive && root.motion && !Theme.lowPower
                     NumberAnimation { duration: 105; easing.type: Easing.OutCubic }
                 }
             }
 
-            // Слой шейдера остаётся включённым на протяжении всего окна анимации строки (включая плавный
-            // вход за ~240 мс и плавный выход за ~340 мс), а его dimAlpha компенсируется на fadeOpacity
-            // родительского контейнера — благодаря этому переход между строками абсолютно бесшовный.
-            layer.enabled: word.useWordShader
+            layer.enabled: word.sweeping
             layer.smooth: true
             layer.effect: ShaderEffect {
                 readonly property real featherPx: word.fontSize * (root.spicy ? 0.72 : (root.karaoke ? 0.14 : 0.45))
@@ -1124,7 +1092,7 @@ Item {
                 property real feather: Math.max(0.005, baseFeather * root.highlightMultiplier)
                 property real progress: -feather + word.progress * (1 + 2 * feather)
                 property real dimAlpha: word.shaderDimAlpha
-                property real glow: word.glow
+                property real glow: word.effectiveGlow
                 fragmentShader: root.fillShader
             }
         }

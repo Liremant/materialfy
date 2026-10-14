@@ -368,6 +368,6 @@
   "{0} ms between neighbouring lines; 0 moves the whole block together": "{0} мс между соседними строками; 0 перемещает весь блок вместе",
   "Inactive lines size": "Размер неактивных строк",
   "{0}%: how much the lines around the singing one stay smaller": "{0}%: насколько строки вокруг поющейся остаются меньше",
-  "Word glow halo": "Световой ореол слов",
-  "Soft blur halo around sung words in Spicy style. Turn off to reduce GPU load": "Мягкий размытый ореол вокруг поющихся слов в стиле Spicy. Отключите для снижения нагрузки на GPU"
+  "Word glow": "Свечение слов",
+  "Extra brightness for sung words in Spicy style. Turn off to reduce GPU load": "Дополнительное свечение поющихся слов в стиле Spicy. Отключите для снижения нагрузки на GPU"
 }
