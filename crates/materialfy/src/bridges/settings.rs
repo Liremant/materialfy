@@ -55,6 +55,8 @@ pub mod qobject {
         #[qproperty(QString, animations, READ, WRITE = set_animations, NOTIFY = animations_changed)]
         /// "auto" | "on" | "off" — режим для слабых ПК (Theme.lowPower)
         #[qproperty(QString, low_power_mode, cxx_name = "lowPowerMode", READ, WRITE = set_low_power_mode, NOTIFY = low_power_mode_changed)]
+        /// "auto" | "integrated" | "discrete" — предпочтение графического процессора
+        #[qproperty(QString, gpu_preference, cxx_name = "gpuPreference", READ, WRITE = set_gpu_preference, NOTIFY = gpu_preference_changed)]
         /// "system" | "en" | "ru" | "pt"; the applied language and the dictionary — Translations (Md3/I18n.qml)
         #[qproperty(QString, language, READ, WRITE = set_language, NOTIFY = language_changed)]
         #[qproperty(bool, right_panel_open, cxx_name = "rightPanelOpen", READ, WRITE = set_right_panel_open, NOTIFY = right_panel_open_changed)]
@@ -129,6 +131,7 @@ pub mod qobject {
         fn set_lyrics_sync_ms(self: Pin<&mut Settings>, value: i32);
         fn set_animations(self: Pin<&mut Settings>, value: QString);
         fn set_low_power_mode(self: Pin<&mut Settings>, value: QString);
+        fn set_gpu_preference(self: Pin<&mut Settings>, value: QString);
         fn set_language(self: Pin<&mut Settings>, value: QString);
         fn set_right_panel_open(self: Pin<&mut Settings>, value: bool);
         fn set_right_panel_tab(self: Pin<&mut Settings>, value: QString);
@@ -239,6 +242,9 @@ pub mod qobject {
         #[qsignal]
         #[cxx_name = "lowPowerModeChanged"]
         fn low_power_mode_changed(self: Pin<&mut Settings>);
+        #[qsignal]
+        #[cxx_name = "gpuPreferenceChanged"]
+        fn gpu_preference_changed(self: Pin<&mut Settings>);
         #[qsignal]
         #[cxx_name = "languageChanged"]
         fn language_changed(self: Pin<&mut Settings>);
@@ -539,6 +545,7 @@ settings! {
     lyrics_sync_ms: i32 = LyricsSyncMs, set_lyrics_sync_ms, lyrics_sync_ms_changed;
     animations: QString = Animations, set_animations, animations_changed;
     low_power_mode: QString = LowPowerMode, set_low_power_mode, low_power_mode_changed;
+    gpu_preference: QString = GpuPreference, set_gpu_preference, gpu_preference_changed;
     language: QString = Language, set_language, language_changed;
     right_panel_open: bool = RightPanelOpen, set_right_panel_open, right_panel_open_changed;
     right_panel_tab: QString = RightPanelTab, set_right_panel_tab, right_panel_tab_changed;

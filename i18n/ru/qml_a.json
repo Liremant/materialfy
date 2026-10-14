@@ -344,5 +344,12 @@
   "Sync adjustment": "Синхронизация",
   "Exact sync with playback (0 ms)": "В такт воспроизведению (0 мс)",
   "Lyrics lead playback by {0} ms": "Текст опережает на {0} мс",
-  "Lyrics lag playback by {0} ms": "Текст отстаёт на {0} мс"
+  "Lyrics lag playback by {0} ms": "Текст отстаёт на {0} мс",
+  "Graphics processor": "Графический процессор",
+  "Integrated": "Встроенная",
+  "Discrete": "Дискретная",
+  "Forces integrated graphics": "Принудительно использовать встроенную графику",
+  "Forces dedicated graphics card": "Принудительно использовать дискретную видеокарту",
+  "Prefers dedicated graphics card when present, default otherwise": "Предпочитать дискретную видеокарту при наличии, иначе по умолчанию",
+  "Takes effect after restarting the app": "Изменения вступят в силу после перезапуска приложения"
 }

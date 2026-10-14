@@ -1116,6 +1116,23 @@ Page {
             }
         }
         SettingRow {
+            visible: Qt.platform.os === "linux"
+            title: I18n.t("Graphics processor")
+            description: (Settings.gpuPreference === "integrated"
+                         ? I18n.t("Forces integrated graphics")
+                         : Settings.gpuPreference === "discrete"
+                         ? I18n.t("Forces dedicated graphics card")
+                         : I18n.t("Prefers dedicated graphics card when present, default otherwise"))
+                         + " · " + I18n.t("Takes effect after restarting the app")
+            ButtonGroup {
+                model: [I18n.t("Auto"), I18n.t("Integrated"), I18n.t("Discrete")]
+                autoSelect: false
+                size: page.compact ? "xs" : "s"
+                currentIndex: Math.max(0, ["auto", "integrated", "discrete"].indexOf(Settings.gpuPreference))
+                onActivated: i => Settings.gpuPreference = ["auto", "integrated", "discrete"][i]
+            }
+        }
+        SettingRow {
             title: I18n.t("Player background blur")
             enabled: Settings.backdropMode !== "palette"
             opacity: enabled ? 1 : 0.5

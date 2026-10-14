@@ -25,7 +25,7 @@ use std::time::Duration;
 
 use cxx_qt_lib::{QQmlApplicationEngine, QString, QUrl, QVariant};
 use tokio::sync::broadcast::error::RecvError;
-use mf_platform::SettingsStore;
+use mf_platform::{SettingKey, SettingsStore};
 use sf_services::{AppRequest, Services, ServicesOptions};
 
 use crate::cli::{Cli, InitialValue};
@@ -67,6 +67,127 @@ fn setup_env(cli: &Cli) {
             if std::env::var_os("QSG_RHI_BACKEND").is_none() {
                 let backend = if cfg!(target_os = "windows") { "d3d11" } else { "opengl" };
                 std::env::set_var("QSG_RHI_BACKEND", backend);
+            }
+        }
+    }
+}
+
+/// Производитель дискретной видеокарты для настройки PRIME offload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GpuVendor {
+    Nvidia,
+    Other,
+}
+
+/// Определяет наличие и производителя дискретной видеокарты через sysfs.
+/// На Linux признаком наличия нескольких GPU (гибридной графики) служит присутствие двух или более
+/// узлов рендеринга DRM (/dev/dri/renderD*). Производитель каждого узла считывается из
+/// /sys/class/drm/<node>/device/vendor (например, 0x10de — NVIDIA, 0x1002 — AMD, 0x8086 — Intel).
+/// При проприетарном драйвере NVIDIA без nvidia-drm.modeset=1 узел renderD* создаётся только для
+/// интегрированной графики; в этом случае о наличии NVIDIA свидетельствует модуль /sys/module/nvidia.
+fn discrete_gpu_vendor() -> Option<GpuVendor> {
+    #[cfg(target_os = "linux")]
+    {
+        let entries = std::fs::read_dir("/dev/dri").ok()?;
+        let mut render_nodes = Vec::new();
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy();
+            if name_str
+                .strip_prefix("renderD")
+                .is_some_and(|rest| !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit()))
+            {
+                render_nodes.push(name_str.into_owned());
+            }
+        }
+
+        let mut vendors = Vec::new();
+        for node in &render_nodes {
+            let path = format!("/sys/class/drm/{node}/device/vendor");
+            if let Ok(content) = std::fs::read_to_string(&path) {
+                let hex = content.trim();
+                let hex = hex.strip_prefix("0x").or_else(|| hex.strip_prefix("0X")).unwrap_or(hex);
+                if let Ok(vendor_id) = u32::from_str_radix(hex, 16) {
+                    vendors.push(vendor_id);
+                }
+            }
+        }
+
+        if vendors.contains(&0x10de) {
+            Some(GpuVendor::Nvidia)
+        } else if vendors.contains(&0x1002) && render_nodes.len() >= 2 {
+            Some(GpuVendor::Other)
+        } else if Path::new("/sys/module/nvidia").exists() && vendors.iter().any(|&v| v != 0x10de) {
+            Some(GpuVendor::Nvidia)
+        } else {
+            None
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        None
+    }
+}
+
+/// Применяет переменные PRIME offload для указанного производителя дискретного GPU.
+///
+/// # Safety
+/// Должно вызываться строго ДО старта сторонних потоков.
+unsafe fn apply_discrete_gpu(vendor: GpuVendor) {
+    // SAFETY: вызывается в самом начале процесса в GUI-потоке до старта сторонних потоков
+    unsafe {
+        match vendor {
+            GpuVendor::Nvidia => {
+                // Перенаправляем рендеринг на дискретный GPU NVIDIA (PRIME offload)
+                std::env::set_var("__NV_PRIME_RENDER_OFFLOAD", "1");
+                std::env::set_var("__GLX_VENDOR_LIBRARY_NAME", "nvidia");
+                std::env::set_var("__VK_LAYER_NV_optimus", "NVIDIA_only");
+                std::env::set_var("DRI_PRIME", "1");
+            }
+            GpuVendor::Other => {
+                // Для AMD и других дискретных видеокарт достаточно offload через Mesa
+                std::env::set_var("DRI_PRIME", "1");
+            }
+        }
+    }
+}
+
+/// Применяет предпочтение графического процессора через переменные окружения.
+///
+/// Должно вызываться строго ДО создания QApplication и графического контекста Qt (EGL/GLX/Vulkan),
+/// иначе загрузчики libglvnd / Mesa / драйвер NVIDIA зафиксируют устройство по умолчанию для процесса.
+fn apply_gpu_preference(settings: &SettingsStore) {
+    let pref = settings.get_str(SettingKey::GpuPreference);
+    match pref.as_str() {
+        "integrated" => {
+            // SAFETY: вызывается в самом начале процесса в GUI-потоке до старта сторонних потоков
+            unsafe {
+                // Принудительно отключаем PRIME offload и заставляем использовать интегрированную графику
+                std::env::remove_var("__NV_PRIME_RENDER_OFFLOAD");
+                std::env::remove_var("__GLX_VENDOR_LIBRARY_NAME");
+                std::env::remove_var("__VK_LAYER_NV_optimus");
+                std::env::remove_var("DRI_PRIME");
+            }
+        }
+        "discrete" => {
+            // Если дискретной видеокарты нет или чтение sysfs не удалось — предупреждаем в лог
+            let Some(vendor) = discrete_gpu_vendor() else {
+                eprintln!("materialfy: gpu preference is 'discrete' but no dedicated GPU was detected");
+                return;
+            };
+            // SAFETY: вызывается в самом начале процесса в GUI-потоке до старта сторонних потоков
+            unsafe {
+                apply_discrete_gpu(vendor);
+            }
+        }
+        _ => {
+            // "auto" — предпочитаем дискретную видеокарту, если она обнаружена в системе;
+            // если дискретной карты нет — не меняем переменные и не выводим предупреждений
+            if let Some(vendor) = discrete_gpu_vendor() {
+                // SAFETY: вызывается в самом начале процесса в GUI-потоке до старта сторонних потоков
+                unsafe {
+                    apply_discrete_gpu(vendor);
+                }
             }
         }
     }
@@ -209,6 +330,8 @@ pub fn run(cli: Cli) -> i32 {
     setup_env(&cli);
     let qml_guard = crate::qml_cache::prepare(cli.screenshot.is_none());
     let config_dir = cli.config_dir.clone().or_else(|| cli.screenshot.as_ref().map(|_| make_temp_dir()));
+    let settings = SettingsStore::open(config_dir);
+    apply_gpu_preference(&settings);
 
     ffi::app_set_names(&qstr("Materialfy"), &qstr("materialfy"), &qstr("materialfy"));
     let args: Vec<String> = std::env::args_os().map(|a| a.to_string_lossy().into_owned()).collect();
@@ -243,7 +366,6 @@ pub fn run(cli: Cli) -> i32 {
     load_fonts();
     init_tracing();
 
-    let settings = SettingsStore::open(config_dir);
     // UI language before any service or QML produces text (default: the OS UI language — Russian or English)
     crate::bridges::translations::apply_language(crate::bridges::translations::effective_language(&settings));
     let options = ServicesOptions {
