@@ -21,8 +21,6 @@ TrackListPage {
         info = playlistId !== "" ? Library.playlistInfo(playlistId) : ({})
         _rev++
     }
-    Component.onCompleted: _reload()
-    onPlaylistIdChanged: _reload()
     Connections {
         target: Library
         function onPlaylistInfoChanged(id) { if (id === page.playlistId) page._reload() }
@@ -41,7 +39,41 @@ TrackListPage {
     overline: collaborative ? I18n.t("COLLABORATIVE PLAYLIST") : I18n.t("PLAYLIST")
     description: info.description ?? ""
     heroImage: (info.cover ?? "") !== "" ? info.cover : cover
-    model: playlistId !== "" ? Library.playlistTracks(playlistId) : null
+    // Модель треков: стабильный экземпляр по id + счётчик владельцев у моста. playlistTracks зовём
+    // один раз на открытие (guard _acquiredId — повторные оценки binding'ов счётчик не надувают),
+    // releasePlaylist — на скрытие (Router прячет ушедшую страницу), смену id и уничтожение:
+    // последний release отменяет идущее чтение; возврат на страницу перечитывает кэш кусками.
+    // Шапка (playlistInfo) независима и не releasing'ся.
+    property string _acquiredId: ""
+    function _syncModel() {
+        if (!visible) {
+            _releaseModel()
+            return
+        }
+        if (playlistId === _acquiredId)
+            return
+        _releaseModel()
+        if (playlistId !== "") {
+            _acquiredId = playlistId
+            model = Library.playlistTracks(playlistId)
+        }
+    }
+    function _releaseModel() {
+        if (_acquiredId === "")
+            return
+        Library.releasePlaylist(_acquiredId)
+        _acquiredId = ""
+        model = null
+    }
+    Component.onCompleted: { _reload(); _syncModel() }
+    onPlaylistIdChanged: { _reload(); _syncModel() }
+    onVisibleChanged: {
+        if (visible)
+            _syncModel()
+        else
+            _releaseModel()
+    }
+    Component.onDestruction: _releaseModel()
     emptyIcon: "queue_music"
     emptyTitle: I18n.t("This playlist has no tracks")
     emptyText: canEdit ? I18n.t("Tap “Edit playlist” to add tracks") : ""
