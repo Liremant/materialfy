@@ -21,6 +21,43 @@ Item {
     property var _kept: ({})                // имя → живой экземпляр из keepAlive
 
     property var _components: ({})
+    // Прогрев компиляции страниц: первое открытие каждой страницы компилирует её QML-цепочку
+    // синхронно на GUI-потоке — фриз первого открытия. Компилируем по одному компоненту на тик
+    // после старта, пока юзер на главной; при реальной навигации пауза, догрев после неё.
+    // Один тик = одна страница: скролл главной не дёргается.
+    property bool _prewarmed: false
+    function _prewarm() {
+        if (_prewarmed)
+            return
+        _prewarmed = true
+        prewarmTimer.names = Object.keys(pages).filter(n => keepAlive.indexOf(n) < 0)
+        prewarmTimer.at = 0
+        prewarmTimer.restart()
+    }
+    Timer {
+        id: prewarmTimer
+        interval: 80
+        property var names: []
+        property int at: 0
+        onTriggered: {
+            if (_pending !== null) {
+                restart()
+                return
+            }
+            if (at >= names.length) {
+                stop()
+                return
+            }
+            const name = names[at++]
+            if (_components[name])
+                return
+            const comp = Qt.createComponent(pages[name])
+            if (comp.status === Component.Error)
+                console.error("Router prewarm:", comp.errorString())
+            else
+                _components[name] = comp
+        }
+    }
     property var _leaving: []               // элементы, которые уничтожить после анимации
     property Item _out: null
     property var _pending: null             // незавершённая инкубация: { name, props, comp, incubator, prev, kind }

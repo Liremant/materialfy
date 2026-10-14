@@ -327,6 +327,7 @@ Window {
                             }
                             Auth.playbackChanged.connect(open)
                             open()
+                            Qt.callLater(router._prewarm)   // после первой отрисовки главной
                         }
                     }
                     Connections {
