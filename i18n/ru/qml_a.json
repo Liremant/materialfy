@@ -350,5 +350,22 @@
   "Forces integrated graphics": "Принудительно использовать встроенную графику",
   "Forces dedicated graphics card": "Принудительно использовать дискретную видеокарту",
   "Takes effect after restarting the app": "Изменения вступят в силу после перезапуска приложения",
-  "The system picks the graphics card": "Видеокарту выбирает система"
+  "The system picks the graphics card": "Видеокарту выбирает система",
+  "Active line scale": "Масштаб активной строки",
+  "Same size as other lines": "Такой же размер, как у других строк",
+  "{0}%: enlarges the currently singing line": "{0}%: увеличивает текущую поющуюся строку",
+  "Word wave motion": "Волна слов",
+  "Off: words stay still while sung": "Выкл: слова остаются неподвижными во время пения",
+  "{0}%: vertical lift and pulse of sung words": "{0}%: вертикальный подъём и пульсация поющихся слов",
+  "Inactive lines opacity": "Непрозрачность неактивных строк",
+  "{0}% brightness on unsung and neighbouring lines": "{0}% яркости непоющихся и соседних строк",
+  "{0} lines around the singing line": "{0} строк вокруг поющейся строки",
+  "Right": "Справа",
+  "Right aligned": "По правому краю",
+  "Scroll speed": "Скорость прокрутки",
+  "{0} ms: how long the text takes to move to the next line": "{0} мс: сколько времени занимает переход текста на следующую строку",
+  "Cascade delay": "Задержка каскада",
+  "{0} ms between neighbouring lines; 0 moves the whole block together": "{0} мс между соседними строками; 0 перемещает весь блок вместе",
+  "Inactive lines size": "Размер неактивных строк",
+  "{0}%: how much the lines around the singing one stay smaller": "{0}%: насколько строки вокруг поющейся остаются меньше"
 }

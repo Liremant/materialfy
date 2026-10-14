@@ -15,15 +15,15 @@ Item {
     // масштабирует его. Всё остальное (высота строки, отступы, фигуры пауз) считается от fontSize.
     property real baseFontSize: 34
     property real fontSize: baseFontSize * Settings.lyricsFontScale
-    property real anchorPos: spicy ? 0.38 : 0.33
+    property real anchorPos: spicy ? 0.36 : 0.33
     // Подложка под текстом: "none" — прозрачно; "soft" | "strong" — затемнение в цвет темы
     readonly property string scrimMode: Settings.lyricsScrim
     readonly property real scrimAlpha: scrimMode === "strong" ? 0.6 : (scrimMode === "soft" ? 0.28 : 0)
 
     // Стиль отображения:
     // "normal" — классический вид: каскад, размытые соседние строки, выравнивание влево;
-    // "spicy" — крупная поющаяся строка со сглаженным градиентным заполнением и свечением;
-    // "karaoke" — караоке: крупная строка с чёткой заливкой по словам и подъёмом без свечения.
+    // "spicy" — выразительная волна по словам с широким градиентным заполнением и мягким свечением;
+    // "karaoke" — караоке: крупная строка с чёткой заливкой по словам и плавным увеличением.
     readonly property string mode: Settings.lyricsMode
     readonly property bool spicy: mode === "spicy"
     readonly property bool karaoke: mode === "karaoke"
@@ -35,20 +35,46 @@ Item {
     readonly property string linesMode: Settings.lyricsVisibleLines
     readonly property string fillMode: Settings.lyricsFillMode
     readonly property bool motion: Settings.lyricsAnimate && !Theme.reducedMotion
-    readonly property real activeScale: spicy ? 1.30 : (karaoke ? 1.20 : 1.0)
-    readonly property real idleScale: spicy ? 0.97 : 1.0
-    readonly property real dimAlpha: 0.35
-    readonly property bool uniformDim: false
-    readonly property real baseSpacingScale: spicy ? 1.08 : 1.0
+
+    // Ручные настройки акцента строки, амплитуды волны слов и прозрачности соседних строк
+    // (с безопасным запасом по умолчанию, если мост Settings собран без новых ключей).
+    readonly property real userActiveScale: Settings.lyricsActiveScale ?? 0
+    readonly property real activeScale: userActiveScale >= 1.0
+        ? userActiveScale
+        : (spicy ? 1.12 : (karaoke ? 1.20 : 1.0))
+    readonly property real idleScale: Settings.lyricsIdleScale > 0 ? Settings.lyricsIdleScale : 1.0
+    readonly property real wordBounce: Settings.lyricsWordBounce ?? 1.0
+    readonly property real dimAlpha: Settings.lyricsDimOpacity ?? (spicy ? 0.34 : 0.35)
+    readonly property bool uniformDim: fillMode === "off"
+    readonly property real baseSpacingScale: spicy ? 1.12 : 1.0
     readonly property real spacingScale: baseSpacingScale * Settings.lyricsLineSpacing
     readonly property real highlightMultiplier: Settings.lyricsHighlight
     property bool showSource: Settings.lyricsShowSource
 
+    // Число видимых строк вокруг активной: "one"/"1" → 0, "three"/"3" → 1, "all"/"15" → все,
+    // либо любое число N из ползунка «Видимые строки» (показывает N строк вокруг текущей).
+    readonly property int maxVisibleDist: {
+        const s = String(linesMode ?? "all").trim()
+        if (s === "all" || s === "")
+            return 999
+        if (s === "one")
+            return 0
+        if (s === "three")
+            return 1
+        const n = parseInt(s, 10)
+        if (!isNaN(n) && n >= 1)
+            return n >= 15 ? 999 : Math.floor((n - 1) / 2)
+        return 999
+    }
+
     property real fadeTopPct: 0.22
     property real fadeBottomPct: 0.18
-    property int scrollDuration: !Settings.lyricsAnimate ? 0 : (spicy ? 500 : 700)
-    property int scrollStagger: !Settings.lyricsAnimate ? 0 : (spicy ? 0 : 45)
-    property int scrollLeadMs: 250
+    property int scrollDuration: !Settings.lyricsAnimate ? 0 : (Settings.lyricsScrollMs >= 0 ? Settings.lyricsScrollMs : (spicy ? 420 : (karaoke ? 480 : 650)))
+    property int scrollStagger: !Settings.lyricsAnimate ? 0 : (Settings.lyricsStaggerMs >= 0 ? Settings.lyricsStaggerMs : (spicy ? 28 : (karaoke ? 32 : 45)))
+    // Плавное упреждение прокрутки: строка мягко доезжает к anchorPos к началу первой ноты,
+    // а подсветка и заливка идут точно по позиции аудио (см. tick()).
+    property int scrollLeadMs: 240
+    readonly property int scrollAheadMs: !Settings.lyricsAnimate ? 0 : (spicy ? 240 : Math.max(scrollLeadMs, Math.round(scrollDuration * 0.48)))
     property color textColor: Theme.fgSurface
     property int resumeMs: 3000
 
@@ -58,15 +84,22 @@ Item {
     readonly property bool stale: Lyrics.trackId !== Player.trackId
     readonly property bool live: visible && !stale && lines.length > 0
     onLiveChanged: if (live) { jumpTimer.restart(); sync(Player.positionMs / 1000); tick() }
-    readonly property real rowH: fontSize * 1.22
-    readonly property real lineGap: fontSize * 0.62 * root.spacingScale
-    readonly property real liftPx: fontSize * 0.07
+
+    // Шрифт изначально растеризуется в полном размере активной строки (fontSize * activeScale):
+    // тогда у активной строки масштаб слоя равен ровно 1.0 (100% нативная резкость пикселей без мыла),
+    // а неактивные строки плавно уменьшаются через GPU Scale (idleScale / activeScale) без перестройки раскладки!
+    readonly property real activeFontPx: Math.round(fontSize * activeScale)
+    readonly property real rowH: activeFontPx * 1.22
+    readonly property real lineGap: fontSize * 0.56 * root.spacingScale
+    readonly property real liftPx: fontSize * 0.075 * root.wordBounce
     readonly property real sidePad: Math.max(12, fontSize * 0.4)
-    readonly property var scrollBezier: [0.42, 0.0, 0.58, 1.0, 1.0, 1.0]
+    readonly property var scrollBezier: [0.22, 1.0, 0.36, 1.0, 1.0, 1.0]
     readonly property url fillShader: Qt.resolvedUrl("shaders/wordfill.frag.qsb")
 
     property real pos: 0
     property int activeIndex: -1
+    property int _targetScrollIndex: -1
+    readonly property int scrollIndex: _targetScrollIndex
 
     signal shifted(real dy)
 
@@ -75,6 +108,7 @@ Item {
         following = true
         manualAnim.running = false
         activeIndex = -1
+        _targetScrollIndex = -1
         rebuild()
         tick()
     }
@@ -132,6 +166,9 @@ Item {
                     root._tearing = false
                     if (root._pending !== null) {
                         root._adopt()
+                    } else if (!root.stale && root.lines.length > 0) {
+                        root._lines = root.lines
+                        root._built = 0
                     } else {
                         root._lines = []
                         root._built = 0
@@ -159,10 +196,14 @@ Item {
     // мелкий дрейф подтягивается плавно, перемотка — скачком.
     property real _basePos: 0
     property real _baseTime: 0
+    property real _seekTarget: 0
+    property real _seekStartMs: 0
+    property real _seekGuardUntil: 0
     // пока говорит DJ, трек стоит на месте: позиция не идёт, хотя плеер «играет».
     // То же, пока трек ещё грузится: «играет» в это время оптимистично, а звука нет.
     readonly property bool advancing: Player.playing && !Player.narrating && !Player.buffering
     property bool _wasPlaying: advancing
+    onAdvancingChanged: resyncPlayback()
 
     function playerPos() {
         return _basePos + (_wasPlaying ? (Date.now() - _baseTime) / 1000 : 0)
@@ -172,32 +213,46 @@ Item {
         _baseTime = Date.now()
     }
 
+    // Пауза/буферизация: возвращаемся к измеренной позиции, а не к замороженной
+    function resyncPlayback() {
+        if (root.advancing && !root._wasPlaying)
+            root.sync(Player.positionMs / 1000)
+        else
+            root.sync(root.playerPos())
+        root._wasPlaying = root.advancing
+    }
+
     Connections {
         target: Player
         function onPositionChanged() {
             if (!root.live)
                 return
+            const now = Date.now()
             const measured = Player.positionMs / 1000
-            const err = measured - root.playerPos()
-            root.sync(Math.abs(err) > 0.3 ? measured : root.playerPos() + err * 0.35)
+            // После клика по строке плеер может ещё до ~1 с присылать старую позицию до перемотки
+            if (now < root._seekGuardUntil && Math.abs(measured - root._seekTarget) > 0.35) {
+                if (now - root._seekStartMs < 1000)
+                    root._seekGuardUntil = now + 180
+                return
+            }
+            const cur = root.playerPos()
+            const err = measured - cur
+            if (err < -0.08 || Math.abs(err) > 0.3)
+                root.sync(measured)
+            else
+                // подтягиваем только вперёд: с откатом назад текст пятился посреди слога
+                root.sync(Math.max(root.pos, cur + err * 0.35))
             root.tick()
         }
-        function onStateChanged() {
-            root.sync(root.playerPos())
-            root._wasPlaying = root.advancing
-        }
-    }
-
-    Connections {
-        target: Settings
-        function onLyricsSyncMsChanged() { root.tick() }
+        function onStateChanged() { root.resyncPlayback() }
     }
 
     function tick() {
-        pos = playerPos() + Settings.lyricsSyncMs / 1000
-        // строка становится активной (и начинает ехать) чуть раньше, чем её поют
-        const at = pos + scrollLeadMs / 1000
+        pos = playerPos()
         const L = lines
+
+        // Подсветка и заливка идут ровно по позиции: активна всегда строго одна текущая строка
+        const at = pos
         let i = activeIndex
         if (i >= L.length || (i >= 0 && L[i].t > at) || i < -1) {
             let lo = 0, hi = L.length - 1
@@ -212,6 +267,23 @@ Item {
         }
         if (i !== activeIndex)
             activeIndex = i
+
+        // Упреждение прокрутки: колонка начинает движение чуть заранее
+        const atScroll = pos + scrollAheadMs / 1000
+        let si = _targetScrollIndex
+        if (si >= L.length || (si >= 0 && L[si].t > atScroll) || si < -1) {
+            let lo = 0, hi = L.length - 1
+            si = -1
+            while (lo <= hi) {
+                const mid = (lo + hi) >> 1
+                if (L[mid].t <= atScroll) { si = mid; lo = mid + 1 } else hi = mid - 1
+            }
+        } else {
+            while (si + 1 < L.length && L[si + 1].t <= atScroll)
+                si++
+        }
+        if (si !== _targetScrollIndex)
+            _targetScrollIndex = si
     }
 
     FrameAnimation {
@@ -225,8 +297,12 @@ Item {
     }
 
     function seekTo(t) {
-        // строки показаны со сдвигом синхронизации — перематываем туда, где строка и правда звучит
-        const at = Math.max(0, t + 0.02 - Settings.lyricsSyncMs / 1000)
+        // клик по строке перематывает к её началу с защитой от старого отсчёта плеера
+        const at = Math.max(0, t)
+        const now = Date.now()
+        _seekTarget = at
+        _seekStartMs = now
+        _seekGuardUntil = now + 350
         Player.seekMs(Math.round(at * 1000))
         sync(at)
         tick()
@@ -252,8 +328,8 @@ Item {
     TextMetrics {
         id: spaceMetrics
         font.family: Theme.fontFamily
-        font.pixelSize: root.fontSize
-        font.variableAxes: Theme.fontAxes(root.fontSize, 700)
+        font.pixelSize: root.activeFontPx
+        font.variableAxes: Theme.fontAxes(root.activeFontPx, 700)
         text: " "
     }
 
@@ -386,14 +462,18 @@ Item {
         opacity: 0.6
     }
 
-    // Верхнее затухание не заходит на активную строку
-    readonly property real fadeTopPx: {
+    // Верхнее затухание не заходит на целевую строку (используем scrollIndex, как и colTargetY)
+    readonly property real fadeTopTarget: {
         const want = viewport.height * fadeTopPct
-        const idx = Math.max(0, activeIndex)
+        const idx = Math.max(0, scrollIndex)
         const it = lineRep.count > idx ? lineRep.itemAt(idx) : null
         if (!it || !following)
             return want
         return Math.max(0, Math.min(want, colTargetY + restY(idx) - lineGap * 0.25))
+    }
+    property real fadeTopPx: fadeTopTarget
+    Behavior on fadeTopPx {
+        NumberAnimation { duration: root.motion ? 240 : 0; easing.type: Easing.OutCubic }
     }
     readonly property real fadeBottomPx: viewport.height * fadeBottomPct
 
@@ -414,7 +494,7 @@ Item {
     }
 
     readonly property real colTargetY: {
-        const idx = Math.max(0, activeIndex)
+        const idx = Math.max(0, scrollIndex)
         const it = lineRep.count > idx ? lineRep.itemAt(idx) : null
         if (!it)
             return viewport.height * anchorPos
@@ -429,9 +509,8 @@ Item {
             return
         const dy = col.y - colTargetY
         col.y = colTargetY
-        const lineChanged = activeIndex !== _scrollIndex
-        _scrollIndex = activeIndex
-        if (lineChanged && !jumpTimer.running && Math.abs(dy) > 0.5)
+        _scrollIndex = scrollIndex
+        if (!jumpTimer.running && Math.abs(dy) > 0.5)
             shifted(dy)
     }
 
@@ -471,7 +550,7 @@ Item {
         following = true
         const dy = col.y - colTargetY
         col.y = colTargetY
-        _scrollIndex = activeIndex
+        _scrollIndex = scrollIndex
         if (Math.abs(dy) > 0.5)
             shifted(dy)
     }
@@ -507,34 +586,52 @@ Item {
 
         readonly property bool isGap: !!modelData.gap
         readonly property bool isActive: index === root.activeIndex
-        // root.pos читают только активная строка и предыдущая — остальные не пересчитываются каждый кадр
-        readonly property bool filling: !isGap && (isActive || (index === root.activeIndex - 1 && root.pos < modelData.e))
+        // Активна всегда строго одна строка (isActive): две строки никогда не поют одновременно.
+        // Для плавного завершения волны последнего слова предыдущей строки даём 240 мс «хвоста» затухания.
+        readonly property bool filling: !isGap && isActive
+        readonly property bool wordsAnimating: !isGap && (isActive || (index === root.activeIndex - 1 && (root.pos - (modelData.e ?? 0)) < 0.24))
+        readonly property bool isTarget: !isGap && (isActive || (root.following && index === root.activeIndex + 1 && ((modelData.t ?? 0) - root.pos) <= 0.11))
         readonly property int dist: root.activeIndex < 0 ? index + 1 : Math.abs(index - root.activeIndex)
-        readonly property real gapProgress: isGap && isActive ? Math.max(0, Math.min(1, (root.pos - modelData.t) / Math.max(0.1, modelData.e - modelData.t))) : 0
+        readonly property real gapProgress: isGap && isActive ? Math.max(0, Math.min(1, (root.pos - (modelData.t ?? 0)) / Math.max(0.1, (modelData.e ?? 0) - (modelData.t ?? 0)))) : 0
         readonly property bool hovered: hover.hovered
-        // Масштаб строки зависит от стиля: в spicy и karaoke поющаяся строка крупнее соседних
-        readonly property real lineScale: isActive ? root.activeScale : root.idleScale
-        readonly property real lineSize: root.fontSize * lineScale
-        readonly property real rowH: lineSize * 1.22
-        // Фильтр видимости строк: "all" — все строки; "three" — активная и соседи; "one" — только активная
+
+        // И в Spicy, и в Караоке, и при ручном увеличении масштаба строки шрифт всегда отрендерен
+        // в полном размере activeFontPx (масштаб 1.0 на активной строке = 100% чёткость без мыла),
+        // а неактивные строки мягко уменьшены до idleNormScale через GPU Scale без перестройки текста!
+        readonly property real idleNormScale: root.idleScale / Math.max(1.0, root.activeScale)
+        readonly property real targetScale: !isGap ? (isTarget ? 1.0 : idleNormScale) : 1.0
+        property real lineScale: targetScale
+        Behavior on lineScale {
+            enabled: root.motion && !Theme.lowPower
+            NumberAnimation {
+                duration: root.karaoke ? 280 : 250
+                easing.type: Easing.BezierSpline
+                easing.bezierCurve: root.scrollBezier
+            }
+        }
+        readonly property real lineSize: root.activeFontPx
+        readonly property real rowH: root.rowH
+
+        // Фильтр видимости строк (ползунок от 1 до 15 / Все)
         readonly property bool inLineRange: {
-            if (root.linesMode === "one")
-                return root.activeIndex < 0 ? index === 0 : dist === 0
-            if (root.linesMode === "three")
-                return root.activeIndex < 0 ? index <= 2 : dist <= 1
-            return true
+            if (root.maxVisibleDist >= 999)
+                return true
+            return root.activeIndex < 0 ? index <= root.maxVisibleDist : dist <= root.maxVisibleDist
         }
 
         width: col.width
-        // Свёрнутая пауза сохраняет волосок высоты: Column не расставляет элементы нулевого размера
-        readonly property real restHeight: isGap ? (isActive ? root.rowH * 1.1 + root.lineGap : 0.01) : wordsBox.height + root.lineGap
+        // Свёрнутая пауза сохраняет волосок высоты: Column не расставляет элементы нулевого размера.
+        // Раскрывается она вместе с прокруткой (scrollIndex), чтобы колонка не дёргалась.
+        readonly property real restHeight: isGap
+            ? ((isActive || index === root.scrollIndex) ? root.rowH * 1.1 + root.lineGap : 0.01)
+            : wordsBox.height + root.lineGap
         height: restHeight
         clip: isGap
 
         Behavior on height {
             enabled: line.isGap
             SequentialAnimation {
-                PauseAnimation { duration: Math.max(0, Math.min(7, line.index - Math.max(0, root.activeIndex) + 1)) * root.scrollStagger }
+                PauseAnimation { duration: Math.max(0, Math.min(7, line.index - Math.max(0, root.scrollIndex) + 1)) * root.scrollStagger }
                 NumberAnimation { duration: root.scrollDuration; easing.type: Easing.BezierSpline; easing.bezierCurve: root.scrollBezier }
             }
         }
@@ -542,7 +639,6 @@ Item {
         // Появление нового текста: строки выплывают снизу волной, начиная от активной.
         // Непопадающие в диапазон строки мягко растворяются до 0, сохраняя раскладку.
         property real appear: 0
-        // анимируется только выход из диапазона видимых строк: «волна» появления идёт своим ходом
         property real rangeOpacity: inLineRange ? 1 : 0
         Behavior on rangeOpacity {
             NumberAnimation { duration: root.motion ? 260 : 0; easing.type: Easing.OutCubic }
@@ -553,13 +649,12 @@ Item {
             Translate { y: (1 - line.appear) * root.fontSize * 1.1 }
         ]
         Component.onCompleted: Qt.callLater(() => {
-            // к этому моменту activeIndex уже выставлен по позиции плеера
             const rel = line.index - Math.max(0, root.activeIndex - 2)
-            if (rel < 0 || rel > 14) {        // за пределами видимого — сразу на месте
+            if (rel < 0 || rel > 14) {
                 line.appear = 1
                 return
             }
-            appearAnim.delayMs = (root.motion && !root.spicy) ? 120 + rel * 55 : 0
+            appearAnim.delayMs = root.motion ? (root.spicy ? 60 + rel * 35 : 110 + rel * 50) : 0
             appearAnim.start()
         })
         SequentialAnimation {
@@ -570,7 +665,7 @@ Item {
                 target: line
                 property: "appear"
                 to: 1
-                duration: root.motion ? (root.spicy ? 500 : 650) : 0
+                duration: root.motion ? (root.spicy ? 480 : 620) : 0
                 easing.type: Easing.BezierSpline
                 easing.bezierCurve: Theme.motion.emphasizedDecelerate
             }
@@ -581,7 +676,8 @@ Item {
             function onShifted(dy) {
                 const wasMoving = scrollAnim.running
                 scrollAnim.stop()
-                const rel = line.index - Math.max(0, root.activeIndex)
+                const anchor = root.scrollIndex >= 0 ? root.scrollIndex : Math.max(0, root.activeIndex)
+                const rel = line.index - anchor
                 // строкам за экраном анимация не нужна
                 const sy = col.y + line.y + shift.y + dy
                 if (sy > viewport.height * 2 || sy + line.height < -viewport.height) {
@@ -590,7 +686,7 @@ Item {
                 }
                 shift.y += dy
                 scrollAnim.delayMs = wasMoving ? 0 : Math.max(0, Math.min(7, rel + 1)) * root.scrollStagger
-                scrollAnim.interrupted = wasMoving   // прерванная строка не должна замирать и разгоняться заново
+                scrollAnim.interrupted = wasMoving
                 scrollAnim.start()
             }
         }
@@ -627,25 +723,73 @@ Item {
             width: line.width
             height: line.isGap ? 0 : Math.max(1, layout.rows) * line.rowH
 
-            // Строка, начавшая заливаться, сразу непрозрачна: неспетые слова приглушает шейдер
-            opacity: line.filling ? 1 : fadeOpacity
-            property real fadeOpacity: line.filling ? 1 : Math.max(0.22, root.dimAlpha * (line.hovered ? 1.9 : (root.uniformDim ? 1 : (1 - 0.1 * Math.max(0, line.dist - 1)))))
-            Behavior on fadeOpacity { NumberAnimation { duration: root.motion ? 380 : 0; easing.type: Easing.OutCubic } }
+            // Подъём всей строки целиком в режиме «Вся строка» (fillMode === "line")
+            property real wholeLineLift: (line.filling && root.fillMode === "line" && root.motion)
+                ? -root.liftPx * (root.spicy ? 0.85 : 0.55)
+                : 0
+            Behavior on wholeLineLift {
+                enabled: root.motion && !Theme.lowPower
+                NumberAnimation { duration: 260; easing.type: Easing.OutCubic }
+            }
 
-            readonly property bool blurred: root.blurInactive && !line.filling && !line.hovered && line.dist < 8 && line.inLineRange
+            transform: [
+                Scale {
+                    origin.x: root.align === "center" ? wordsBox.width / 2 : (root.align === "right" ? wordsBox.width : 0)
+                    origin.y: wordsBox.height / 2
+                    xScale: line.lineScale
+                    yScale: line.lineScale
+                },
+                Translate {
+                    y: wordsBox.wholeLineLift
+                }
+            ]
+
+            // В режиме «word» активная строка сразу непрозрачна (1.0), а неспетые слова внутри неё
+            // приглушены ровно до root.dimAlpha без двойного умножения.
+            // В режиме «line» («Вся строка: активная строка загорается целиком») вся строка плавно
+            // вспыхивает до 1.0 за 220 мс. В режиме «off» все строки остаются ярко читаемыми.
+            readonly property real inactiveOpacity: root.fillMode === "off"
+                ? (line.hovered ? 0.92 : 0.78)
+                : Math.max(
+                    0.12,
+                    root.dimAlpha * (line.hovered ? 1.85 : (1 - (root.spicy ? 0.11 : 0.09) * Math.max(0, line.dist - 1)))
+                )
+            property real fadeOpacity: line.filling ? 1.0 : inactiveOpacity
+            Behavior on fadeOpacity {
+                NumberAnimation {
+                    duration: root.motion ? (root.spicy ? 210 : 280) : 0
+                    easing.type: Easing.OutCubic
+                }
+            }
+            opacity: (line.filling && root.fillMode === "word") ? 1.0 : fadeOpacity
+
+            // Активная и наведённая строки полностью чёткие, а соседние строки плавно размываются
+            // пропорционально расстоянию (как applyBlur в Spicy Lyrics).
+            readonly property real rawBlur: (line.isTarget || line.filling || line.hovered)
+                ? 0.0
+                : Math.min(1, ((root.spicy ? 0.15 : 0.12) + (root.spicy ? 0.13 : 0.11) * Math.max(0, line.dist - 1)) * root.blurAmount)
+            property real lineBlur: rawBlur
+            Behavior on lineBlur {
+                enabled: root.motion && !Theme.lowPower
+                NumberAnimation { duration: root.spicy ? 220 : 260; easing.type: Easing.OutCubic }
+            }
+
+            readonly property bool blurred: root.blurInactive && line.inLineRange && line.dist < 12
+                && (lineBlur > 0.001 || rawBlur > 0.001)
             layer.enabled: blurred
+            layer.smooth: true
             layer.effect: MultiEffect {
                 blurEnabled: true
-                blurMax: 16
-                blur: Math.min(1, (0.12 + 0.11 * Math.max(0, line.dist - 1)) * root.blurAmount)
+                blurMax: root.spicy ? 18 : 16
+                blur: wordsBox.lineBlur
                 autoPaddingEnabled: true
             }
 
-            // Перенос слов по строкам (Flow не умеет выравнивание, а раскладка нужна заранее).
-            // Для выравнивания по центру каждая строка сдвигается на половину остатка ширины.
+            // Перенос слов по строкам с поддержкой выравнивания влево, по центру и вправо.
+            // Так как на активной строке lineScale == 1.0, доступная ширина равна полной ширине колонки!
             readonly property var layout: {
                 const n = wordRep.count
-                const avail = width
+                const avail = Math.max(1, width)
                 const pos = []
                 const widths = []
                 let x = 0, row = 0
@@ -659,44 +803,41 @@ Item {
                     }
                     pos.push({ x: x, row: row })
                     x += w
-                    widths[row] = x
+                    widths[row] = x - (it && it.spaced ? Math.max(0, w - tw) : 0)
                 }
                 let maxW = 0
                 for (let r = 0; r <= row; r++)
                     if ((widths[r] ?? 0) > maxW) maxW = widths[r]
-                if (root.align === "center")
+                if (root.align === "center") {
                     for (let i = 0; i < pos.length; i++)
                         pos[i].x += Math.max(0, (maxW - (widths[pos[i].row] ?? 0)) / 2)
+                } else if (root.align === "right") {
+                    for (let i = 0; i < pos.length; i++)
+                        pos[i].x += Math.max(0, maxW - (widths[pos[i].row] ?? 0))
+                }
                 return { pos: pos, rows: row + 1, lineWidth: maxW }
             }
 
             Item {
                 id: lineWords
-                x: root.align === "center" ? Math.max(0, (wordsBox.width - (wordsBox.layout?.lineWidth ?? 0)) / 2) : 0
+                x: root.align === "center"
+                    ? Math.max(0, (wordsBox.width - (wordsBox.layout?.lineWidth ?? 0)) / 2)
+                    : (root.align === "right" ? Math.max(0, wordsBox.width - (wordsBox.layout?.lineWidth ?? 0)) : 0)
                 width: Math.max(1, wordsBox.layout?.lineWidth ?? 0)
                 height: wordsBox.height
-
-                // В режиме «line» шейдер заливки накладывается на всю строку целиком, а не по словам
-                layer.enabled: line.filling && root.fillMode === "line"
-                layer.effect: ShaderEffect {
-                    readonly property real dur: Math.max(0.001, line.modelData.e - line.modelData.t)
-                    readonly property real rawProgress: root.pos <= line.modelData.t ? 0 : (root.pos >= line.modelData.e ? 1 : (root.pos - line.modelData.t) / dur)
-                    readonly property real featherPx: line.lineSize * 0.45
-                    readonly property real baseFeather: root.karaoke ? 0.002 : (root.spicy ? 0.32 : Math.min(0.5, featherPx / Math.max(1, lineWords.width) / 2))
-                    property real feather: Math.max(0.001, baseFeather * root.highlightMultiplier)
-                    property real progress: -feather + rawProgress * (1 + 2 * feather)
-                    property real dimAlpha: root.dimAlpha
-                    property real glow: 0
-                    fragmentShader: root.fillShader
-                }
 
                 Repeater {
                     id: wordRep
                     model: line.isGap ? [] : line.modelData.w
                     delegate: LyricWord {
                         lineActive: line.filling
+                        wordAnimating: line.wordsAnimating
+                        // 1 — слово уже спели, 2 — в активной строке, 0 — ещё не пели
+                        sungState: (root.activeIndex >= 0 && line.index < root.activeIndex) ? 1
+                                 : (line.filling ? 2 : 0)
                         fontSize: line.lineSize
                         rowH: line.rowH
+                        useWordShader: line.filling && root.fillMode === "word"
                         x: wordsBox.layout.pos[index]?.x ?? 0
                         y: (wordsBox.layout.pos[index]?.row ?? 0) * line.rowH
                     }
@@ -709,14 +850,16 @@ Item {
             visible: line.isGap
             anchors.verticalCenter: parent.verticalCenter
             anchors.verticalCenterOffset: -root.lineGap / 2
-            x: root.fontSize * 0.1
+            x: root.align === "center"
+                ? Math.max(0, (parent.width - width) / 2)
+                : (root.align === "right" ? Math.max(0, parent.width - width - root.fontSize * 0.1) : root.fontSize * 0.1)
             spacing: root.fontSize * 0.24
             transformOrigin: Item.Center
             scale: {
                 if (!line.isActive)
                     return 0.6
                 const breathe = 1 + 0.09 * Math.sin(root.pos * Math.PI * 2 / 1.9)
-                const tail = Math.max(0, Math.min(1, (line.modelData.e - root.pos) / 0.45))
+                const tail = Math.max(0, Math.min(1, ((line.modelData.e ?? 0) - root.pos) / 0.45))
                 return breathe * (0.35 + 0.65 * root.easeOut(tail))
             }
             opacity: line.isActive ? 1 : 0
@@ -761,58 +904,166 @@ Item {
         required property var modelData
         required property int index
         property bool lineActive: false
-        // Размер слова — размер его строки (в «караоке» и «spicy» он свой у активной)
-        property real fontSize: root.fontSize
+        property bool wordAnimating: false
+        property bool useWordShader: false
+        property real fontSize: root.activeFontPx
         property real rowH: root.rowH
 
         readonly property string txt: modelData.x.replace(/\s+$/, "")
         readonly property bool spaced: /\s$/.test(modelData.x)
         readonly property real textWidth: label.implicitWidth
-        readonly property real dur: modelData.e - modelData.s
-        readonly property bool held: dur >= 1.1 && txt.length <= 14
-        // root.pos читается, только пока строка активна
-        readonly property real progress: lineActive ? root.wordProgress(modelData, root.pos) : 0
+        readonly property real dur: Math.max(0.001, (modelData.e ?? 0) - (modelData.s ?? 0))
+        readonly property bool held: dur >= 0.95 && txt.length <= 14
+        // root.pos читается только пока строка активна (или доигрывает хвост 240 мс)
+        readonly property real progress: lineActive ? root.wordProgress(modelData, root.pos) : (sungState === 1 ? 1 : 0)
+        required property int sungState
+
+        // Плавная кривая Эрмита (smoothstep) и трёхфазная огибающая (Attack → Sustain → Release)
+        // в реальном времени (секундах), как пружины в Spicy Lyrics:
+        // слово быстро всплывает за ~220 мс, держится на гребне волны, пока звучит нота, и мягко
+        // опускается за ~210 мс после окончания, образуя непрерывную бегущую волну по соседним словам.
+        function ease(x) { return x <= 0 ? 0 : (x >= 1 ? 1 : x * x * (3 - 2 * x)) }
+
+        readonly property real envelope: {
+            if (!wordAnimating || root.fillMode !== "word")
+                return 0
+            const s = (modelData.s ?? 0) - 0.03
+            const e = (modelData.e ?? 0)
+            const t = root.pos
+            const attack = Math.min(0.24, Math.max(0.14, dur * 0.65))
+            const release = 0.21
+            if (t <= s)
+                return 0
+            if (t >= e + release)
+                return 0
+            if (t < s + attack)
+                return word.ease((t - s) / attack)
+            if (t <= e)
+                return 1.0
+            return 1.0 - word.ease((t - e) / release)
+        }
+
+        readonly property bool alreadySung: sungState === 1 || (lineActive && root.pos >= (modelData.e ?? 0))
+
+        // Масштаб слова в Spicy: 0.96 (до пения) → 1.0 + 0.072*bounce (на гребне) → 1.00 (спето)
+        readonly property real sungScale: {
+            if (!root.spicy || root.karaoke || root.fillMode !== "word")
+                return 1.0
+            const env = word.envelope
+            const rest = word.alreadySung ? 1.0 : 0.96
+            if (env <= 0.001)
+                return rest
+            const peak = 1.0 + 0.072 * root.wordBounce
+            const vibrato = (word.held && env > 0.85) ? 0.014 * root.wordBounce * Math.sin((root.pos - (modelData.s ?? 0)) * Math.PI * 4.5) : 0
+            return rest + (peak - rest) * env + vibrato
+        }
+
+        // Вертикальный подъём слова («волна» Spicy Lyrics):
+        // до пения слово чуть ниже (+0.014em), на гребне поднимается до −0.088em (~3.5–4.5 px) и садится в 0
+        readonly property real sungLiftEm: {
+            if (!root.spicy || root.karaoke || root.fillMode !== "word")
+                return 0
+            const env = word.envelope
+            const rest = word.alreadySung ? 0.0 : 0.014 * root.wordBounce
+            if (env <= 0.001)
+                return rest
+            const peak = -0.088 * root.wordBounce
+            return rest + (peak - rest) * env
+        }
+
         readonly property real glow: {
-            if (!lineActive)
+            if (!wordAnimating)
+                return 0
+            if (root.fillMode === "line")
+                return root.spicy && lineActive ? 0.45 * root.highlightMultiplier : 0
+            if (root.fillMode !== "word")
                 return 0
             if (root.spicy)
-                return 0.55 * Math.sin(Math.PI * progress) * root.highlightMultiplier
+                return 0.90 * word.envelope * root.highlightMultiplier
             if (root.karaoke)
                 return 0
             return (held ? Math.sin(Math.PI * progress) : 0) * root.highlightMultiplier
         }
 
         // Пробел на конце слова — из общей метрики, отмасштабированной под размер строки
-        implicitWidth: label.implicitWidth + (spaced ? spaceMetrics.advanceWidth * (fontSize / Math.max(1, root.fontSize)) : 0)
+        implicitWidth: label.implicitWidth + (spaced ? spaceMetrics.advanceWidth * (fontSize / Math.max(1, root.activeFontPx)) : 0)
         implicitHeight: rowH
+
+        // Мягкий световой ореол вокруг поющегося слова в Spicy (аналог --text-shadow-blur-radius в Spicy Lyrics):
+        // включается только в стиле Spicy на том слове, которое прямо сейчас светится.
+        Text {
+            id: glowHalo
+            visible: root.spicy && word.glow > 0.015 && !Theme.lowPower && root.motion
+            anchors.centerIn: label
+            text: word.txt
+            font.family: Theme.fontFamily
+            font.pixelSize: word.fontSize
+            font.weight: Theme.variableFont ? Font.Normal : Font.Bold
+            font.variableAxes: Theme.fontAxes(word.fontSize, 700)
+            color: root.textColor
+            opacity: Math.min(0.68, word.glow * 0.58)
+            scale: label.scale * 1.04
+            transform: Translate { y: wordTranslate.y }
+            layer.enabled: visible
+            layer.smooth: true
+            layer.effect: MultiEffect {
+                blurEnabled: true
+                blurMax: 20
+                blur: 0.78
+                autoPaddingEnabled: true
+            }
+        }
 
         Text {
             id: label
-            height: word.rowH
+            // Google Sans рисует ≈1.36em в высоту, а строка держит 1.22em: текстура слоя без запаса
+            // срезала нижние выносные элементы. Добираем высоту паддингом — текст остаётся на месте.
+            readonly property real layerOverscan: Math.ceil(word.fontSize * 0.25)
+            height: word.rowH + 2 * layerOverscan
+            topPadding: layerOverscan
+            bottomPadding: layerOverscan
+            anchors.verticalCenter: parent.verticalCenter
             verticalAlignment: Text.AlignVCenter
             text: word.txt
             font.family: Theme.fontFamily
             font.pixelSize: word.fontSize
-            font.weight: Theme.variableFont ? Font.Normal : ((root.spicy && word.lineActive) ? Font.Black : Font.Bold)
-            font.variableAxes: (root.spicy && word.lineActive)
-                ? Theme.fontAxes(word.fontSize, 820)
-                : Theme.fontAxes(word.fontSize, 700)
+            font.weight: Theme.variableFont ? Font.Normal : Font.Bold
+            font.variableAxes: Theme.fontAxes(word.fontSize, 700)
             color: root.textColor
-            transformOrigin: Item.Bottom
-            scale: !root.spicy && root.fillMode === "word" ? (1 + 0.045 * word.glow) : 1.0
+            transformOrigin: root.spicy ? Item.Center : Item.Bottom
+            scale: root.spicy ? word.sungScale
+                 : (word.useWordShader ? (1 + 0.045 * word.glow * root.wordBounce) : 1.0)
+            Behavior on scale {
+                enabled: root.spicy && root.motion && !Theme.lowPower
+                NumberAnimation { duration: 95; easing.type: Easing.OutQuad }
+            }
 
             transform: Translate {
-                y: (!root.spicy && word.lineActive && root.fillMode === "word") ? -root.liftPx * root.easeOut(word.progress * 1.6) : 0
+                id: wordTranslate
+                y: root.spicy ? word.sungLiftEm * word.fontSize
+                   : (word.lineActive && word.useWordShader
+                      ? -root.liftPx * (root.karaoke ? Math.sin(Math.PI * word.progress) : root.easeOut(word.progress * 1.6))
+                      : 0)
                 Behavior on y {
-                    enabled: !root.spicy && !word.lineActive
-                    NumberAnimation { duration: root.motion ? 400 : 0; easing.type: Easing.OutCubic }
+                    enabled: root.motion && !Theme.lowPower && (root.spicy || !word.lineActive)
+                    NumberAnimation { duration: root.spicy ? 105 : 360; easing.type: Easing.OutCubic }
                 }
             }
 
-            layer.enabled: word.lineActive && root.fillMode === "word"
+            // Держим слой включённым на всех словах активной строки в режиме «word», чтобы сглаживание
+            // и чёткость шрифта не менялись скачком при переходе от слова к слову; на остальных
+            // неактивных строках и в режимах «line»/«off» слои слов полностью выключены.
+            layer.enabled: word.useWordShader
+            layer.smooth: true
             layer.effect: ShaderEffect {
-                readonly property real featherPx: word.fontSize * 0.45
-                readonly property real baseFeather: root.karaoke ? 0.002 : (root.spicy ? 0.32 : Math.min(0.5, featherPx / Math.max(1, label.width) / 2))
+                // Адаптивная ширина градиента в пикселях: и короткие, и длинные слова получают
+                // одинаково мягкий край заливки в Spicy и Классике, а в Караоке — чёткий срез.
+                readonly property real featherPx: word.fontSize * (root.spicy ? 0.72 : 0.45)
+                readonly property real baseFeather: root.karaoke
+                    ? 0.002
+                    : (root.spicy
+                        ? Math.max(0.34, Math.min(0.62, featherPx / Math.max(1, label.width)))
+                        : Math.min(0.5, featherPx / Math.max(1, label.width) / 2))
                 property real feather: Math.max(0.001, baseFeather * root.highlightMultiplier)
                 property real progress: -feather + word.progress * (1 + 2 * feather)
                 property real dimAlpha: root.dimAlpha

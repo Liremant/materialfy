@@ -1069,6 +1069,41 @@ Page {
         }
 
         SettingRow {
+            id: activeScaleRow
+            // Ajuste em 0 = "quem decide é o estilo": o valor mostrado é o que o estilo atual usa
+            readonly property real styleScale: Settings.lyricsMode === "spicy" ? 1.12 : (Settings.lyricsMode === "karaoke" ? 1.20 : 1.0)
+            readonly property real activeScaleVal: Settings.lyricsActiveScale > 0 ? Settings.lyricsActiveScale : styleScale
+            title: I18n.t("Active line scale")
+            description: Math.round(activeScaleVal * 100) <= 100
+                         ? I18n.t("Same size as other lines")
+                         : I18n.t("{0}%: enlarges the currently singing line", Math.round(activeScaleVal * 100))
+            Slider {
+                wheelEnabled: false
+                width: 220
+                from: 1.0
+                to: 1.35
+                stepSize: 0.05
+                value: activeScaleRow.activeScaleVal
+                valueText: v => Math.round(v * 100) + " %"
+                onMoved: v => { if (Settings.lyricsActiveScale !== undefined) Settings.lyricsActiveScale = Math.round(v * 20) / 20 }
+            }
+        }
+
+        SettingRow {
+            title: I18n.t("Text alignment")
+            description: Settings.lyricsTextAlign === "center" ? I18n.t("Centered text")
+                         : Settings.lyricsTextAlign === "right" ? I18n.t("Right aligned")
+                         : I18n.t("Left aligned")
+            ButtonGroup {
+                model: [I18n.t("Left"), I18n.t("Center"), I18n.t("Right")]
+                autoSelect: false
+                size: page.compact ? "xs" : "s"
+                currentIndex: Math.max(0, ["left", "center", "right"].indexOf(Settings.lyricsTextAlign))
+                onActivated: i => Settings.lyricsTextAlign = ["left", "center", "right"][i]
+            }
+        }
+
+        SettingRow {
             title: I18n.t("Fill mode")
             description: Settings.lyricsFillMode === "line" ? I18n.t("Whole line: the active line lights up all at once")
                          : Settings.lyricsFillMode === "off" ? I18n.t("Off: lines stay fully lit without progress fill")
@@ -1101,6 +1136,24 @@ Page {
         }
 
         SettingRow {
+            id: bounceRow
+            readonly property real bounceVal: Settings.lyricsWordBounce ?? 1.0
+            title: I18n.t("Word wave motion")
+            description: bounceVal <= 0.01 ? I18n.t("Off: words stay still while sung")
+                         : I18n.t("{0}%: vertical lift and pulse of sung words", Math.round(bounceVal * 100))
+            Slider {
+                wheelEnabled: false
+                width: 220
+                from: 0
+                to: 2.0
+                stepSize: 0.1
+                value: bounceRow.bounceVal
+                valueText: v => Math.round(v * 100) + " %"
+                onMoved: v => { if (Settings.lyricsWordBounce !== undefined) Settings.lyricsWordBounce = Math.round(v * 10) / 10 }
+            }
+        }
+
+        SettingRow {
             title: I18n.t("Background scrim")
             description: Settings.lyricsScrim === "soft" ? I18n.t("Soft tinted backing behind the lyrics")
                          : Settings.lyricsScrim === "strong" ? I18n.t("Prominent tinted backing behind the lyrics")
@@ -1111,19 +1164,6 @@ Page {
                 size: page.compact ? "xs" : "s"
                 currentIndex: Math.max(0, ["none", "soft", "strong"].indexOf(Settings.lyricsScrim))
                 onActivated: i => Settings.lyricsScrim = ["none", "soft", "strong"][i]
-            }
-        }
-
-        SettingRow {
-            title: I18n.t("Text alignment")
-            description: Settings.lyricsTextAlign === "center" ? I18n.t("Centered text")
-                         : I18n.t("Left aligned")
-            ButtonGroup {
-                model: [I18n.t("Left"), I18n.t("Center")]
-                autoSelect: false
-                size: page.compact ? "xs" : "s"
-                currentIndex: Math.max(0, ["left", "center"].indexOf(Settings.lyricsTextAlign))
-                onActivated: i => Settings.lyricsTextAlign = ["left", "center"][i]
             }
         }
 
@@ -1163,17 +1203,104 @@ Page {
         }
 
         SettingRow {
-            title: I18n.t("Line spacing")
-            description: I18n.t("{0}% of the style spacing", Math.round(Settings.lyricsLineSpacing * 100))
+            id: linesRow
+            readonly property int linesVal: {
+                const s = String(Settings.lyricsVisibleLines ?? "all").trim()
+                if (s === "all" || s === "") return 15
+                if (s === "one") return 1
+                if (s === "three") return 3
+                const n = parseInt(s, 10)
+                return (!isNaN(n) && n >= 1 && n <= 15) ? n : 15
+            }
+            title: I18n.t("Visible lines")
+            description: linesVal >= 15 ? I18n.t("All lines: the full song text is visible")
+                         : linesVal === 1 ? I18n.t("One line: only the active line is visible")
+                         : I18n.t("{0} lines around the singing line", linesVal)
             Slider {
-                wheelEnabled: false     // колесо прокручивает страницу, а не меняет настройку
+                wheelEnabled: false
+                width: 220
+                from: 1
+                to: 15
+                stepSize: 2
+                value: linesRow.linesVal
+                valueText: v => Math.round(v) >= 15 ? I18n.t("All lines") : String(Math.round(v))
+                onMoved: v => {
+                    const n = Math.round(v)
+                    Settings.lyricsVisibleLines = n >= 15 ? "all" : (n === 1 ? "one" : (n === 3 ? "three" : String(n)))
+                }
+            }
+        }
+
+        SettingRow {
+            id: idleScaleRow
+            // Ajuste em 0 = "quem decide é o estilo": o valor mostrado é o que o estilo atual usa
+            readonly property real effective: Settings.lyricsIdleScale > 0 ? Settings.lyricsIdleScale : 1.0
+            title: I18n.t("Inactive lines size")
+            description: I18n.t("{0}%: how much the lines around the singing one stay smaller", Math.round(effective * 100))
+            Slider {
+                wheelEnabled: false
                 width: 220
                 from: 0.8
-                to: 1.6
-                stepSize: 0.05
-                value: Settings.lyricsLineSpacing
+                to: 1.0
+                stepSize: 0.01
+                value: idleScaleRow.effective
                 valueText: v => Math.round(v * 100) + " %"
-                onMoved: v => Settings.lyricsLineSpacing = Math.round(v * 20) / 20
+                onMoved: v => { if (Settings.lyricsIdleScale !== undefined) Settings.lyricsIdleScale = Math.round(v * 100) / 100 }
+            }
+        }
+
+        SettingRow {
+            id: scrollMsRow
+            // -1 = o estilo decide (spicy 420, karaoke 480, clássico 650)
+            readonly property int styleMs: Settings.lyricsMode === "spicy" ? 420 : (Settings.lyricsMode === "karaoke" ? 480 : 650)
+            readonly property int effectiveMs: Settings.lyricsScrollMs >= 0 ? Settings.lyricsScrollMs : styleMs
+            title: I18n.t("Scroll speed")
+            description: I18n.t("{0} ms: how long the text takes to move to the next line", effectiveMs)
+            Slider {
+                wheelEnabled: false
+                width: 220
+                from: 200
+                to: 800
+                stepSize: 20
+                value: scrollMsRow.effectiveMs
+                valueText: v => Math.round(v) + " ms"
+                onMoved: v => { if (Settings.lyricsScrollMs !== undefined) Settings.lyricsScrollMs = Math.round(v / 20) * 20 }
+            }
+        }
+
+        SettingRow {
+            id: staggerRow
+            // -1 = o estilo decide (spicy 28, karaoke 32, clássico 45); 0 = bloco inteiro junto
+            readonly property int styleMs: Settings.lyricsMode === "spicy" ? 28 : (Settings.lyricsMode === "karaoke" ? 32 : 45)
+            readonly property int effectiveMs: Settings.lyricsStaggerMs >= 0 ? Settings.lyricsStaggerMs : styleMs
+            title: I18n.t("Cascade delay")
+            description: I18n.t("{0} ms between neighbouring lines; 0 moves the whole block together", effectiveMs)
+            Slider {
+                wheelEnabled: false
+                width: 220
+                from: 0
+                to: 80
+                stepSize: 4
+                value: staggerRow.effectiveMs
+                valueText: v => Math.round(v) + " ms"
+                onMoved: v => { if (Settings.lyricsStaggerMs !== undefined) Settings.lyricsStaggerMs = Math.round(v / 4) * 4 }
+            }
+        }
+
+        SettingRow {
+            id: dimRow
+            readonly property real dimVal: Settings.lyricsDimOpacity ?? 0.35
+            title: I18n.t("Inactive lines opacity")
+            description: I18n.t("{0}% brightness on unsung and neighbouring lines", Math.round(dimVal * 100))
+            Slider {
+                wheelEnabled: false
+                width: 220
+                from: 0.15
+                to: 0.75
+                stepSize: 0.05
+                value: dimRow.dimVal
+                valueText: v => Math.round(v * 100) + " %"
+                onMoved: v => { if (Settings.lyricsDimOpacity !== undefined) Settings.lyricsDimOpacity = Math.round(v * 20) / 20 }
             }
         }
 
@@ -1194,16 +1321,17 @@ Page {
         }
 
         SettingRow {
-            title: I18n.t("Visible lines")
-            description: Settings.lyricsVisibleLines === "three" ? I18n.t("Three lines: previous, active and next lines")
-                         : Settings.lyricsVisibleLines === "one" ? I18n.t("One line: only the active line is visible")
-                         : I18n.t("All lines: the full song text is visible")
-            ButtonGroup {
-                model: [I18n.t("All lines"), I18n.t("Three"), I18n.t("One")]
-                autoSelect: false
-                size: page.compact ? "xs" : "s"
-                currentIndex: Math.max(0, ["all", "three", "one"].indexOf(Settings.lyricsVisibleLines))
-                onActivated: i => Settings.lyricsVisibleLines = ["all", "three", "one"][i]
+            title: I18n.t("Line spacing")
+            description: I18n.t("{0}% of the style spacing", Math.round(Settings.lyricsLineSpacing * 100))
+            Slider {
+                wheelEnabled: false     // колесо прокручивает страницу, а не меняет настройку
+                width: 220
+                from: 0.8
+                to: 1.6
+                stepSize: 0.05
+                value: Settings.lyricsLineSpacing
+                valueText: v => Math.round(v * 100) + " %"
+                onMoved: v => Settings.lyricsLineSpacing = Math.round(v * 20) / 20
             }
         }
 
@@ -1219,23 +1347,6 @@ Page {
             Switch { checked: Settings.lyricsShowSource; onToggled: c => Settings.lyricsShowSource = c }
         }
 
-        SettingRow {
-            title: I18n.t("Sync adjustment")
-            description: Settings.lyricsSyncMs === 0 ? I18n.t("Exact sync with playback (0 ms)")
-                         : (Settings.lyricsSyncMs > 0 ? I18n.t("Lyrics lead playback by {0} ms", Settings.lyricsSyncMs)
-                         : I18n.t("Lyrics lag playback by {0} ms", Math.abs(Settings.lyricsSyncMs)))
-            Slider {
-                wheelEnabled: false
-                width: 220
-                from: -500
-                to: 500
-                stepSize: 25
-                value: Settings.lyricsSyncMs
-                valueText: v => (v > 0 ? "+" : "") + Math.round(v) + " ms"
-                onMoved: v => Settings.lyricsSyncMs = Math.round(v / 25) * 25
-            }
-        }
-
         RowLayout {
             Layout.fillWidth: true
             spacing: 8
@@ -1249,7 +1360,6 @@ Page {
             }
         }
     }
-
 
     // ================= Воспроизведение =================
     SettingsCard {
