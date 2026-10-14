@@ -63,6 +63,7 @@ pub mod qobject {
         #[qproperty(f64, lyrics_line_spacing, cxx_name = "lyricsLineSpacing", READ, WRITE = set_lyrics_line_spacing, NOTIFY = lyrics_line_spacing_changed)]
         #[qproperty(bool, lyrics_animate, cxx_name = "lyricsAnimate", READ, WRITE = set_lyrics_animate, NOTIFY = lyrics_animate_changed)]
         #[qproperty(bool, lyrics_show_source, cxx_name = "lyricsShowSource", READ, WRITE = set_lyrics_show_source, NOTIFY = lyrics_show_source_changed)]
+        #[qproperty(bool, lyrics_glow_halo, cxx_name = "lyricsGlowHalo", READ, WRITE = set_lyrics_glow_halo, NOTIFY = lyrics_glow_halo_changed)]
         #[qproperty(QString, animations, READ, WRITE = set_animations, NOTIFY = animations_changed)]
         /// "auto" | "on" | "off" — режим для слабых ПК (Theme.lowPower)
         #[qproperty(QString, low_power_mode, cxx_name = "lowPowerMode", READ, WRITE = set_low_power_mode, NOTIFY = low_power_mode_changed)]
@@ -160,6 +161,7 @@ pub mod qobject {
         fn set_lyrics_line_spacing(self: Pin<&mut Settings>, value: f64);
         fn set_lyrics_animate(self: Pin<&mut Settings>, value: bool);
         fn set_lyrics_show_source(self: Pin<&mut Settings>, value: bool);
+        fn set_lyrics_glow_halo(self: Pin<&mut Settings>, value: bool);
         fn set_animations(self: Pin<&mut Settings>, value: QString);
         fn set_low_power_mode(self: Pin<&mut Settings>, value: QString);
         fn set_gpu_preference(self: Pin<&mut Settings>, value: QString);
@@ -291,6 +293,9 @@ pub mod qobject {
         #[qsignal]
         #[cxx_name = "lyricsShowSourceChanged"]
         fn lyrics_show_source_changed(self: Pin<&mut Settings>);
+        #[qsignal]
+        #[cxx_name = "lyricsGlowHaloChanged"]
+        fn lyrics_glow_halo_changed(self: Pin<&mut Settings>);
         #[qsignal]
         #[cxx_name = "animationsChanged"]
         fn animations_changed(self: Pin<&mut Settings>);
@@ -630,6 +635,7 @@ settings! {
     lyrics_line_spacing: f64 = LyricsLineSpacing, set_lyrics_line_spacing, lyrics_line_spacing_changed;
     lyrics_animate: bool = LyricsAnimate, set_lyrics_animate, lyrics_animate_changed;
     lyrics_show_source: bool = LyricsShowSource, set_lyrics_show_source, lyrics_show_source_changed;
+    lyrics_glow_halo: bool = LyricsGlowHalo, set_lyrics_glow_halo, lyrics_glow_halo_changed;
     animations: QString = Animations, set_animations, animations_changed;
     low_power_mode: QString = LowPowerMode, set_low_power_mode, low_power_mode_changed;
     gpu_preference: QString = GpuPreference, set_gpu_preference, gpu_preference_changed;

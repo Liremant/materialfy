@@ -1154,6 +1154,12 @@ Page {
         }
 
         SettingRow {
+            title: I18n.t("Word glow halo")
+            description: I18n.t("Soft blur halo around sung words in Spicy style. Turn off to reduce GPU load")
+            Switch { checked: Settings.lyricsGlowHalo; onToggled: c => Settings.lyricsGlowHalo = c }
+        }
+
+        SettingRow {
             title: I18n.t("Background scrim")
             description: Settings.lyricsScrim === "soft" ? I18n.t("Soft tinted backing behind the lyrics")
                          : Settings.lyricsScrim === "strong" ? I18n.t("Prominent tinted backing behind the lyrics")

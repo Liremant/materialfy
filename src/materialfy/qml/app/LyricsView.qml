@@ -989,11 +989,11 @@ Item {
         implicitWidth: label.implicitWidth + (spaced ? spaceMetrics.advanceWidth * (fontSize / Math.max(1, root.activeFontPx)) : 0)
         implicitHeight: rowH
 
-        // Мягкий световой ореол вокруг поющегося слова в Spicy (аналог --text-shadow-blur-radius в Spicy Lyrics):
-        // включается только в стиле Spicy на том слове, которое прямо сейчас светится.
+        // Мягкий световой ореол вокруг поющегося слова в Spicy (аналог --text-shadow-blur-radius в Spicy Lyrics).
+        // FBO с MultiEffect на каждое слово сильно нагружает iGPU и может приводить к GPU hang, поэтому отключаемо.
         Text {
             id: glowHalo
-            visible: root.spicy && word.glow > 0.015 && !Theme.lowPower && root.motion
+            visible: Settings.lyricsGlowHalo && root.spicy && word.glow > 0.015 && !Theme.lowPower && root.motion
             anchors.centerIn: label
             text: word.txt
             font.family: Theme.fontFamily
