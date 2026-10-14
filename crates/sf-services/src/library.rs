@@ -121,6 +121,8 @@ struct PlaylistPage {
     snapshot: String,
     complete: bool,
     loading: bool,
+    /// идущее чтение: отменяется закрытием экрана или явным обновлением (записи это не трогает)
+    read: Option<tokio::task::AbortHandle>,
     pending_writes: usize,
     /// после записи перечитать (ошибка или чтение во время записи)
     reload_after_write: bool,
@@ -134,6 +136,55 @@ const SNAPSHOT_RECHECKS: [std::time::Duration; 3] = [
     std::time::Duration::from_secs(3),
     std::time::Duration::from_secs(6),
 ];
+
+/// Что делать при открытии плейлиста (записи уже нет: её проверяет вызывающий).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum OpenAction {
+    /// кэш уже на месте и показан в модели — ни Reset, ни перечитывания
+    Idle,
+    /// чтение уже идёт: не дублируем его и не сбрасываем модель, новому экрану остаётся Loading(true)
+    Loading,
+    /// перечитать
+    Fetch,
+}
+
+impl PlaylistPage {
+    fn open_action(&self, force: bool) -> OpenAction {
+        if self.loading {
+            return if force { OpenAction::Fetch } else { OpenAction::Loading };
+        }
+        if !force && self.complete && !self.reload_after_write {
+            OpenAction::Idle
+        } else {
+            OpenAction::Fetch
+        }
+    }
+}
+
+/// Тот же аккаунт и то же поколение страницы: ответ чтения ещё «свой».
+fn same_read(state: &State, id: &PlaylistId, generation: u64, page_generation: u64) -> bool {
+    state.generation == generation
+        && state.pages.get(id).is_some_and(|page| page.generation == page_generation)
+}
+
+/// То же, и записи не начались: их оптимистичные строки перечитывание не трогает.
+fn read_is_current(state: &State, id: &PlaylistId, generation: u64, page_generation: u64) -> bool {
+    same_read(state, id, generation, page_generation)
+        && state.pages.get(id).is_some_and(|page| page.pending_writes == 0)
+}
+
+/// Кэш плейлиста и его перезаливка в модель уходят кусками: первый — Reset, дальше — Append.
+/// Один гигантский Reset не готовится и не применяется целиком; порядок и повторы строк сохраняются.
+fn cached_events(id: &PlaylistId, rows: &[TrackItem]) -> Vec<LibraryEvent> {
+    rows.chunks(CHUNK)
+        .enumerate()
+        .map(|(i, chunk)| {
+            let change =
+                if i == 0 { ListChange::Reset(chunk.to_vec()) } else { ListChange::Append(chunk.to_vec()) };
+            LibraryEvent::PlaylistTracks { id: id.clone(), change }
+        })
+        .collect()
+}
 
 #[derive(Default)]
 struct State {
@@ -807,7 +858,8 @@ impl LibraryService {
         let ids: Vec<PlaylistId> = lock(&self.state).pages.keys().cloned().collect();
         if force {
             for id in ids {
-                self.load_playlist(id);
+                // явное обновление: идущие чтения перезапускаются, готовый кэш перечитывается
+                self.refresh_playlist(id);
             }
         }
     }
@@ -1380,31 +1432,98 @@ impl LibraryService {
         lock(&self.state).playlists_loading
     }
 
-    /// Загрузить/обновить треки плейлиста (сессия librespot для чужих, Web API для своих) → PlaylistTracks.
+    /// Открыть плейлист (сессия librespot для чужих, Web API для своих) → PlaylistTracks.
+    /// Без дублей: чтение уже идёт — не перезапускается; кэш уже показан — ни Reset, ни сети.
     pub fn load_playlist(&self, id: PlaylistId) {
-        let (generation, page_generation, rows, cached_needed, account) = {
+        self.open_playlist(id, false);
+    }
+
+    /// Явное обновление (кнопка «Обновить», перечитывание после правок): идущее чтение отменяется.
+    pub fn refresh_playlist(&self, id: PlaylistId) {
+        self.open_playlist(id, true);
+    }
+
+    fn open_playlist(&self, id: PlaylistId, force: bool) {
+        let (generation, page_generation, cached_needed, account, action) = {
             let mut state = lock(&self.state);
             let Some(account) = state.account.clone() else { return };
             let generation = state.generation;
             let page = state.pages.entry(id.clone()).or_default();
             if page.pending_writes > 0 {
                 page.reload_after_write = true;
-                let rows = page.rows.clone();
-                drop(state);
-                self.send([LibraryEvent::PlaylistTracks { id, change: ListChange::Reset(rows) }]);
                 return;
             }
-            page.generation += 1;
-            page.loading = true;
-            (generation, page.generation, page.rows.clone(), page.rows.is_empty(), account)
+            let action = page.open_action(force);
+            if action == OpenAction::Fetch {
+                if let Some(read) = page.read.take() {
+                    read.abort();
+                }
+                page.generation += 1;
+                page.loading = true;
+            }
+            (generation, page.generation, page.rows.is_empty(), account, action)
         };
-        self.send([
-            LibraryEvent::PlaylistTracks { id: id.clone(), change: ListChange::Reset(rows) },
-            LibraryEvent::PlaylistTracks { id: id.clone(), change: ListChange::Loading(true) },
-        ]);
-        self.spawn(move |service| async move {
-            service.fetch_playlist(id, generation, page_generation, cached_needed, account).await;
+        // новому экрану (и модели, созданной позже чтения) нужно видеть, что чтение идёт; при Idle
+        // чтения нет — погасить зависший loading, если он остался от пропущенных событий
+        let loading = action != OpenAction::Idle;
+        self.send([LibraryEvent::PlaylistTracks { id: id.clone(), change: ListChange::Loading(loading) }]);
+        if action == OpenAction::Loading {
+            return;
+        }
+        let me = self.me.clone();
+        let task_id = id.clone();
+        let read = self.rt.spawn(async move {
+            if let Some(service) = me.upgrade() {
+                service.fetch_playlist(task_id, generation, page_generation, cached_needed, account).await;
+            }
         });
+        // чтение запоминается под своей генерацией: заменить его может только более новое
+        let mut state = lock(&self.state);
+        if let Some(page) = state.pages.get_mut(&id)
+            && page.generation == page_generation
+        {
+            page.read = Some(read.abort_handle());
+        } else {
+            drop(state);
+            read.abort();
+        }
+    }
+
+    /// Экран закрылся: отменить чтение, которое больше никому не нужно (записи и воспроизведение не трогает).
+    pub fn cancel_playlist(&self, id: &PlaylistId) {
+        let mut state = lock(&self.state);
+        let Some(page) = state.pages.get_mut(id) else { return };
+        if page.pending_writes > 0 {
+            return;
+        }
+        if !page.loading {
+            page.read = None;
+            return;
+        }
+        if let Some(read) = page.read.take() {
+            read.abort();
+        }
+        page.generation += 1;
+        page.loading = false;
+        // loading при complete=true — это явное обновление (force) или перечитывание после правки;
+        // отмена не должна прятать намерение: иначе следующее открытие покажет старый кэш как Idle
+        page.complete = false;
+        let event = LibraryEvent::PlaylistTracks { id: id.clone(), change: ListChange::Loading(false) };
+        drop(state);
+        self.send([event]);
+    }
+
+    /// Модель моста может не видеть готовый кэш сервиса (новый мост, пропущенные события): перезалить
+    /// его кусками. События уходят в очередь под блокировкой состояния — чтение, начавшееся параллельно,
+    /// допишет свои куски после, устаревший Reset не догонит свежие строки.
+    pub fn replay_playlist(&self, id: &PlaylistId) {
+        let state = lock(&self.state);
+        let Some(page) = state.pages.get(id) else { return };
+        if page.rows.is_empty() {
+            return;
+        }
+        let events = cached_events(id, &page.rows);
+        self.send(events);
     }
 
     async fn fetch_playlist(
@@ -1416,10 +1535,10 @@ impl LibraryService {
         account: String,
     ) {
         let service = self;
+        // быстрая проверка перед ожиданием сети; принятие шапок/страниц/финала сверяется ещё раз под тем же блоком
         let still = |service: &Self| {
             let state = lock(&service.state);
-            state.generation == generation
-                && state.pages.get(&id).is_some_and(|page| page.generation == page_generation && page.pending_writes == 0)
+            read_is_current(&state, &id, generation, page_generation)
         };
         let cache_file = playlist_cache::path(&mf_platform::dirs::playlist_cache_dir(&account), id.as_str());
         if cached_needed {
@@ -1430,14 +1549,18 @@ impl LibraryService {
                     return;
                 }
                 known::remember(cached.items.iter());
-                let event = {
+                // кэш уходит кусками (первый Reset, дальше Append), а не одним гигантским Reset
+                let events = {
                     let mut state = lock(&service.state);
+                    if !read_is_current(&state, &id, generation, page_generation) {
+                        return;
+                    }
                     let page = state.pages.entry(id.clone()).or_default();
                     page.rows = cached.items.clone();
                     page.snapshot = cached.snapshot;
-                    LibraryEvent::PlaylistTracks { id: id.clone(), change: ListChange::Reset(cached.items) }
+                    cached_events(&id, &cached.items)
                 };
-                service.send([event]);
+                service.send(events);
             }
         }
         let api = service.auth.api();
@@ -1445,10 +1568,12 @@ impl LibraryService {
             let mut events = Vec::new();
             {
                 let mut state = lock(&service.state);
-                if let Some(page) = state.pages.get_mut(&id)
-                    && page.generation == page_generation
-                {
+                if !read_is_current(&state, &id, generation, page_generation) {
+                    return;
+                }
+                if let Some(page) = state.pages.get_mut(&id) {
                     page.loading = false;
+                    page.read = None;
                 }
             }
             events.push(LibraryEvent::PlaylistTracks { id: id.clone(), change: ListChange::Loading(false) });
@@ -1475,6 +1600,9 @@ impl LibraryService {
             // ответ со snapshot до нашей записи не должен вернуть строки, которые запись уже изменила
             let confirmed = {
                 let mut state = lock(&service.state);
+                if !read_is_current(&state, &id, generation, page_generation) {
+                    return;
+                }
                 let page = state.pages.entry(id.clone()).or_default();
                 match &page.expected_snapshot {
                     Some(expected) if header.snapshot_id.as_deref() != Some(expected.as_str()) => false,
@@ -1504,6 +1632,9 @@ impl LibraryService {
         let collaborative = header.collaborative;
         let up_to_date = {
             let mut state = lock(&service.state);
+            if !read_is_current(&state, &id, generation, page_generation) {
+                return;
+            }
             let page = state.pages.entry(id.clone()).or_default();
             page.header = Some(header);
             !snapshot.is_empty() && page.snapshot == snapshot && page.rows.len() == total as usize
@@ -1545,6 +1676,9 @@ impl LibraryService {
                 let change = if rows.is_empty() { ListChange::Reset(added.clone()) } else { ListChange::Append(added.clone()) };
                 {
                     let mut state = lock(&service.state);
+                    if !read_is_current(&state, &id, generation, page_generation) {
+                        return;
+                    }
                     let page = state.pages.entry(id.clone()).or_default();
                     if offset == 0 {
                         page.rows.clear();
@@ -1561,11 +1695,15 @@ impl LibraryService {
         }
         let event = {
             let mut state = lock(&service.state);
+            if !read_is_current(&state, &id, generation, page_generation) {
+                return;
+            }
             let page = state.pages.entry(id.clone()).or_default();
             let change = list_change(&page.rows, &rows);
             page.rows = rows.clone();
             page.snapshot = snapshot.clone();
             page.complete = true;
+            page.read = None;
             change.map(|change| LibraryEvent::PlaylistTracks { id: id.clone(), change })
         };
         service.send(event);
@@ -1728,7 +1866,8 @@ impl LibraryService {
             None => {}
         }
         if reload {
-            self.load_playlist(id.clone());
+            // после записи: кэш уже не «актуален» — перечитать принудительно
+            self.refresh_playlist(id.clone());
         }
     }
 
@@ -3182,5 +3321,83 @@ mod tests {
         state.saved_intents.insert("spotify:album:x".into(), false);
         assert!(!state.is_saved("spotify:album:x"));
         assert!(remove_saved(&mut state, "spotify:album:missing").is_none());
+    }
+
+    fn page_with(id: &str, complete: bool, loading: bool, reload_after_write: bool) -> (PlaylistId, State) {
+        let id = PlaylistId::from_uri_or_id(id);
+        let mut state = State { account: Some("me".into()), ..Default::default() };
+        let page = state.pages.entry(id.clone()).or_default();
+        page.complete = complete;
+        page.loading = loading;
+        page.reload_after_write = reload_after_write;
+        (id, state)
+    }
+
+    #[test]
+    fn reopening_a_ready_playlist_does_not_refetch_or_reset() {
+        let (id, state) = page_with("spotify:playlist:a", true, false, false);
+        assert_eq!(state.pages[&id].open_action(false), OpenAction::Idle);
+        assert_eq!(state.pages[&id].open_action(true), OpenAction::Fetch);
+    }
+
+    #[test]
+    fn in_flight_read_is_not_duplicated_but_refresh_restarts_it() {
+        let (id, state) = page_with("spotify:playlist:a", false, true, false);
+        assert_eq!(state.pages[&id].open_action(false), OpenAction::Loading);
+        assert_eq!(state.pages[&id].open_action(true), OpenAction::Fetch);
+        // чтение, помеченное перечитыванием после записи, тоже продолжается
+        let (id, state) = page_with("spotify:playlist:a", false, true, true);
+        assert_eq!(state.pages[&id].open_action(true), OpenAction::Fetch);
+    }
+
+    #[test]
+    fn incomplete_or_reload_marked_pages_refetch() {
+        let (id, state) = page_with("spotify:playlist:a", false, false, false);
+        assert_eq!(state.pages[&id].open_action(false), OpenAction::Fetch);
+        let (id, state) = page_with("spotify:playlist:a", true, false, true);
+        assert_eq!(state.pages[&id].open_action(false), OpenAction::Fetch);
+    }
+
+    #[test]
+    fn stale_generation_or_a_started_write_drops_the_answer() {
+        let (id, mut state) = page_with("spotify:playlist:a", false, true, false);
+        state.generation = 2;
+        assert!(!read_is_current(&state, &id, 1, 1), "смена аккаунта сбрасывает чтение");
+        let (id, mut state) = page_with("spotify:playlist:a", false, true, false);
+        state.pages.get_mut(&id).unwrap().generation = 7;
+        assert!(!read_is_current(&state, &id, 1, 1), "новое чтение страницы сбрасывает старое");
+        let (id, mut state) = page_with("spotify:playlist:a", false, true, false);
+        state.pages.get_mut(&id).unwrap().pending_writes = 1;
+        assert!(!read_is_current(&state, &id, 1, 1), "начавшаяся запись прерывает чтение");
+        let (id, state) = page_with("spotify:playlist:a", false, true, false);
+        assert!(read_is_current(&state, &id, 0, 0));
+        assert!(same_read(&state, &id, 0, 0));
+    }
+
+    #[test]
+    fn cached_rows_arrive_in_order_and_with_repeats() {
+        let id = PlaylistId::from_uri_or_id("spotify:playlist:a");
+        let track = |i: usize| TrackItem { uri: format!("spotify:track:{i}"), ..Default::default() };
+        let mut rows: Vec<TrackItem> = (0..CHUNK + 3).map(track).collect();
+        rows.push(track(0)); // повтор в конце должен дойти до модели
+        rows.insert(1, track(2)); // повтор в начале
+        let events = cached_events(&id, &rows);
+        assert_eq!(events.len(), 2, "по куску CHUNK");
+        let mut delivered: Vec<String> = Vec::new();
+        for event in &events {
+            match event {
+                LibraryEvent::PlaylistTracks { change: ListChange::Reset(chunk), .. } => {
+                    assert!(delivered.is_empty(), "Reset только первым куском");
+                    delivered.extend(chunk.iter().map(|r| r.uri.clone()));
+                }
+                LibraryEvent::PlaylistTracks { change: ListChange::Append(chunk), .. } => {
+                    delivered.extend(chunk.iter().map(|r| r.uri.clone()));
+                }
+                _ => panic!("только Reset/Append"),
+            }
+        }
+        let source: Vec<&str> = rows.iter().map(|r| r.uri.as_str()).collect();
+        assert_eq!(delivered, source, "порядок и повторы сохраняются");
+        assert!(matches!(&events[0], LibraryEvent::PlaylistTracks { change: ListChange::Reset(_), .. }));
     }
 }
