@@ -1042,12 +1042,10 @@ Item {
         implicitWidth: label.implicitWidth + (spaced ? spaceMetrics.advanceWidth * (fontSize / Math.max(1, root.activeFontPx)) : 0)
         implicitHeight: rowH
 
-        // Свечение слова управляется настройкой Settings.lyricsGlowHalo: если отключено — 0
-        readonly property real effectiveGlow: Settings.lyricsGlowHalo ? word.glow : 0
         // Слой шейдера включается ТОЛЬКО во время прохождения заливки по слову или пока не угасло свечение.
         // До и после этого слово рисуется нативным текстом без FBO и без шейдера.
         readonly property bool sweeping: word.useWordShader
-            && ((progress > 0 && progress < 1) || effectiveGlow > 0.005)
+            && ((progress > 0 && progress < 1) || word.glow > 0.005)
 
         Text {
             id: label
@@ -1092,7 +1090,7 @@ Item {
                 property real feather: Math.max(0.005, baseFeather * root.highlightMultiplier)
                 property real progress: -feather + word.progress * (1 + 2 * feather)
                 property real dimAlpha: word.shaderDimAlpha
-                property real glow: word.effectiveGlow
+                property real glow: word.glow
                 fragmentShader: root.fillShader
             }
         }

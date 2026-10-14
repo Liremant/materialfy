@@ -72,8 +72,6 @@ pub enum SettingKey {
     LyricsAnimate,
     /// показывать метку источника текста
     LyricsShowSource,
-    /// мягкий ореол свечения вокруг поющихся слов (MultiEffect blur, тяжелый для iGPU)
-    LyricsGlowHalo,
     /// "system" | "full" | "reduced" → Theme.reducedMotion
     Animations,
     /// режим для слабых ПК: "auto" (сам, когда кадры рисует процессор) | "on" | "off" → Theme.lowPower
@@ -183,7 +181,7 @@ pub enum SettingType {
 }
 
 impl SettingKey {
-    pub const ALL: [SettingKey; 81] = [
+    pub const ALL: [SettingKey; 80] = [
         SettingKey::ThemeMode,
         SettingKey::SchemeVariant,
         SettingKey::AccentFromCover,
@@ -214,7 +212,6 @@ impl SettingKey {
         SettingKey::LyricsLineSpacing,
         SettingKey::LyricsAnimate,
         SettingKey::LyricsShowSource,
-        SettingKey::LyricsGlowHalo,
         SettingKey::Animations,
         SettingKey::LowPowerMode,
         SettingKey::GpuPreference,
@@ -301,7 +298,6 @@ impl SettingKey {
             LyricsLineSpacing => "lyricsLineSpacing",
             LyricsAnimate => "lyricsAnimate",
             LyricsShowSource => "lyricsShowSource",
-            LyricsGlowHalo => "lyricsGlowHalo",
             Animations => "animations",
             LowPowerMode => "lowPowerMode",
             GpuPreference => "gpuPreference",
@@ -402,7 +398,6 @@ impl SettingKey {
             LyricsLineSpacing => Float(1.0),
             LyricsAnimate => Bool(true),
             LyricsShowSource => Bool(true),
-            LyricsGlowHalo => Bool(true),
             Animations => Str("system".into()),
             LowPowerMode => Str("auto".into()),
             GpuPreference => Str("auto".into()),
@@ -1176,7 +1171,7 @@ mod tests {
 
     #[test]
     fn schema() {
-        assert_eq!(SettingKey::ALL.len(), 81);
+        assert_eq!(SettingKey::ALL.len(), 80);
         for key in SettingKey::ALL {
             assert_eq!(SettingKey::from_name(key.name()), Some(key));
             assert_eq!(key.default_value().value_type(), key.value_type());
@@ -1508,7 +1503,7 @@ mod tests {
             "lyricsTextAlign", "lyricsFillMode", "lyricsVisibleLines", "lyricsHighlight",
             "lyricsActiveScale", "lyricsIdleScale", "lyricsWordBounce", "lyricsDimOpacity",
             "lyricsScrollMs", "lyricsStaggerMs", "lyricsBlurAmount",
-            "lyricsLineSpacing", "lyricsAnimate", "lyricsShowSource", "lyricsGlowHalo",
+            "lyricsLineSpacing", "lyricsAnimate", "lyricsShowSource",
             "animations", "lowPowerMode", "gpuPreference", "rightPanelOpen", "rightPanelTab", "sidebarCollapsed", "windowWidth",
             "windowHeight", "windowX", "windowY", "windowMaximized", "closeToTray", "wheelStep", "floatingPlayer", "floatingPlayerStyle",
             "taskbarWidgetPos", "floatingKeyHints", "libraryView",
