@@ -318,6 +318,8 @@ Page {
             id: rowCol
             readonly property var shelfData: parent ? parent.shelfData : ({})
             readonly property string kind: shelfData.kind ?? "tiles"
+            // Полка шире страницы? Условие для стрелок листания (см. ниже, почему не через `visible`)
+            readonly property bool scrollable: strip.contentWidth > strip.width + 1
             spacing: 12
             RowLayout {
                 Layout.fillWidth: true
@@ -365,18 +367,22 @@ Page {
                     color: Theme.fgSurfaceVariant
                 }
                 Item { Layout.fillWidth: true }
+                // Стрелки не скрываются через `visible`: показ/скрытие меняет ширину строки, от неё
+                // зависит `strip.width`, и условие «контент шире полки» начинало мигать — ColumnLayout
+                // переполировывался бесконечно (в раскладке полки «possible polish() loop», карточки
+                // наезжали друг на друга). Место под стрелки занято всегда, а невидимые выключены.
                 IconButton {
                     icon: "chevron_left"
                     size: "xs"
-                    enabled: !strip.atXBeginning
-                    visible: strip.contentWidth > strip.width
+                    enabled: rowCol.scrollable && !strip.atXBeginning
+                    opacity: rowCol.scrollable ? 1 : 0
                     onClicked: strip.pageBy(-1)
                 }
                 IconButton {
                     icon: "chevron_right"
                     size: "xs"
-                    enabled: !strip.atXEnd
-                    visible: strip.contentWidth > strip.width
+                    enabled: rowCol.scrollable && !strip.atXEnd
+                    opacity: rowCol.scrollable ? 1 : 0
                     onClicked: strip.pageBy(1)
                 }
             }

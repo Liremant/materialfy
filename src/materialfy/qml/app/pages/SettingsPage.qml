@@ -18,15 +18,96 @@ Page {
 
     readonly property var sections: [
         { key: "account", text: I18n.t("Account"), icon: "account_circle" },
+        { key: "appearance", text: I18n.t("Appearance"), icon: "palette" },
+        { key: "lyrics", text: I18n.t("Lyrics"), icon: "lyrics" },
+        { key: "reading", text: I18n.t("Reading"), icon: "visibility" },
         { key: "playback", text: I18n.t("Playback"), icon: "graphic_eq" },
         { key: "connect", text: "Spotify Connect", icon: "speaker_group" },
         { key: "network", text: I18n.t("Network"), icon: "lan" },
         { key: "storage", text: I18n.t("Storage"), icon: "database" },
-        { key: "appearance", text: I18n.t("Appearance"), icon: "palette" },
-        { key: "lyrics", text: I18n.t("Lyrics"), icon: "lyrics" },
         { key: "updates", text: I18n.t("Updates"), icon: "download" }
     ]
     property string currentSection: "account"
+
+    readonly property int screenCount: Qt.application.screens ? Qt.application.screens.length : 1
+
+    function isScreenActive(settingVal, screenIdx, totalScreens) {
+        if (!settingVal || settingVal === "" || settingVal === "0")
+            return screenIdx === 0
+        if (settingVal === "all")
+            return true
+        const parts = settingVal.split(",")
+        return parts.map(p => parseInt(p.trim(), 10)).indexOf(screenIdx) !== -1
+    }
+
+    function isAllScreensActive(settingVal, totalScreens) {
+        if (settingVal === "all")
+            return true
+        if (totalScreens <= 1)
+            return true
+        for (let i = 0; i < totalScreens; ++i) {
+            if (!page.isScreenActive(settingVal, i, totalScreens))
+                return false
+        }
+        return true
+    }
+
+    function toggleScreenSetting(settingVal, screenIdx, totalScreens) {
+        if (totalScreens <= 1)
+            return "all"
+        if (settingVal === "all")
+            return String(screenIdx)
+        let active = []
+        if (!settingVal || settingVal === "" || settingVal === "0") {
+            active = [0]
+        } else {
+            active = settingVal.split(",").map(p => parseInt(p.trim(), 10)).filter(n => !isNaN(n) && n >= 0 && n < totalScreens)
+        }
+
+        const pos = active.indexOf(screenIdx)
+        if (pos !== -1) {
+            if (active.length > 1)
+                active.splice(pos, 1)
+        } else {
+            active.push(screenIdx)
+            active.sort((a, b) => a - b)
+        }
+
+        if (active.length === totalScreens)
+            return "all"
+        return active.join(",")
+    }
+
+    function getScreenTaskbarPos(settingMapStr, fallbackPos, screenIdx) {
+        if (settingMapStr && settingMapStr !== "") {
+            try {
+                const map = JSON.parse(settingMapStr)
+                if (map && map[String(screenIdx)] !== undefined)
+                    return map[String(screenIdx)]
+            } catch (e) {}
+        }
+        return fallbackPos || "tray"
+    }
+
+    function setScreenTaskbarPos(screenIdx, pos) {
+        let map = {}
+        if (Settings.taskbarPositions !== "") {
+            try { map = JSON.parse(Settings.taskbarPositions) } catch (e) {}
+        }
+        map[String(screenIdx)] = pos
+        Settings.taskbarPositions = JSON.stringify(map)
+        if (screenIdx === 0)
+            Settings.taskbarWidgetPos = pos
+    }
+
+    function getActiveTaskbarScreenIndices(settingVal, totalScreens) {
+        const res = []
+        for (let i = 0; i < totalScreens; ++i) {
+            if (page.isScreenActive(settingVal, i, totalScreens))
+                res.push(i)
+        }
+        return res.length > 0 ? res : [0]
+    }
 
     readonly property var backdropModes: [
         { mode: "gauss", text: I18n.t("Soft"), hint: I18n.t("Even blur with no blotches or banding: the cover melts smoothly into color") },
@@ -57,12 +138,14 @@ Page {
     function cardFor(key) {
         switch (key) {
         case "account": return accountCard
+        case "appearance": return appearanceCard
+        case "window": return appearanceCard
+        case "lyrics": return lyricsCard
+        case "reading": return readingCard
         case "playback": return playbackCard
         case "connect": return connectCard
         case "network": return networkCard
         case "storage": return storageCard
-        case "appearance": return appearanceCard
-        case "lyrics": return lyricsCard
         case "updates": return updatesCard
         }
         return null
@@ -519,6 +602,655 @@ Page {
         }
     }
 
+    // ================= Внешний вид =================
+    SettingsCard {
+        id: appearanceCard
+        title: I18n.t("Appearance")
+        icon: "palette"
+
+        SettingRow {
+            title: I18n.t("Language")
+            // "system" (default) follows the OS UI language; the language names stay in their own language
+            ButtonGroup {
+                model: [I18n.t("System default"), "English", "Русский", "Português"]
+                autoSelect: false
+                size: page.compact ? "xs" : "s"
+                currentIndex: Math.max(0, ["system", "en", "ru", "pt"].indexOf(Settings.language))
+                onActivated: i => Settings.language = ["system", "en", "ru", "pt"][i]
+            }
+        }
+
+        SettingRow {
+            title: I18n.t("Theme")
+            ButtonGroup {
+                model: [{ text: I18n.t("System"), icon: "contrast" }, { text: I18n.t("Light"), icon: "light_mode" }, { text: I18n.t("Dark"), icon: "dark_mode" }]
+                autoSelect: false
+                size: page.compact ? "xs" : "s"
+                currentIndex: ["system", "light", "dark"].indexOf(Settings.themeMode)
+                onActivated: i => Settings.themeMode = ["system", "light", "dark"][i]
+            }
+        }
+
+        SettingRow {
+            title: I18n.t("Color from cover")
+            description: I18n.t("The app recolors to match the playing track’s cover")
+            Switch { checked: Settings.accentFromCover; onToggled: c => Settings.accentFromCover = c }
+        }
+
+        SettingRow {
+            title: I18n.t("Accent color")
+            description: Settings.accentFromCover ? I18n.t("When nothing is playing") : I18n.t("The app’s main color")
+            Flow {
+                width: Math.min(8 * 40, Math.max(160, page.width - 2 * page.sideMargin - 48))
+                spacing: 8
+                Repeater {
+                    model: [String(Theme.defaultSeed).toUpperCase(), "#1ED760", "#FF6D00", "#E8175D", "#6750A4", "#00A3FF", "#00BFA5", "#FFCC00"]
+                    MorphShape {
+                        required property string modelData
+                        readonly property bool current: Settings.customSeed.toUpperCase() === modelData
+                        width: 32
+                        height: 32
+                        shape: current || swatchArea.containsMouse ? "cookie6" : "circle"
+                        color: modelData
+                        scale: swatchArea.pressed ? 0.9 : 1
+                        Behavior on scale { NumberAnimation { duration: Theme.motion.effectsFast } }
+                        MorphShape {
+                            anchors.centerIn: parent
+                            width: 12; height: 12
+                            visible: parent.current
+                            shape: "circle"
+                            color: "white"
+                        }
+                        MouseArea {
+                            id: swatchArea
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: Settings.customSeed = parent.modelData
+                        }
+                    }
+                }
+            }
+        }
+
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing: 12
+            Label { text: I18n.t("Color scheme"); type: "bodyLarge" }
+            Flow {
+                Layout.fillWidth: true
+                spacing: 8
+                Repeater {
+                    model: ThemeEngine.variants
+                    Chip {
+                        required property string modelData
+                        text: page.variantNames[modelData] ?? modelData
+                        selected: Settings.schemeVariant === modelData
+                        onClicked: Settings.schemeVariant = modelData
+                    }
+                }
+            }
+        }
+        // ---- Фон и обложка ----
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.topMargin: 8
+            spacing: 10
+            Label { text: I18n.t("Cover background"); type: "titleSmall"; color: Theme.primary }
+            WavyDivider {
+                Layout.fillWidth: true
+                Layout.alignment: Qt.AlignVCenter
+                color: Theme.outlineVariant
+            }
+        }
+
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing: 12
+            Label { text: I18n.t("Cover background"); type: "bodyLarge" }
+            Flow {
+                Layout.fillWidth: true
+                spacing: 8
+                Repeater {
+                    model: page.backdropModes
+                    Chip {
+                        required property var modelData
+                        text: modelData.text
+                        selected: Settings.backdropMode === modelData.mode
+                        onClicked: Settings.backdropMode = modelData.mode
+                    }
+                }
+            }
+            Label {
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+                text: (page.backdropModes.find(m => m.mode === Settings.backdropMode) ?? page.backdropModes[0]).hint
+                type: "bodyMedium"
+                color: Theme.fgSurfaceVariant
+            }
+        }
+
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing: 12
+            Label { text: I18n.t("Color and background transition"); type: "bodyLarge" }
+            Flow {
+                Layout.fillWidth: true
+                spacing: 8
+                Repeater {
+                    model: page.transitions
+                    Chip {
+                        required property var modelData
+                        text: modelData.text
+                        selected: Settings.trackTransition === modelData.mode
+                        onClicked: Settings.trackTransition = modelData.mode
+                    }
+                }
+            }
+            Label {
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+                text: (page.transitions.find(m => m.mode === Settings.trackTransition) ?? page.transitions[0]).hint
+                type: "bodyMedium"
+                color: Theme.fgSurfaceVariant
+            }
+        }
+
+        SettingRow {
+            title: I18n.t("Player background blur")
+            enabled: Settings.backdropMode !== "palette"
+            opacity: enabled ? 1 : 0.5
+            description: Settings.backdropMode === "palette" ? I18n.t("The gradient doesn’t depend on the cover")
+                : I18n.t("{0}% · 0 is a sharp cover, 100 is color only", Math.round(Settings.nowPlayingBlur * 100))
+            Slider {
+                wheelEnabled: false     // колесо прокручивает страницу, а не меняет настройку
+                width: 220
+                from: 0
+                to: 1
+                stepSize: 0.05
+                value: Settings.nowPlayingBlur
+                valueText: v => Math.round(v * 100) + " %"
+                onMoved: v => Settings.nowPlayingBlur = Math.round(v * 20) / 20
+            }
+        }
+
+        SettingRow {
+            title: I18n.t("Blur drift")
+            description: Settings.nowPlayingDrift > 0
+                ? I18n.t("Background colors slowly shift while music plays")
+                : I18n.t("Off — the blur stays still")
+            Slider {
+                wheelEnabled: false     // колесо прокручивает страницу, а не меняет настройку
+                width: 220
+                from: 0
+                to: 1
+                stepSize: 0.05
+                value: Settings.nowPlayingDrift
+                valueText: v => v > 0 ? Math.round(v * 100) + " %" : I18n.t("off")
+                onMoved: v => Settings.nowPlayingDrift = Math.round(v * 20) / 20
+            }
+        }
+
+        SettingRow {
+            title: I18n.t("Ambient background")
+            description: I18n.t("The playing track’s cover, blurred behind the whole window as a soft colored glow")
+            Switch { checked: Settings.ambientBackground; onToggled: c => Settings.ambientBackground = c }
+        }
+
+        SettingRow {
+            title: I18n.t("Spinning cover frame")
+            description: I18n.t("While music plays, the shaped cover frame slowly rotates; the image itself stays still")
+            Switch { checked: Settings.coverSpin; onToggled: c => Settings.coverSpin = c }
+        }
+
+        SettingRow {
+            title: I18n.t("Cover pulses to the beat")
+            description: I18n.t("In the full-screen player, the cover gently pulses with the music’s loudness")
+            Switch { checked: Settings.coverPulse; onToggled: c => Settings.coverPulse = c }
+        }
+
+        // ---- Окно и плеер вне окна ----
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.topMargin: 8
+            spacing: 10
+            Label { text: I18n.t("Window"); type: "titleSmall"; color: Theme.primary }
+            WavyDivider {
+                Layout.fillWidth: true
+                Layout.alignment: Qt.AlignVCenter
+                color: Theme.outlineVariant
+            }
+        }
+
+        // Плеер вне окна: островок — Windows и X11 (на Wayland окно не встанет у края экрана само),
+        // панель задач — только Windows; где нет ни того ни другого, раздела нет
+        FloatingPlayerPicker {
+            id: floatingPicker
+            modes: ["off"]
+                .concat(Qt.platform.os === "windows" || (Qt.platform.os === "linux" && !Qt.platform.pluginName.startsWith("wayland")) ? ["island"] : [])
+                .concat(Qt.platform.os === "windows" ? ["taskbar", "both"] : [])
+            visible: modes.length > 1
+        }
+
+        SettingRow {
+            visible: floatingPicker.visible && (Settings.floatingPlayer === "island" || Settings.floatingPlayer === "both") && page.screenCount > 1
+            title: Settings.floatingPlayer === "both" ? I18n.t("Island displays") : I18n.t("Displays")
+            description: I18n.t("Choose which monitors display the island player")
+            Flow {
+                width: Math.min(420, Math.max(160, page.width - 2 * page.sideMargin - 48))
+                spacing: 8
+                Chip {
+                    text: I18n.t("All monitors")
+                    selected: page.isAllScreensActive(Settings.floatingIslandScreens, page.screenCount)
+                    onClicked: Settings.floatingIslandScreens = "all"
+                }
+                Repeater {
+                    model: page.screenCount
+                    delegate: Chip {
+                        required property int modelData
+                        text: I18n.t("Monitor") + " " + (modelData + 1)
+                        selected: page.isScreenActive(Settings.floatingIslandScreens, modelData, page.screenCount)
+                        onClicked: Settings.floatingIslandScreens = page.toggleScreenSetting(Settings.floatingIslandScreens, modelData, page.screenCount)
+                    }
+                }
+            }
+        }
+
+        SettingRow {
+            visible: floatingPicker.visible && (Settings.floatingPlayer === "taskbar" || Settings.floatingPlayer === "both") && page.screenCount > 1
+            title: Settings.floatingPlayer === "both" ? I18n.t("Taskbar displays") : I18n.t("Displays")
+            description: I18n.t("Choose which monitors display the taskbar player")
+            Flow {
+                width: Math.min(420, Math.max(160, page.width - 2 * page.sideMargin - 48))
+                spacing: 8
+                Chip {
+                    text: I18n.t("All monitors")
+                    selected: page.isAllScreensActive(Settings.taskbarScreens, page.screenCount)
+                    onClicked: Settings.taskbarScreens = "all"
+                }
+                Repeater {
+                    model: page.screenCount
+                    delegate: Chip {
+                        required property int modelData
+                        text: I18n.t("Monitor") + " " + (modelData + 1)
+                        selected: page.isScreenActive(Settings.taskbarScreens, modelData, page.screenCount)
+                        onClicked: Settings.taskbarScreens = page.toggleScreenSetting(Settings.taskbarScreens, modelData, page.screenCount)
+                    }
+                }
+            }
+        }
+
+        // Место виджета в панели задач (на каждом мониторе своё); перетаскивание виджета на панели ставит «своё»
+        Repeater {
+            model: floatingPicker.visible && (Settings.floatingPlayer === "taskbar" || Settings.floatingPlayer === "both")
+                   ? page.getActiveTaskbarScreenIndices(Settings.taskbarScreens, page.screenCount)
+                   : []
+            delegate: SettingRow {
+                id: screenPosRow
+                required property int modelData
+                readonly property string pos: page.getScreenTaskbarPos(Settings.taskbarPositions, Settings.taskbarWidgetPos, modelData)
+                readonly property var keys: ["left", "appsLeft", "appsRight", "tray"]
+                title: page.getActiveTaskbarScreenIndices(Settings.taskbarScreens, page.screenCount).length > 1
+                       ? I18n.t("Position on monitor {0}", modelData + 1)
+                       : I18n.t("Position in the taskbar")
+                description: keys.indexOf(pos) >= 0
+                             ? I18n.t("Or hold the player in the taskbar and drag it; it snaps to these spots")
+                             : I18n.t("Your own spot. Hold the player in the taskbar and drag it to move it again")
+                ButtonGroup {
+                    model: [I18n.t("Left"), I18n.t("Before apps"), I18n.t("After apps"), I18n.t("By the tray")]
+                    autoSelect: false
+                    size: page.compact ? "xs" : "s"
+                    currentIndex: screenPosRow.keys.indexOf(screenPosRow.pos)
+                    onActivated: i => page.setScreenTaskbarPos(screenPosRow.modelData, screenPosRow.keys[i])
+                }
+            }
+        }
+
+        SettingRow {
+            title: I18n.t("Compact sidebar")
+            description: I18n.t("Icons only. Turns on automatically in a narrow window")
+            Switch { checked: Settings.sidebarCollapsed; onToggled: c => Settings.sidebarCollapsed = c }
+        }
+
+        SettingRow {
+            title: I18n.t("Minimize to tray on close")
+            description: I18n.t("Closing the window hides it in the tray and the music keeps playing. Quit from the tray menu or with Ctrl+Q")
+            Switch { checked: Settings.closeToTray; onToggled: c => Settings.closeToTray = c }
+        }
+
+        SettingRow {
+            title: I18n.t("Mouse wheel scroll step")
+            description: I18n.t("{0} px per notch; grows up to ×2 when scrolling fast", Settings.wheelStep)
+            Slider {
+                wheelEnabled: false     // колесо прокручивает страницу, а не меняет настройку
+                width: 220
+                from: 60
+                to: 480
+                stepSize: 20
+                value: Settings.wheelStep
+                valueText: v => Math.round(v) + " px"
+                onMoved: v => Settings.wheelStep = Math.round(v)
+            }
+        }
+
+        // ---- Анимации и производительность ----
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.topMargin: 8
+            spacing: 10
+            Label { text: I18n.t("Animations"); type: "titleSmall"; color: Theme.primary }
+            WavyDivider {
+                Layout.fillWidth: true
+                Layout.alignment: Qt.AlignVCenter
+                color: Theme.outlineVariant
+            }
+        }
+
+        SettingRow {
+            title: I18n.t("Animations")
+            description: Settings.animations === "reduced" ? I18n.t("No motion or morphing: only short fades")
+                         : Settings.animations === "full" ? I18n.t("All transitions, waves and morphs")
+                         : Settings.systemReducedMotion === true ? I18n.t("Follows Windows: animation effects are currently off")
+                         : I18n.t("Follows Windows “Animation effects”")
+            ButtonGroup {
+                model: [I18n.t("System default"), I18n.t("Full"), I18n.t("Minimal")]
+                autoSelect: false
+                size: page.compact ? "xs" : "s"
+                currentIndex: ["system", "full", "reduced"].indexOf(Settings.animations)
+                onActivated: i => Settings.animations = ["system", "full", "reduced"][i]
+            }
+        }
+
+        SettingRow {
+            title: I18n.t("Weak computer mode")
+            description: Settings.lowPowerMode === "on" ? I18n.t("No background motion, shimmer, theme wipe or cover fades, minimal transitions")
+                         : Settings.lowPowerMode === "off" ? I18n.t("All effects, even when graphics are drawn by the processor")
+                         : Theme.lowPower ? I18n.t("On by itself: graphics are drawn by the processor, without the video card")
+                         : I18n.t("Turns on by itself when graphics are drawn by the processor")
+            ButtonGroup {
+                model: [I18n.t("Auto"), I18n.t("On"), I18n.t("Off")]
+                autoSelect: false
+                size: page.compact ? "xs" : "s"
+                currentIndex: ["auto", "on", "off"].indexOf(Settings.lowPowerMode)
+                onActivated: i => Settings.lowPowerMode = ["auto", "on", "off"][i]
+            }
+        }
+        // Видеокарта (Linux, гибридная графика): по умолчанию — как решит система; «Дискретная» включает PRIME offload
+        SettingRow {
+            visible: Qt.platform.os === "linux"
+            title: I18n.t("Graphics processor")
+            description: (Settings.gpuPreference === "integrated"
+                         ? I18n.t("Forces integrated graphics")
+                         : Settings.gpuPreference === "discrete"
+                         ? I18n.t("Forces dedicated graphics card")
+                         : I18n.t("The system picks the graphics card"))
+                         + " · " + I18n.t("Takes effect after restarting the app")
+            ButtonGroup {
+                model: [I18n.t("System"), I18n.t("Integrated"), I18n.t("Discrete")]
+                autoSelect: false
+                size: page.compact ? "xs" : "s"
+                currentIndex: Math.max(0, ["auto", "integrated", "discrete"].indexOf(Settings.gpuPreference))
+                onActivated: i => Settings.gpuPreference = ["auto", "integrated", "discrete"][i]
+            }
+        }
+
+        SettingRow {
+            title: I18n.t("Save power in background")
+            description: I18n.t("While the window is out of focus, decorative animations (progress wave, shapes, background shimmer) pause to reduce CPU load. Lyrics keep going")
+            Switch { checked: Settings.calmWhenInactive; onToggled: c => Settings.calmWhenInactive = c }
+        }
+    }
+
+    // ================= Текст песни =================
+    SettingsCard {
+        id: lyricsCard
+        title: I18n.t("Lyrics")
+        icon: "lyrics"
+
+        // Интерактивный предпросмотр строки текста в реальном времени
+        Rectangle {
+            Layout.fillWidth: true
+            implicitHeight: previewCol.implicitHeight + 28
+            radius: Theme.shape.large
+            color: Settings.lyricsScrim === "strong" ? Qt.rgba(Theme.surfaceContainerLowest.r, Theme.surfaceContainerLowest.g, Theme.surfaceContainerLowest.b, 0.75)
+                 : Settings.lyricsScrim === "soft" ? Qt.rgba(Theme.surfaceContainerLowest.r, Theme.surfaceContainerLowest.g, Theme.surfaceContainerLowest.b, 0.4)
+                 : "transparent"
+            border.width: 1
+            border.color: Theme.outlineVariant
+
+            ColumnLayout {
+                id: previewCol
+                anchors.centerIn: parent
+                width: parent.width - 32
+                spacing: Math.round(6 * Settings.lyricsLineSpacing)
+
+                Label {
+                    Layout.fillWidth: true
+                    visible: Settings.lyricsVisibleLines !== "one"
+                    horizontalAlignment: Settings.lyricsTextAlign === "center" ? Text.AlignHCenter : Text.AlignLeft
+                    text: "♫  When the music starts to play"
+                    type: "bodyLarge"
+                    color: Theme.fgSurfaceVariant
+                    opacity: Settings.lyricsBlurAmount > 0.4 ? 0.35 : 0.6
+                }
+                Label {
+                    Layout.fillWidth: true
+                    horizontalAlignment: Settings.lyricsTextAlign === "center" ? Text.AlignHCenter : Text.AlignLeft
+                    text: Settings.lyricsMode === "karaoke" ? "EVERY RHYTHM GUIDES THE WAY"
+                        : "Every rhythm guides the way"
+                    font.bold: Settings.lyricsMode !== "normal"
+                    font.pixelSize: Math.round(18 * Settings.lyricsFontScale * (Settings.lyricsMode === "spicy" ? 1.25 : (Settings.lyricsMode === "karaoke" ? 1.15 : 1.0)))
+                    color: Theme.primary
+                }
+                Label {
+                    Layout.fillWidth: true
+                    visible: Settings.lyricsVisibleLines === "all"
+                    horizontalAlignment: Settings.lyricsTextAlign === "center" ? Text.AlignHCenter : Text.AlignLeft
+                    text: "Singing through the night and day"
+                    type: "bodyLarge"
+                    color: Theme.fgSurfaceVariant
+                    opacity: Settings.lyricsBlurAmount > 0.4 ? 0.35 : 0.6
+                }
+            }
+        }
+
+        SettingRow {
+            title: I18n.t("Style")
+            description: Settings.lyricsMode === "spicy" ? I18n.t("Spicy style: the singing line is larger, with a soft gradient sweep and a glow")
+                         : Settings.lyricsMode === "karaoke" ? I18n.t("Karaoke: larger singing line with sharp word-by-word fill")
+                         : I18n.t("As it was: cascade scroll, blurred neighbouring lines")
+            ButtonGroup {
+                model: [I18n.t("Classic"), I18n.t("Spicy"), I18n.t("Karaoke")]
+                autoSelect: false
+                size: page.compact ? "xs" : "s"
+                currentIndex: Math.max(0, ["normal", "spicy", "karaoke"].indexOf(Settings.lyricsMode))
+                onActivated: i => Settings.lyricsMode = ["normal", "spicy", "karaoke"][i]
+            }
+        }
+
+        SettingRow {
+            title: I18n.t("Fill mode")
+            description: Settings.lyricsFillMode === "line" ? I18n.t("Whole line: the active line lights up all at once")
+                         : Settings.lyricsFillMode === "off" ? I18n.t("Off: lines stay fully lit without progress fill")
+                         : I18n.t("Word by word: words fill as they are sung")
+            ButtonGroup {
+                model: [I18n.t("Word by word"), I18n.t("Whole line"), I18n.t("Off")]
+                autoSelect: false
+                size: page.compact ? "xs" : "s"
+                currentIndex: Math.max(0, ["word", "line", "off"].indexOf(Settings.lyricsFillMode))
+                onActivated: i => Settings.lyricsFillMode = ["word", "line", "off"][i]
+            }
+        }
+
+        SettingRow {
+            title: I18n.t("Highlight intensity")
+            enabled: Settings.lyricsFillMode !== "off"
+            opacity: enabled ? 1 : 0.5
+            description: Settings.lyricsHighlight <= 0.01 ? I18n.t("Sharp cut with no gradient or glow")
+                         : I18n.t("{0}%: scales the gradient width and glow", Math.round(Settings.lyricsHighlight * 100))
+            Slider {
+                wheelEnabled: false
+                width: 220
+                from: 0
+                to: 2.0
+                stepSize: 0.05
+                value: Settings.lyricsHighlight
+                valueText: v => Math.round(v * 100) + " %"
+                onMoved: v => Settings.lyricsHighlight = Math.round(v * 20) / 20
+            }
+        }
+
+        SettingRow {
+            title: I18n.t("Background scrim")
+            description: Settings.lyricsScrim === "soft" ? I18n.t("Soft tinted backing behind the lyrics")
+                         : Settings.lyricsScrim === "strong" ? I18n.t("Prominent tinted backing behind the lyrics")
+                         : I18n.t("Transparent: lyrics sit directly over the backdrop")
+            ButtonGroup {
+                model: [I18n.t("None"), I18n.t("Soft"), I18n.t("Strong")]
+                autoSelect: false
+                size: page.compact ? "xs" : "s"
+                currentIndex: Math.max(0, ["none", "soft", "strong"].indexOf(Settings.lyricsScrim))
+                onActivated: i => Settings.lyricsScrim = ["none", "soft", "strong"][i]
+            }
+        }
+
+        SettingRow {
+            title: I18n.t("Text alignment")
+            description: Settings.lyricsTextAlign === "center" ? I18n.t("Centered text")
+                         : I18n.t("Left aligned")
+            ButtonGroup {
+                model: [I18n.t("Left"), I18n.t("Center")]
+                autoSelect: false
+                size: page.compact ? "xs" : "s"
+                currentIndex: Math.max(0, ["left", "center"].indexOf(Settings.lyricsTextAlign))
+                onActivated: i => Settings.lyricsTextAlign = ["left", "center"][i]
+            }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 8
+            Item { Layout.fillWidth: true }
+            Button {
+                text: I18n.t("Reading")
+                icon: "visibility"
+                style: "tonal"
+                size: "xs"
+                onClicked: page.scrollToSection("reading", true)
+            }
+        }
+    }
+
+    // ================= Чтение =================
+    SettingsCard {
+        id: readingCard
+        title: I18n.t("Reading")
+        icon: "visibility"
+
+        SettingRow {
+            title: I18n.t("Lyrics size")
+            description: I18n.t("{0}% of the default size", Math.round(Settings.lyricsFontScale * 100))
+            Slider {
+                wheelEnabled: false     // колесо прокручивает страницу, а не меняет настройку
+                width: 220
+                from: 0.7
+                to: 1.6
+                stepSize: 0.05
+                value: Settings.lyricsFontScale
+                valueText: v => Math.round(v * 100) + " %"
+                onMoved: v => Settings.lyricsFontScale = Math.round(v * 20) / 20
+            }
+        }
+
+        SettingRow {
+            title: I18n.t("Line spacing")
+            description: I18n.t("{0}% of the style spacing", Math.round(Settings.lyricsLineSpacing * 100))
+            Slider {
+                wheelEnabled: false     // колесо прокручивает страницу, а не меняет настройку
+                width: 220
+                from: 0.8
+                to: 1.6
+                stepSize: 0.05
+                value: Settings.lyricsLineSpacing
+                valueText: v => Math.round(v * 100) + " %"
+                onMoved: v => Settings.lyricsLineSpacing = Math.round(v * 20) / 20
+            }
+        }
+
+        SettingRow {
+            title: I18n.t("Blur other lines")
+            description: Settings.lyricsBlurAmount <= 0.01 ? I18n.t("No blur on inactive lines")
+                         : I18n.t("{0}% blur on inactive lines", Math.round(Settings.lyricsBlurAmount * 100))
+            Slider {
+                wheelEnabled: false
+                width: 220
+                from: 0
+                to: 1.0
+                stepSize: 0.05
+                value: Settings.lyricsBlurAmount
+                valueText: v => v > 0.01 ? Math.round(v * 100) + " %" : I18n.t("off")
+                onMoved: v => Settings.lyricsBlurAmount = Math.round(v * 20) / 20
+            }
+        }
+
+        SettingRow {
+            title: I18n.t("Visible lines")
+            description: Settings.lyricsVisibleLines === "three" ? I18n.t("Three lines: previous, active and next lines")
+                         : Settings.lyricsVisibleLines === "one" ? I18n.t("One line: only the active line is visible")
+                         : I18n.t("All lines: the full song text is visible")
+            ButtonGroup {
+                model: [I18n.t("All lines"), I18n.t("Three"), I18n.t("One")]
+                autoSelect: false
+                size: page.compact ? "xs" : "s"
+                currentIndex: Math.max(0, ["all", "three", "one"].indexOf(Settings.lyricsVisibleLines))
+                onActivated: i => Settings.lyricsVisibleLines = ["all", "three", "one"][i]
+            }
+        }
+
+        SettingRow {
+            title: I18n.t("Animations")
+            description: I18n.t("Smooth scrolling, cascade transitions and line shifts. Turn off for instant updates")
+            Switch { checked: Settings.lyricsAnimate; onToggled: c => Settings.lyricsAnimate = c }
+        }
+
+        SettingRow {
+            title: I18n.t("Lyrics source label")
+            description: I18n.t("Shows the source badge (e.g. “Spotify · line by line”)")
+            Switch { checked: Settings.lyricsShowSource; onToggled: c => Settings.lyricsShowSource = c }
+        }
+
+        SettingRow {
+            title: I18n.t("Sync adjustment")
+            description: Settings.lyricsSyncMs === 0 ? I18n.t("Exact sync with playback (0 ms)")
+                         : (Settings.lyricsSyncMs > 0 ? I18n.t("Lyrics lead playback by {0} ms", Settings.lyricsSyncMs)
+                         : I18n.t("Lyrics lag playback by {0} ms", Math.abs(Settings.lyricsSyncMs)))
+            Slider {
+                wheelEnabled: false
+                width: 220
+                from: -500
+                to: 500
+                stepSize: 25
+                value: Settings.lyricsSyncMs
+                valueText: v => (v > 0 ? "+" : "") + Math.round(v) + " ms"
+                onMoved: v => Settings.lyricsSyncMs = Math.round(v / 25) * 25
+            }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 8
+            Item { Layout.fillWidth: true }
+            Button {
+                text: I18n.t("Lyrics")
+                icon: "lyrics"
+                style: "tonal"
+                size: "xs"
+                onClicked: page.scrollToSection("lyrics", true)
+            }
+        }
+    }
+
+
     // ================= Воспроизведение =================
     SettingsCard {
         id: playbackCard
@@ -875,6 +1607,14 @@ Page {
             }
         }
 
+        // обложки по умолчанию идут через прокси, как всё остальное; CDN картинок часто открыт и напрямую
+        SettingRow {
+            visible: (Settings.proxyMode || "off") !== "off"
+            title: I18n.t("Covers bypass the proxy")
+            description: I18n.t("Load covers and pictures directly: faster on a slow proxy and saves its traffic. Spotify sees your real address for these images")
+            Switch { checked: Settings.coversBypassProxy; onToggled: c => Settings.coversBypassProxy = c }
+        }
+
         Label {
             Layout.fillWidth: true
             text: I18n.t("The proxy password is stored in Credential Manager. Local network device discovery bypasses the proxy.")
@@ -945,420 +1685,6 @@ Page {
             type: "bodySmall"
             color: Theme.fgSurfaceVariant
             wrapMode: Text.WordWrap
-        }
-    }
-
-    // ================= Внешний вид =================
-    SettingsCard {
-        id: appearanceCard
-        title: I18n.t("Appearance")
-        icon: "palette"
-
-        SettingRow {
-            title: I18n.t("Language")
-            // "system" (default) follows the OS UI language; the language names stay in their own language
-            ButtonGroup {
-                model: [I18n.t("System default"), "English", "Русский", "Português"]
-                autoSelect: false
-                size: page.compact ? "xs" : "s"
-                currentIndex: Math.max(0, ["system", "en", "ru", "pt"].indexOf(Settings.language))
-                onActivated: i => Settings.language = ["system", "en", "ru", "pt"][i]
-            }
-        }
-
-        SettingRow {
-            title: I18n.t("Theme")
-            ButtonGroup {
-                model: [{ text: I18n.t("System"), icon: "contrast" }, { text: I18n.t("Light"), icon: "light_mode" }, { text: I18n.t("Dark"), icon: "dark_mode" }]
-                autoSelect: false
-                size: page.compact ? "xs" : "s"
-                currentIndex: ["system", "light", "dark"].indexOf(Settings.themeMode)
-                onActivated: i => Settings.themeMode = ["system", "light", "dark"][i]
-            }
-        }
-
-        SettingRow {
-            title: I18n.t("Color from cover")
-            description: I18n.t("The app recolors to match the playing track’s cover")
-            Switch { checked: Settings.accentFromCover; onToggled: c => Settings.accentFromCover = c }
-        }
-
-        SettingRow {
-            title: I18n.t("Accent color")
-            description: Settings.accentFromCover ? I18n.t("When nothing is playing") : I18n.t("The app’s main color")
-            Flow {
-                width: Math.min(8 * 40, Math.max(160, page.width - 2 * page.sideMargin - 48))
-                spacing: 8
-                Repeater {
-                    model: [String(Theme.defaultSeed).toUpperCase(), "#1ED760", "#FF6D00", "#E8175D", "#6750A4", "#00A3FF", "#00BFA5", "#FFCC00"]
-                    MorphShape {
-                        required property string modelData
-                        readonly property bool current: Settings.customSeed.toUpperCase() === modelData
-                        width: 32
-                        height: 32
-                        shape: current || swatchArea.containsMouse ? "cookie6" : "circle"
-                        color: modelData
-                        scale: swatchArea.pressed ? 0.9 : 1
-                        Behavior on scale { NumberAnimation { duration: Theme.motion.effectsFast } }
-                        MorphShape {
-                            anchors.centerIn: parent
-                            width: 12; height: 12
-                            visible: parent.current
-                            shape: "circle"
-                            color: "white"
-                        }
-                        MouseArea {
-                            id: swatchArea
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
-                            onClicked: Settings.customSeed = parent.modelData
-                        }
-                    }
-                }
-            }
-        }
-
-        ColumnLayout {
-            Layout.fillWidth: true
-            spacing: 12
-            Label { text: I18n.t("Color scheme"); type: "bodyLarge" }
-            Flow {
-                Layout.fillWidth: true
-                spacing: 8
-                Repeater {
-                    model: ThemeEngine.variants
-                    Chip {
-                        required property string modelData
-                        text: page.variantNames[modelData] ?? modelData
-                        selected: Settings.schemeVariant === modelData
-                        onClicked: Settings.schemeVariant = modelData
-                    }
-                }
-            }
-        }
-        ColumnLayout {
-            Layout.fillWidth: true
-            spacing: 12
-            Label { text: I18n.t("Color and background transition"); type: "bodyLarge" }
-            Flow {
-                Layout.fillWidth: true
-                spacing: 8
-                Repeater {
-                    model: page.transitions
-                    Chip {
-                        required property var modelData
-                        text: modelData.text
-                        selected: Settings.trackTransition === modelData.mode
-                        onClicked: Settings.trackTransition = modelData.mode
-                    }
-                }
-            }
-            Label {
-                Layout.fillWidth: true
-                wrapMode: Text.Wrap
-                text: (page.transitions.find(m => m.mode === Settings.trackTransition) ?? page.transitions[0]).hint
-                type: "bodyMedium"
-                color: Theme.fgSurfaceVariant
-            }
-        }
-        ColumnLayout {
-            Layout.fillWidth: true
-            spacing: 12
-            Label { text: I18n.t("Cover background"); type: "bodyLarge" }
-            Flow {
-                Layout.fillWidth: true
-                spacing: 8
-                Repeater {
-                    model: page.backdropModes
-                    Chip {
-                        required property var modelData
-                        text: modelData.text
-                        selected: Settings.backdropMode === modelData.mode
-                        onClicked: Settings.backdropMode = modelData.mode
-                    }
-                }
-            }
-            Label {
-                Layout.fillWidth: true
-                wrapMode: Text.Wrap
-                text: (page.backdropModes.find(m => m.mode === Settings.backdropMode) ?? page.backdropModes[0]).hint
-                type: "bodyMedium"
-                color: Theme.fgSurfaceVariant
-            }
-        }
-        SettingRow {
-            title: I18n.t("Animations")
-            description: Settings.animations === "reduced" ? I18n.t("No motion or morphing: only short fades")
-                         : Settings.animations === "full" ? I18n.t("All transitions, waves and morphs")
-                         : Settings.systemReducedMotion === true ? I18n.t("Follows Windows: animation effects are currently off")
-                         : I18n.t("Follows Windows “Animation effects”")
-            ButtonGroup {
-                model: [I18n.t("System default"), I18n.t("Full"), I18n.t("Minimal")]
-                autoSelect: false
-                size: page.compact ? "xs" : "s"
-                currentIndex: ["system", "full", "reduced"].indexOf(Settings.animations)
-                onActivated: i => Settings.animations = ["system", "full", "reduced"][i]
-            }
-        }
-        SettingRow {
-            title: I18n.t("Weak computer mode")
-            description: Settings.lowPowerMode === "on" ? I18n.t("No background motion, shimmer, theme wipe or cover fades, minimal transitions")
-                         : Settings.lowPowerMode === "off" ? I18n.t("All effects, even when graphics are drawn by the processor")
-                         : Theme.lowPower ? I18n.t("On by itself: graphics are drawn by the processor, without the video card")
-                         : I18n.t("Turns on by itself when graphics are drawn by the processor")
-            ButtonGroup {
-                model: [I18n.t("Auto"), I18n.t("On"), I18n.t("Off")]
-                autoSelect: false
-                size: page.compact ? "xs" : "s"
-                currentIndex: ["auto", "on", "off"].indexOf(Settings.lowPowerMode)
-                onActivated: i => Settings.lowPowerMode = ["auto", "on", "off"][i]
-            }
-        }
-        SettingRow {
-            title: I18n.t("Player background blur")
-            enabled: Settings.backdropMode !== "palette"
-            opacity: enabled ? 1 : 0.5
-            description: Settings.backdropMode === "palette" ? I18n.t("The gradient doesn’t depend on the cover")
-                : I18n.t("{0}% · 0 is a sharp cover, 100 is color only", Math.round(Settings.nowPlayingBlur * 100))
-            Slider {
-                wheelEnabled: false     // колесо прокручивает страницу, а не меняет настройку
-                width: 220
-                from: 0
-                to: 1
-                stepSize: 0.05
-                value: Settings.nowPlayingBlur
-                valueText: v => Math.round(v * 100) + " %"
-                onMoved: v => Settings.nowPlayingBlur = Math.round(v * 20) / 20
-            }
-        }
-        SettingRow {
-            title: I18n.t("Blur drift")
-            description: Settings.nowPlayingDrift > 0
-                ? I18n.t("Background colors slowly shift while music plays")
-                : I18n.t("Off — the blur stays still")
-            Slider {
-                wheelEnabled: false     // колесо прокручивает страницу, а не меняет настройку
-                width: 220
-                from: 0
-                to: 1
-                stepSize: 0.05
-                value: Settings.nowPlayingDrift
-                valueText: v => v > 0 ? Math.round(v * 100) + " %" : I18n.t("off")
-                onMoved: v => Settings.nowPlayingDrift = Math.round(v * 20) / 20
-            }
-        }
-        SettingRow {
-            title: I18n.t("Save power in background")
-            description: I18n.t("While the window is out of focus, decorative animations (progress wave, shapes, background shimmer) pause to reduce CPU load. Lyrics keep going")
-            Switch { checked: Settings.calmWhenInactive; onToggled: c => Settings.calmWhenInactive = c }
-        }
-        SettingRow {
-            title: I18n.t("Spinning cover frame")
-            description: I18n.t("While music plays, the shaped cover frame slowly rotates; the image itself stays still")
-            Switch { checked: Settings.coverSpin; onToggled: c => Settings.coverSpin = c }
-        }
-        SettingRow {
-            title: I18n.t("Cover pulses to the beat")
-            description: I18n.t("In the full-screen player, the cover gently pulses with the music’s loudness")
-            Switch { checked: Settings.coverPulse; onToggled: c => Settings.coverPulse = c }
-        }
-        SettingRow {
-            title: I18n.t("Ambient background")
-            description: I18n.t("The playing track’s cover, blurred behind the whole window as a soft colored glow")
-            Switch { checked: Settings.ambientBackground; onToggled: c => Settings.ambientBackground = c }
-        }
-    }
-
-    SettingsCard {
-        title: I18n.t("Window")
-        icon: "web_asset"
-
-        SettingRow {
-            title: I18n.t("Compact sidebar")
-            description: I18n.t("Icons only. Turns on automatically in a narrow window")
-            Switch { checked: Settings.sidebarCollapsed; onToggled: c => Settings.sidebarCollapsed = c }
-        }
-        SettingRow {
-            title: I18n.t("Minimize to tray on close")
-            description: I18n.t("Closing the window hides it in the tray and the music keeps playing. Quit from the tray menu or with Ctrl+Q")
-            Switch { checked: Settings.closeToTray; onToggled: c => Settings.closeToTray = c }
-        }
-        SettingRow {
-            title: I18n.t("Mouse wheel scroll step")
-            description: I18n.t("{0} px per notch; grows up to ×2 when scrolling fast", Settings.wheelStep)
-            Slider {
-                wheelEnabled: false     // колесо прокручивает страницу, а не меняет настройку
-                width: 220
-                from: 60
-                to: 480
-                stepSize: 20
-                value: Settings.wheelStep
-                valueText: v => Math.round(v) + " px"
-                onMoved: v => Settings.wheelStep = Math.round(v)
-            }
-        }
-    }
-
-    // ================= Текст песни =================
-    SettingsCard {
-        id: lyricsCard
-        title: I18n.t("Lyrics style")
-        icon: "lyrics"
-
-        SettingRow {
-            title: I18n.t("Style")
-            description: Settings.lyricsMode === "spicy" ? I18n.t("Spicy style: the singing line is larger, with a soft gradient sweep and a glow")
-                         : Settings.lyricsMode === "karaoke" ? I18n.t("Karaoke: larger singing line with sharp word-by-word fill")
-                         : I18n.t("As it was: cascade scroll, blurred neighbouring lines")
-            ButtonGroup {
-                model: [I18n.t("Classic"), I18n.t("Spicy"), I18n.t("Karaoke")]
-                autoSelect: false
-                size: page.compact ? "xs" : "s"
-                currentIndex: Math.max(0, ["normal", "spicy", "karaoke"].indexOf(Settings.lyricsMode))
-                onActivated: i => Settings.lyricsMode = ["normal", "spicy", "karaoke"][i]
-            }
-        }
-        SettingRow {
-            title: I18n.t("Lyrics size")
-            description: I18n.t("{0}% of the default size", Math.round(Settings.lyricsFontScale * 100))
-            Slider {
-                wheelEnabled: false     // колесо прокручивает страницу, а не меняет настройку
-                width: 220
-                from: 0.7
-                to: 1.6
-                stepSize: 0.05
-                value: Settings.lyricsFontScale
-                valueText: v => Math.round(v * 100) + " %"
-                onMoved: v => Settings.lyricsFontScale = Math.round(v * 20) / 20
-            }
-        }
-        SettingRow {
-            title: I18n.t("Text alignment")
-            description: Settings.lyricsTextAlign === "center" ? I18n.t("Centered text")
-                         : I18n.t("Left aligned")
-            ButtonGroup {
-                model: [I18n.t("Left"), I18n.t("Center")]
-                autoSelect: false
-                size: page.compact ? "xs" : "s"
-                currentIndex: Math.max(0, ["left", "center"].indexOf(Settings.lyricsTextAlign))
-                onActivated: i => Settings.lyricsTextAlign = ["left", "center"][i]
-            }
-        }
-        SettingRow {
-            title: I18n.t("Fill mode")
-            description: Settings.lyricsFillMode === "line" ? I18n.t("Whole line: the active line lights up all at once")
-                         : Settings.lyricsFillMode === "off" ? I18n.t("Off: lines stay fully lit without progress fill")
-                         : I18n.t("Word by word: words fill as they are sung")
-            ButtonGroup {
-                model: [I18n.t("Word by word"), I18n.t("Whole line"), I18n.t("Off")]
-                autoSelect: false
-                size: page.compact ? "xs" : "s"
-                currentIndex: Math.max(0, ["word", "line", "off"].indexOf(Settings.lyricsFillMode))
-                onActivated: i => Settings.lyricsFillMode = ["word", "line", "off"][i]
-            }
-        }
-        SettingRow {
-            title: I18n.t("Visible lines")
-            description: Settings.lyricsVisibleLines === "three" ? I18n.t("Three lines: previous, active and next lines")
-                         : Settings.lyricsVisibleLines === "one" ? I18n.t("One line: only the active line is visible")
-                         : I18n.t("All lines: the full song text is visible")
-            ButtonGroup {
-                model: [I18n.t("All lines"), I18n.t("Three"), I18n.t("One")]
-                autoSelect: false
-                size: page.compact ? "xs" : "s"
-                currentIndex: Math.max(0, ["all", "three", "one"].indexOf(Settings.lyricsVisibleLines))
-                onActivated: i => Settings.lyricsVisibleLines = ["all", "three", "one"][i]
-            }
-        }
-        SettingRow {
-            title: I18n.t("Highlight intensity")
-            description: Settings.lyricsHighlight <= 0.01 ? I18n.t("Sharp cut with no gradient or glow")
-                         : I18n.t("{0}%: scales the gradient width and glow", Math.round(Settings.lyricsHighlight * 100))
-            Slider {
-                wheelEnabled: false
-                width: 220
-                from: 0
-                to: 2.0
-                stepSize: 0.05
-                value: Settings.lyricsHighlight
-                valueText: v => Math.round(v * 100) + " %"
-                onMoved: v => Settings.lyricsHighlight = Math.round(v * 20) / 20
-            }
-        }
-    }
-
-    SettingsCard {
-        title: I18n.t("Reading")
-        icon: "visibility"
-
-        SettingRow {
-            title: I18n.t("Blur other lines")
-            description: Settings.lyricsBlurAmount <= 0.01 ? I18n.t("No blur on inactive lines")
-                         : I18n.t("{0}% blur on inactive lines", Math.round(Settings.lyricsBlurAmount * 100))
-            Slider {
-                wheelEnabled: false
-                width: 220
-                from: 0
-                to: 1.0
-                stepSize: 0.05
-                value: Settings.lyricsBlurAmount
-                valueText: v => v > 0.01 ? Math.round(v * 100) + " %" : I18n.t("off")
-                onMoved: v => Settings.lyricsBlurAmount = Math.round(v * 20) / 20
-            }
-        }
-        SettingRow {
-            title: I18n.t("Line spacing")
-            description: I18n.t("{0}% of the style spacing", Math.round(Settings.lyricsLineSpacing * 100))
-            Slider {
-                wheelEnabled: false
-                width: 220
-                from: 0.8
-                to: 1.6
-                stepSize: 0.05
-                value: Settings.lyricsLineSpacing
-                valueText: v => Math.round(v * 100) + " %"
-                onMoved: v => Settings.lyricsLineSpacing = Math.round(v * 20) / 20
-            }
-        }
-        SettingRow {
-            title: I18n.t("Animations")
-            description: I18n.t("Smooth scrolling, cascade transitions and line shifts. Turn off for instant updates")
-            Switch { checked: Settings.lyricsAnimate; onToggled: c => Settings.lyricsAnimate = c }
-        }
-        SettingRow {
-            title: I18n.t("Lyrics source label")
-            description: I18n.t("Shows the source badge (e.g. “Spotify · line by line”)")
-            Switch { checked: Settings.lyricsShowSource; onToggled: c => Settings.lyricsShowSource = c }
-        }
-        SettingRow {
-            title: I18n.t("Background scrim")
-            description: Settings.lyricsScrim === "soft" ? I18n.t("Soft tinted backing behind the lyrics")
-                         : Settings.lyricsScrim === "strong" ? I18n.t("Prominent tinted backing behind the lyrics")
-                         : I18n.t("Transparent: lyrics sit directly over the backdrop")
-            ButtonGroup {
-                model: [I18n.t("None"), I18n.t("Soft"), I18n.t("Strong")]
-                autoSelect: false
-                size: page.compact ? "xs" : "s"
-                currentIndex: Math.max(0, ["none", "soft", "strong"].indexOf(Settings.lyricsScrim))
-                onActivated: i => Settings.lyricsScrim = ["none", "soft", "strong"][i]
-            }
-        }
-        SettingRow {
-            title: I18n.t("Sync adjustment")
-            description: Settings.lyricsSyncMs === 0 ? I18n.t("Exact sync with playback (0 ms)")
-                         : (Settings.lyricsSyncMs > 0 ? I18n.t("Lyrics lead playback by {0} ms", Settings.lyricsSyncMs)
-                         : I18n.t("Lyrics lag playback by {0} ms", Math.abs(Settings.lyricsSyncMs)))
-            Slider {
-                wheelEnabled: false
-                width: 220
-                from: -500
-                to: 500
-                stepSize: 25
-                value: Settings.lyricsSyncMs
-                valueText: v => (v > 0 ? "+" : "") + Math.round(v) + " ms"
-                onMoved: v => Settings.lyricsSyncMs = Math.round(v / 25) * 25
-            }
         }
     }
 

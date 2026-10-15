@@ -160,6 +160,16 @@ const ENGINE_KEYS: [SettingKey; 7] = [
     SettingKey::AudioCacheMb,
 ];
 
+/// Отпечаток адреса прокси движка (с логином): заметить смену, не храня пароль в открытом виде.
+fn proxy_fingerprint(proxy: &ProxyConfig) -> Option<u64> {
+    use std::hash::{Hash, Hasher};
+    proxy.librespot_url().map(|url| {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        url.as_str().hash(&mut hasher);
+        hasher.finish()
+    })
+}
+
 /// Чем запущенный движок отличается от настроек (без tap/eq/громкости/autoplay).
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct EngineKey {
@@ -170,7 +180,8 @@ struct EngineKey {
     audio_device: Option<String>,
     audio_cache_dir: Option<PathBuf>,
     audio_cache_limit: Option<u64>,
-    proxy: Option<String>,
+    /// отпечаток адреса прокси движка: в адресе может быть пароль, а ключ попадает в отладочный вывод
+    proxy: Option<u64>,
 }
 
 impl EngineKey {
@@ -183,7 +194,7 @@ impl EngineKey {
             audio_device: config.audio_device.clone(),
             audio_cache_dir: config.audio_cache_dir.clone(),
             audio_cache_limit: config.audio_cache_limit,
-            proxy: config.proxy.librespot_url().map(|url| url.to_string()),
+            proxy: proxy_fingerprint(&config.proxy),
         }
     }
 }
@@ -1206,7 +1217,9 @@ impl AuthService {
             return;
         }
         if self.refuse_unsupported_proxy() {
-            self.session_login_failed(&self.snapshot.borrow().playback_error.clone());
+            // текст — копией: borrow() держит замок снимка, а session_login_failed в него пишет (взаимная блокировка)
+            let text = self.snapshot.borrow().playback_error.clone();
+            self.session_login_failed(&text);
             return;
         }
         let (epoch, generation, proxy) = {
@@ -1429,7 +1442,9 @@ impl AuthService {
             return;
         }
         if self.refuse_unsupported_proxy() {
-            self.session_login_failed(&self.snapshot.borrow().playback_error.clone());
+            // текст — копией: borrow() держит замок снимка, а session_login_failed в него пишет (взаимная блокировка)
+            let text = self.snapshot.borrow().playback_error.clone();
+            self.session_login_failed(&text);
             return;
         }
         let http = match self.http.client() {
@@ -1905,7 +1920,7 @@ impl AuthService {
                 }
             }
             service.http.replace(client);
-            let new_url = config.librespot_url().map(|url| url.to_string());
+            let new_url = proxy_fingerprint(&config);
             let restart = {
                 let mut inner = lock(&service.inner);
                 inner.proxy = config.clone();

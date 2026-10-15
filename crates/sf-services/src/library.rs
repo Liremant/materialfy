@@ -938,6 +938,7 @@ impl LibraryService {
                 let Some(offset) = lock(&service.state).liked.request_offset() else { break };
                 if !feed_opened {
                     feed_opened = true;
+                    route::wait_account_session(&service.auth.api(), &service.player, route::STARTUP_SESSION_WAIT).await;
                     feed = LikedFeed::open(&service.auth.api(), &service.player).await;
                     if feed.is_none() && route::account_session(&service.auth.api(), &service.player).is_none() {
                         let mut state = lock(&service.state);
@@ -1735,6 +1736,12 @@ impl LibraryService {
     /// Строки для оптимистичной вставки: известные или дочитанные из каталога.
     async fn resolve_rows(&self, uris: &[String], hint: Option<&TrackItem>) -> Vec<TrackItem> {
         let mut rows = Vec::with_capacity(uris.len());
+        let unknown: Vec<String> = uris
+            .iter()
+            .filter(|uri| hint.is_none_or(|hint| hint.play_uri() != **uri) && known::get(uri).is_none())
+            .cloned()
+            .collect();
+        let mut from_session = self.session_rows(&unknown).await;
         let mut client = None;
         for uri in uris {
             if let Some(hint) = hint.filter(|hint| hint.play_uri() == *uri) {
@@ -1742,6 +1749,11 @@ impl LibraryService {
                 continue;
             }
             if let Some(row) = known::get(uri) {
+                rows.push(row);
+                continue;
+            }
+            if let Some(row) = from_session.remove(uri) {
+                known::remember([&row]);
                 rows.push(row);
                 continue;
             }
@@ -1759,6 +1771,38 @@ impl LibraryService {
             let row = fetched.unwrap_or_else(|| TrackItem { uri: uri.clone(), available: true, ..Default::default() });
             known::remember([&row]);
             rows.push(row);
+        }
+        rows
+    }
+
+    /// Треки и выпуски по URI одной-двумя пачками метаданных сессии (без квоты Web API); чего нет — пусто.
+    async fn session_rows(&self, uris: &[String]) -> HashMap<String, TrackItem> {
+        let mut rows = HashMap::new();
+        if uris.is_empty() {
+            return rows;
+        }
+        let Some(session) = route::account_session(&self.auth.api(), &self.player) else { return rows };
+        let tracks: Vec<String> = uris.iter().filter(|uri| uri_kind(uri) == "track").cloned().collect();
+        let episodes: Vec<String> = uris.iter().filter(|uri| uri_kind(uri) == "episode").cloned().collect();
+        let read_tracks = async {
+            if tracks.is_empty() {
+                return None;
+            }
+            sf_player::engine::session_collection::tracks(&session, &tracks).await.ok()
+        };
+        let read_episodes = async {
+            if episodes.is_empty() {
+                return None;
+            }
+            sf_player::engine::session_podcasts::episodes(&session, &episodes).await.ok()
+        };
+        let read = async { tokio::join!(read_tracks, read_episodes) };
+        let Ok((tracks, episodes)) = tokio::time::timeout(std::time::Duration::from_secs(15), read).await else { return rows };
+        for (uri, track) in tracks.unwrap_or_default() {
+            rows.insert(uri, map::track_item(&track));
+        }
+        for episode in episodes.unwrap_or_default() {
+            rows.insert(episode.uri.clone(), map::episode_item(&episode, None).to_track());
         }
         rows
     }
@@ -2600,6 +2644,7 @@ impl LibraryService {
     }
 
     async fn fetch_section(&self, section: Section, generation: u64) -> Result<(), ApiError> {
+        route::wait_account_session(&self.auth.api(), &self.player, route::STARTUP_SESSION_WAIT).await;
         if self.session_section(section, generation).await {
             return Ok(());
         }

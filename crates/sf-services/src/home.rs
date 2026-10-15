@@ -20,7 +20,7 @@ use mf_platform::{SettingKey, SettingsStore};
 
 use crate::ServiceError;
 use crate::auth::{AuthEvent, AuthService};
-use crate::data::{home_cache, home_feed, route};
+use crate::data::{home_cache, home_feed, podcast_session, route};
 use crate::extra::feed;
 use crate::extra::shelves::{self, Play};
 use crate::history::{HistoryEvent, HistoryService};
@@ -450,22 +450,54 @@ impl HomeService {
             Ok::<_, String>(())
         };
         let podcasts = async {
+            // шоу и их выпуски — через сессию (без квоты Web API); Web API — только если сессии нет или она не смогла
             let read = async {
                 let mut shows: Vec<ShowItem> = self.library.shows();
                 if shows.is_empty() {
-                    let client = api.client_for(Operation::UserData).await?;
-                    let page = client.saved_shows(0, 50).await?;
-                    shows = page.items.iter().map(|s| sf_api::map::show_item(&s.show)).collect();
+                    let saved = match session.as_ref() {
+                        Some(session) => podcast_session::saved_shows(session)
+                            .await
+                            .inspect_err(|e| tracing::debug!("home: saved shows via session: {e:#}"))
+                            .ok(),
+                        None => None,
+                    };
+                    shows = match saved {
+                        Some(saved) => saved.iter().map(|(_, show)| sf_api::map::show_item(show)).collect(),
+                        None => {
+                            let client = api.client_for(Operation::UserData).await?;
+                            let page = client.saved_shows(0, 50).await?;
+                            page.items.iter().map(|s| sf_api::map::show_item(&s.show)).collect()
+                        }
+                    };
                 }
                 shows.retain(|s| !s.show_id.is_empty());
                 shows.truncate(shelves::HOME_PODCAST_SHOWS);
                 let mut podcasts = Vec::new();
-                if shows.is_empty() {
-                    return Ok(podcasts);
-                }
-                let client = api.client_for(Operation::Catalog).await?;
+                let mut client = None;
                 for show in shows {
-                    match client.show_episodes(&show.show_id, 0, shelves::EPISODES_PER_SHOW).await {
+                    let via_session = match session.as_ref() {
+                        Some(session) => {
+                            match podcast_session::show_page(&http, session, &show.show_id, 0, shelves::EPISODES_PER_SHOW).await {
+                                Ok((_, page)) => Some(page),
+                                Err(e) => {
+                                    tracing::debug!("home: episodes of {} via session: {e:?}", show.show_id);
+                                    None
+                                }
+                            }
+                        }
+                        None => None,
+                    };
+                    let page = match via_session {
+                        Some(page) => Ok(page),
+                        None => {
+                            if client.is_none() {
+                                client = Some(api.client_for(Operation::Catalog).await?);
+                            }
+                            let client = client.as_ref().expect("set above");
+                            client.show_episodes(&show.show_id, 0, shelves::EPISODES_PER_SHOW).await
+                        }
+                    };
+                    match page {
                         Ok(page) => {
                             let episodes = page.items.iter().map(|e| sf_api::map::episode_item(e, None)).collect();
                             podcasts.push((show, episodes));

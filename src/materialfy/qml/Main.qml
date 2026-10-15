@@ -18,6 +18,14 @@ Window {
     // --set browse=album:<id>,artist:<id>,back,home,panel,sidebar… — one step every 4 s once the session is up:
     // open a page, go back, switch a section, toggle the right panel or the sidebar (memory measurements)
     property string browse: ""
+    // --set floatingPlayer=island|taskbar|both|off — вместо настройки (снимки); --set islandState=idle|peek|compact|
+    // volume|announcement|expanded — вид островка; --set taskbarEmbed=false — виджет панели задач сразу поверх панели, без встраивания;
+    // --set floatingShot=<path.png> — снимок окна островка или виджета (и при --screenshot), --set taskbarTheme=dark|light
+    property string floatingPlayer: ""
+    property string islandState: ""
+    property bool taskbarEmbed: true
+    property string floatingShot: ""
+    property string taskbarTheme: ""
 
     // размер и положение — последние сохранённые (см. _restoreGeometry); окно показывается уже на месте
     width: 1280
@@ -37,6 +45,18 @@ Window {
     // Wayland: протокола «поверх всех окон» нет (GNOME, Weston флаг игнорируют), и окно не знает своих координат
     readonly property bool wayland: Qt.platform.pluginName.indexOf("wayland") === 0
     readonly property bool canPin: !wayland
+    // Плеер вне окна (Settings → Окно → «Плеер поверх окон»): островок — Windows и X11 (на Wayland окно не может
+    // встать у края экрана само), панель задач — только Windows
+    readonly property string floatingMode: {
+        const mode = floatingPlayer !== "" ? floatingPlayer : Settings.floatingPlayer
+        if (mode === "both" && Qt.platform.os === "windows")
+            return mode
+        if (mode === "island" && !wayland && (Qt.platform.os === "windows" || Qt.platform.os === "linux"))
+            return mode
+        if (mode === "taskbar" && Qt.platform.os === "windows")
+            return mode
+        return "off"
+    }
     flags: Qt.Window | Qt.FramelessWindowHint | (pinnedOnTop ? Qt.WindowStaysOnTopHint : 0)
     // Linux/macOS: окно прозрачное, фон и скруглённые углы рисует WindowFrame (альфа-канал окна
     // включается цветом при создании, поэтому цвет не меняется по ходу работы)
@@ -447,6 +467,89 @@ Window {
         Component.onCompleted: Theme.wipe = themeWipe
     }
     Binding { target: Theme; property: "wipeDirection"; value: Player.direction }
+    // Уровень звука — полноэкранному плееру и мини-режиму («дыхание» обложки), полоскам островка и пульсу
+    // обложки в панели задач
+    Binding {
+        target: Player
+        property: "levelsWanted"
+        value: nowPlaying.wantsLevels || (islandWindow.object !== null && islandWindow.object.wantsLevels)
+            || (taskbarWindow.object !== null && taskbarWindow.object.wantsLevels)
+    }
+
+    // ---- Плеер вне окна: живёт рядом с главным окном, и пока оно свёрнуто или в трее ----
+    function screenIndicesFromSetting(settingVal, screenCount) {
+        if (!settingVal || settingVal === "" || settingVal === "0")
+            return [0]
+        if (settingVal === "all") {
+            const arr = []
+            for (let i = 0; i < screenCount; ++i) arr.push(i)
+            return arr
+        }
+        const parts = settingVal.split(",")
+        const res = []
+        for (const p of parts) {
+            const idx = parseInt(p.trim(), 10)
+            if (!isNaN(idx) && idx >= 0 && idx < screenCount && res.indexOf(idx) === -1)
+                res.push(idx)
+        }
+        return res.length > 0 ? res : [0]
+    }
+
+    readonly property var activeIslandScreens: {
+        const screens = Qt.application.screens
+        const count = screens ? screens.length : 1
+        return win.screenIndicesFromSetting(Settings.floatingIslandScreens, count)
+    }
+
+    readonly property var activeTaskbarScreens: {
+        const screens = Qt.application.screens
+        const count = screens ? screens.length : 1
+        return win.screenIndicesFromSetting(Settings.taskbarScreens, count)
+    }
+
+    // Снимок (--screenshot) снимает только главное окно — плеер вне окна там не нужен (кроме floatingShot).
+    // Островок живёт и без трека (тонкая полоска у края), виджет в панели задач — только с треком
+    readonly property bool _floatingAllowed: floatingShot !== "" || !Qt.application.arguments.some(a => a.startsWith("--screenshot"))
+
+    Instantiator {
+        id: islandWindow
+        active: (win.floatingMode === "island" || win.floatingMode === "both") && win._floatingAllowed
+        model: win.activeIslandScreens
+        delegate: FloatingIsland {
+            required property int modelData
+            mainWindow: win
+            screenIndex: modelData
+            targetScreen: (Qt.application.screens && modelData < Qt.application.screens.length) ? Qt.application.screens[modelData] : null
+            forcedState: win.islandState
+            shotPath: win.floatingShot
+        }
+    }
+    Instantiator {
+        id: taskbarWindow
+        active: (win.floatingMode === "taskbar" || win.floatingMode === "both") && win._floatingAllowed && Player.hasTrack
+            && !_taskbarReset
+        property bool _taskbarReset: false
+        model: win.activeTaskbarScreens
+        delegate: TaskbarPlayer {
+            required property int modelData
+            mainWindow: win
+            screenIndex: modelData
+            targetScreen: (Qt.application.screens && modelData < Qt.application.screens.length) ? Qt.application.screens[modelData] : null
+            embed: win.taskbarEmbed
+            shotPath: win.floatingShot
+            forcedTheme: win.taskbarTheme
+            // Explorer перезапустился и унёс окно с собой — создать заново (не из обработчика самого окна)
+            onLost: taskbarRecreate.start()
+        }
+    }
+    Timer {
+        id: taskbarRecreate
+        interval: 0
+        onTriggered: {
+            taskbarWindow._taskbarReset = true
+            taskbarWindow._taskbarReset = false
+        }
+    }
     Binding {
         target: Theme
         property: "lowPower"
@@ -516,6 +619,15 @@ Window {
     function radioFrom(seedUri, title) {
         Radio.select(seedUri)
         Radio.playStation(seedUri, title)
+    }
+
+    // Настройки на нужном разделе (меню островка и виджета панели задач)
+    function openSettings(section) {
+        if (nowPlaying.open)
+            nowPlaying.hide()
+        if (win.mini)
+            win.expandFromMini()
+        router.reset("settings", section ? { section: section } : undefined)
     }
 
     function trackMenuAction(id, track, item) {
@@ -596,6 +708,10 @@ Window {
     NewPlaylistDialog {
         id: newPlaylistDialog
         z: 2100
+    }
+    // общий Client ID упёрся в лимит: как подключить своё приложение
+    ApiLimitDialog {
+        z: 2120
     }
     UpdateSheet {
         z: 2150

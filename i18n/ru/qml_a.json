@@ -318,7 +318,6 @@
   "Fill mode": "Заполнение",
   "Word by word": "По словам",
   "Whole line": "Вся строка",
-  "Off": "Выкл",
   "Word by word: words fill as they are sung": "По словам: слова заполняются по ходу пения",
   "Whole line: the active line lights up all at once": "Вся строка: активная строка загорается целиком",
   "Off: lines stay fully lit without progress fill": "Выкл: текст горит сразу без анимации заполнения",
@@ -344,5 +343,12 @@
   "Sync adjustment": "Синхронизация",
   "Exact sync with playback (0 ms)": "В такт воспроизведению (0 мс)",
   "Lyrics lead playback by {0} ms": "Текст опережает на {0} мс",
-  "Lyrics lag playback by {0} ms": "Текст отстаёт на {0} мс"
+  "Lyrics lag playback by {0} ms": "Текст отстаёт на {0} мс",
+  "Graphics processor": "Графический процессор",
+  "Integrated": "Встроенная",
+  "Discrete": "Дискретная",
+  "Forces integrated graphics": "Принудительно использовать встроенную графику",
+  "Forces dedicated graphics card": "Принудительно использовать дискретную видеокарту",
+  "Takes effect after restarting the app": "Изменения вступят в силу после перезапуска приложения",
+  "The system picks the graphics card": "Видеокарту выбирает система"
 }

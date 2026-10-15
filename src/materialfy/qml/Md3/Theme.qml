@@ -22,6 +22,11 @@ Item {
     // Если задан ThemeWipe — схема меняется «шторкой» в сторону wipeDirection (+1 вправо, -1 влево),
     // иначе — плавной анимацией всех цветов.
     property Item wipe: null
+    // Шторки окон поверх приложения (островок, плеер в панели задач): идут вместе с основной. Снимки
+    // со старыми цветами снимаются во всех окнах, схема меняется, когда готовы все, и снимки уходят разом
+    property var floatingWipes: []
+    function addWipe(w) { floatingWipes = floatingWipes.filter(x => x !== w).concat([w]) }
+    function removeWipe(w) { floatingWipes = floatingWipes.filter(x => x !== w) }
     // Окно не в фокусе: декоративные бесконечные анимации стоят. Каждая такая анимация заставляет
     // перерисовывать всё окно на частоте монитора — это основная нагрузка в фоне.
     property bool calm: false
@@ -152,11 +157,40 @@ Item {
             if (root.lowPower)
                 root._applyNow()
             else if (root.wipe !== null && root.wipe.visible)
-                root.wipe.start(root.wipeDirection, root._applyNow)
+                root._wipeAll()
             else
                 root._startTransition()
         }
     }
+
+    property var _wiping: []
+    property int _wipeLeft: 0
+    function _wipeAll() {
+        const ws = [wipe].concat(floatingWipes.filter(w => w && w.onScreen))
+        _wiping = ws
+        _wipeLeft = ws.length
+        for (const w of ws)
+            w.start(wipeDirection, root._wipeReady)
+        _wipeTimeout.restart()
+    }
+    function _wipeReady(w) {
+        if (_wipeLeft <= 0) {       // опоздал: схема уже сменилась
+            w.reveal()
+            return
+        }
+        if (--_wipeLeft === 0)
+            _wipeGo()
+    }
+    function _wipeGo() {
+        _wipeTimeout.stop()
+        _wipeLeft = 0
+        _applyNow()
+        for (const w of _wiping)
+            w.reveal()
+        _wiping = []
+    }
+    // окно, которое не рисуется (спрятано), снимок не даст: долго не ждём
+    Timer { id: _wipeTimeout; interval: 300; onTriggered: if (root._wipeLeft > 0) root._wipeGo() }
 
     NumberAnimation {
         id: _anim

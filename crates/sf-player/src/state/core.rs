@@ -1227,9 +1227,12 @@ impl Core {
 
     pub fn poll_interval(&self) -> Duration {
         let unseen = !self.app_active && !self.now_playing().is_some_and(|now| now.playing);
+        // нигде ничего не играет: часто спрашивать не о чем (своё «Играть» опрашивает сразу, poll_remote_soon)
+        let silent = !self.now_playing().is_some_and(|now| now.playing || now.loading);
         match self.target() {
             Target::Local if self.local.is_active() => REMOTE_POLL_IDLE,
             _ if unseen => REMOTE_POLL_UNSEEN,
+            _ if silent => REMOTE_POLL_IDLE,
             _ => REMOTE_POLL_ACTIVE,
         }
     }
@@ -1269,7 +1272,10 @@ impl Core {
 
     pub fn tick(&mut self) {
         let now = Instant::now();
-        if !self.remote_poll_pending && self.remote_polled_at.elapsed() >= self.poll_interval() {
+        // движок вот-вот поднимется: состояние скоро придёт из кластера сессии, а не из Web API
+        let engine_coming = !self.local_ready
+            && (self.local_coming() || matches!(self.local_playback, LocalPlayback::Connecting));
+        if !self.remote_poll_pending && !engine_coming && self.remote_polled_at.elapsed() >= self.poll_interval() {
             self.poll_remote();
         }
         if let Some(due) = self.remote_recheck_at

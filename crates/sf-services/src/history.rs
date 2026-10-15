@@ -260,7 +260,8 @@ impl HistoryService {
     async fn read_recent(&self, generation: u64) -> Option<bool> {
         let api = self.auth.api();
         // сессия ответила (в том числе «истории нет») — Web API не спрашиваем
-        let from_session = match route::account_session(&api, &self.player) {
+        let session = route::wait_account_session(&api, &self.player, route::STARTUP_SESSION_WAIT).await;
+        let from_session = match session {
             Some(session) => {
                 let http = api.http();
                 let read = session_recent(&http, &session);

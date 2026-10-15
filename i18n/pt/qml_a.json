@@ -318,7 +318,6 @@
   "Fill mode": "Preenchimento",
   "Word by word": "Palavra a palavra",
   "Whole line": "Linha inteira",
-  "Off": "Desativado",
   "Word by word: words fill as they are sung": "Palavra a palavra: as palavras se acendem conforme são cantadas",
   "Whole line: the active line lights up all at once": "Linha inteira: a linha ativa acende de uma vez",
   "Off: lines stay fully lit without progress fill": "Desativado: texto aceso direto sem animação",
@@ -344,5 +343,12 @@
   "Sync adjustment": "Ajuste de sincronia",
   "Exact sync with playback (0 ms)": "Em sincronia com a reprodução (0 ms)",
   "Lyrics lead playback by {0} ms": "Letra adiantada em {0} ms",
-  "Lyrics lag playback by {0} ms": "Letra atrasada em {0} ms"
+  "Lyrics lag playback by {0} ms": "Letra atrasada em {0} ms",
+  "Graphics processor": "Processador gráfico",
+  "Integrated": "Integrada",
+  "Discrete": "Dedicada",
+  "Forces integrated graphics": "Força a placa gráfica integrada",
+  "Forces dedicated graphics card": "Força a placa gráfica dedicada",
+  "Takes effect after restarting the app": "A mudança só vale depois de reiniciar o app",
+  "The system picks the graphics card": "O sistema escolhe a placa gráfica"
 }

@@ -55,6 +55,8 @@ pub mod qobject {
         #[qproperty(QString, animations, READ, WRITE = set_animations, NOTIFY = animations_changed)]
         /// "auto" | "on" | "off" — режим для слабых ПК (Theme.lowPower)
         #[qproperty(QString, low_power_mode, cxx_name = "lowPowerMode", READ, WRITE = set_low_power_mode, NOTIFY = low_power_mode_changed)]
+        /// "auto" | "integrated" | "discrete" — предпочтение графического процессора
+        #[qproperty(QString, gpu_preference, cxx_name = "gpuPreference", READ, WRITE = set_gpu_preference, NOTIFY = gpu_preference_changed)]
         /// "system" | "en" | "ru" | "pt"; the applied language and the dictionary — Translations (Md3/I18n.qml)
         #[qproperty(QString, language, READ, WRITE = set_language, NOTIFY = language_changed)]
         #[qproperty(bool, right_panel_open, cxx_name = "rightPanelOpen", READ, WRITE = set_right_panel_open, NOTIFY = right_panel_open_changed)]
@@ -82,12 +84,27 @@ pub mod qobject {
         #[qproperty(bool, dj_voice, cxx_name = "djVoice", READ, WRITE = set_dj_voice, NOTIFY = dj_voice_changed)]
         #[qproperty(QString, device_name, cxx_name = "deviceName", READ, WRITE = set_device_name, NOTIFY = device_name_changed)]
         #[qproperty(QString, web_client_id, cxx_name = "webClientId", READ, WRITE = set_web_client_id, NOTIFY = web_client_id_changed)]
+        /// окно «Web API ограничен» с инструкцией больше не показывать
+        #[qproperty(bool, api_limit_tip_dismissed, cxx_name = "apiLimitTipDismissed", READ, WRITE = set_api_limit_tip_dismissed, NOTIFY = api_limit_tip_dismissed_changed)]
         #[qproperty(QString, proxy_mode, cxx_name = "proxyMode", READ, NOTIFY = proxy_mode_changed)]
         #[qproperty(QString, proxy_host, cxx_name = "proxyHost", READ, NOTIFY = proxy_host_changed)]
         #[qproperty(QString, proxy_port, cxx_name = "proxyPort", READ, NOTIFY = proxy_port_changed)]
         #[qproperty(QString, proxy_username, cxx_name = "proxyUsername", READ, NOTIFY = proxy_username_changed)]
+        /// обложки мимо прокси (применяется сразу, без «Применить»)
+        #[qproperty(bool, covers_bypass_proxy, cxx_name = "coversBypassProxy", READ, WRITE = set_covers_bypass_proxy, NOTIFY = covers_bypass_proxy_changed)]
         #[qproperty(bool, close_to_tray, cxx_name = "closeToTray", READ, WRITE = set_close_to_tray, NOTIFY = close_to_tray_changed)]
         #[qproperty(i32, wheel_step, cxx_name = "wheelStep", READ, WRITE = set_wheel_step, NOTIFY = wheel_step_changed)]
+        /// "off" | "island" | "taskbar" — плеер вне главного окна (FloatingIsland / TaskbarPlayer)
+        #[qproperty(QString, floating_player, cxx_name = "floatingPlayer", READ, WRITE = set_floating_player, NOTIFY = floating_player_changed)]
+        /// "black" | "color" — вид островка и виджета
+        #[qproperty(QString, floating_player_style, cxx_name = "floatingPlayerStyle", READ, WRITE = set_floating_player_style, NOTIFY = floating_player_style_changed)]
+        /// место виджета в панели задач: "tray" | "left" | "appsLeft" | "appsRight" | доля "0.42"
+        #[qproperty(QString, taskbar_widget_pos, cxx_name = "taskbarWidgetPos", READ, WRITE = set_taskbar_widget_pos, NOTIFY = taskbar_widget_pos_changed)]
+        /// сколько раз показана подсказка с клавишами под островком (0..3)
+        #[qproperty(i32, floating_key_hints, cxx_name = "floatingKeyHints", READ, WRITE = set_floating_key_hints, NOTIFY = floating_key_hints_changed)]
+        #[qproperty(QString, floating_island_screens, cxx_name = "floatingIslandScreens", READ, WRITE = set_floating_island_screens, NOTIFY = floating_island_screens_changed)]
+        #[qproperty(QString, taskbar_screens, cxx_name = "taskbarScreens", READ, WRITE = set_taskbar_screens, NOTIFY = taskbar_screens_changed)]
+        #[qproperty(QString, taskbar_positions, cxx_name = "taskbarPositions", READ, WRITE = set_taskbar_positions, NOTIFY = taskbar_positions_changed)]
         #[qproperty(QStringList, audio_devices, cxx_name = "audioDevices", READ, NOTIFY = audio_devices_changed)]
         #[qproperty(QMap_QString_QVariant, cache_usage, cxx_name = "cacheUsage", READ, NOTIFY = cache_usage_changed)]
         #[qproperty(bool, engine_restart_pending, cxx_name = "engineRestartPending", READ, NOTIFY = engine_restart_pending_changed)]
@@ -129,6 +146,7 @@ pub mod qobject {
         fn set_lyrics_sync_ms(self: Pin<&mut Settings>, value: i32);
         fn set_animations(self: Pin<&mut Settings>, value: QString);
         fn set_low_power_mode(self: Pin<&mut Settings>, value: QString);
+        fn set_gpu_preference(self: Pin<&mut Settings>, value: QString);
         fn set_language(self: Pin<&mut Settings>, value: QString);
         fn set_right_panel_open(self: Pin<&mut Settings>, value: bool);
         fn set_right_panel_tab(self: Pin<&mut Settings>, value: QString);
@@ -155,8 +173,17 @@ pub mod qobject {
         fn set_dj_voice(self: Pin<&mut Settings>, value: bool);
         fn set_device_name(self: Pin<&mut Settings>, value: QString);
         fn set_web_client_id(self: Pin<&mut Settings>, value: QString);
+        fn set_api_limit_tip_dismissed(self: Pin<&mut Settings>, value: bool);
+        fn set_covers_bypass_proxy(self: Pin<&mut Settings>, value: bool);
         fn set_close_to_tray(self: Pin<&mut Settings>, value: bool);
         fn set_wheel_step(self: Pin<&mut Settings>, value: i32);
+        fn set_floating_player(self: Pin<&mut Settings>, value: QString);
+        fn set_floating_player_style(self: Pin<&mut Settings>, value: QString);
+        fn set_taskbar_widget_pos(self: Pin<&mut Settings>, value: QString);
+        fn set_floating_key_hints(self: Pin<&mut Settings>, value: i32);
+        fn set_floating_island_screens(self: Pin<&mut Settings>, value: QString);
+        fn set_taskbar_screens(self: Pin<&mut Settings>, value: QString);
+        fn set_taskbar_positions(self: Pin<&mut Settings>, value: QString);
 
         #[qsignal]
         #[cxx_name = "themeModeChanged"]
@@ -240,6 +267,9 @@ pub mod qobject {
         #[cxx_name = "lowPowerModeChanged"]
         fn low_power_mode_changed(self: Pin<&mut Settings>);
         #[qsignal]
+        #[cxx_name = "gpuPreferenceChanged"]
+        fn gpu_preference_changed(self: Pin<&mut Settings>);
+        #[qsignal]
         #[cxx_name = "languageChanged"]
         fn language_changed(self: Pin<&mut Settings>);
         #[qsignal]
@@ -318,6 +348,9 @@ pub mod qobject {
         #[cxx_name = "webClientIdChanged"]
         fn web_client_id_changed(self: Pin<&mut Settings>);
         #[qsignal]
+        #[cxx_name = "apiLimitTipDismissedChanged"]
+        fn api_limit_tip_dismissed_changed(self: Pin<&mut Settings>);
+        #[qsignal]
         #[cxx_name = "proxyModeChanged"]
         fn proxy_mode_changed(self: Pin<&mut Settings>);
         #[qsignal]
@@ -330,11 +363,35 @@ pub mod qobject {
         #[cxx_name = "proxyUsernameChanged"]
         fn proxy_username_changed(self: Pin<&mut Settings>);
         #[qsignal]
+        #[cxx_name = "coversBypassProxyChanged"]
+        fn covers_bypass_proxy_changed(self: Pin<&mut Settings>);
+        #[qsignal]
         #[cxx_name = "closeToTrayChanged"]
         fn close_to_tray_changed(self: Pin<&mut Settings>);
         #[qsignal]
         #[cxx_name = "wheelStepChanged"]
         fn wheel_step_changed(self: Pin<&mut Settings>);
+        #[qsignal]
+        #[cxx_name = "floatingPlayerChanged"]
+        fn floating_player_changed(self: Pin<&mut Settings>);
+        #[qsignal]
+        #[cxx_name = "floatingPlayerStyleChanged"]
+        fn floating_player_style_changed(self: Pin<&mut Settings>);
+        #[qsignal]
+        #[cxx_name = "taskbarWidgetPosChanged"]
+        fn taskbar_widget_pos_changed(self: Pin<&mut Settings>);
+        #[qsignal]
+        #[cxx_name = "floatingKeyHintsChanged"]
+        fn floating_key_hints_changed(self: Pin<&mut Settings>);
+        #[qsignal]
+        #[cxx_name = "floatingIslandScreensChanged"]
+        fn floating_island_screens_changed(self: Pin<&mut Settings>);
+        #[qsignal]
+        #[cxx_name = "taskbarScreensChanged"]
+        fn taskbar_screens_changed(self: Pin<&mut Settings>);
+        #[qsignal]
+        #[cxx_name = "taskbarPositionsChanged"]
+        fn taskbar_positions_changed(self: Pin<&mut Settings>);
         #[qsignal]
         #[cxx_name = "audioDevicesChanged"]
         fn audio_devices_changed(self: Pin<&mut Settings>);
@@ -539,6 +596,7 @@ settings! {
     lyrics_sync_ms: i32 = LyricsSyncMs, set_lyrics_sync_ms, lyrics_sync_ms_changed;
     animations: QString = Animations, set_animations, animations_changed;
     low_power_mode: QString = LowPowerMode, set_low_power_mode, low_power_mode_changed;
+    gpu_preference: QString = GpuPreference, set_gpu_preference, gpu_preference_changed;
     language: QString = Language, set_language, language_changed;
     right_panel_open: bool = RightPanelOpen, set_right_panel_open, right_panel_open_changed;
     right_panel_tab: QString = RightPanelTab, set_right_panel_tab, right_panel_tab_changed;
@@ -565,8 +623,17 @@ settings! {
     dj_voice: bool = DjVoice, set_dj_voice, dj_voice_changed;
     device_name: QString = DeviceName, set_device_name, device_name_changed;
     web_client_id: QString = WebClientId, set_web_client_id, web_client_id_changed;
+    api_limit_tip_dismissed: bool = ApiLimitTipDismissed, set_api_limit_tip_dismissed, api_limit_tip_dismissed_changed;
+    covers_bypass_proxy: bool = CoversBypassProxy, set_covers_bypass_proxy, covers_bypass_proxy_changed;
     close_to_tray: bool = CloseToTray, set_close_to_tray, close_to_tray_changed;
     wheel_step: i32 = WheelStep, set_wheel_step, wheel_step_changed;
+    floating_player: QString = FloatingPlayer, set_floating_player, floating_player_changed;
+    floating_player_style: QString = FloatingPlayerStyle, set_floating_player_style, floating_player_style_changed;
+    taskbar_widget_pos: QString = TaskbarWidgetPos, set_taskbar_widget_pos, taskbar_widget_pos_changed;
+    floating_key_hints: i32 = FloatingKeyHints, set_floating_key_hints, floating_key_hints_changed;
+    floating_island_screens: QString = FloatingIslandScreens, set_floating_island_screens, floating_island_screens_changed;
+    taskbar_screens: QString = TaskbarScreens, set_taskbar_screens, taskbar_screens_changed;
+    taskbar_positions: QString = TaskbarPositions, set_taskbar_positions, taskbar_positions_changed;
     @readonly {
         proxy_mode: QString = ProxyMode, proxy_mode_changed;
         proxy_host: QString = ProxyHost, proxy_host_changed;
@@ -714,10 +781,12 @@ impl cxx_qt::Initialize for qobject::Settings {
         }
         forward_events(self.qt_thread(), store().subscribe(), Self::on_store);
         let auth = ctx().services.auth.watch();
-        self.as_mut().on_auth(auth.borrow().clone());
+        let current = auth.borrow().clone();
+        self.as_mut().on_auth(current);
         forward_watch(self.qt_thread(), auth, Self::on_auth);
         let limits = ctx().services.auth.api().web_api_limits();
-        self.as_mut().on_web_api_limits(limits.borrow().clone());
+        let current = limits.borrow().clone();
+        self.as_mut().on_web_api_limits(current);
         forward_watch(self.qt_thread(), limits, Self::on_web_api_limits);
     }
 }

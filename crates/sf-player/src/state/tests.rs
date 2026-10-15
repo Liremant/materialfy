@@ -1855,7 +1855,9 @@ fn an_old_poll_answer_is_dropped() {
 #[test]
 fn local_idle_polls_every_twenty_seconds_not_four() {
     let mut core = headless();
+    play_on_phone(&mut core);
     assert_eq!(core.poll_interval(), REMOTE_POLL_ACTIVE);
+    core.remote = None;
     core.local.track = local_track("spotify:track:a");
     core.local.playback = Playback::Paused;
     assert_eq!(core.poll_interval(), REMOTE_POLL_IDLE);
@@ -1867,7 +1869,17 @@ fn an_unseen_idle_window_polls_less_often() {
     core.app_active = false;
     assert_eq!(core.poll_interval(), REMOTE_POLL_UNSEEN);
     core.app_active = true;
+    // нигде ничего не играет — спрашивать часто не о чем
+    assert_eq!(core.poll_interval(), REMOTE_POLL_IDLE);
+    play_on_phone(&mut core);
     assert_eq!(core.poll_interval(), REMOTE_POLL_ACTIVE);
+}
+
+fn play_on_phone(core: &mut Core) {
+    core.poll_remote();
+    let seq = core.remote_poll_seq;
+    let state = remote_snapshot("phone", "spotify:track:a", true).state;
+    core.handle_api(ApiReply::Playback { seq, result: Ok(Some(state)) });
 }
 
 #[test]

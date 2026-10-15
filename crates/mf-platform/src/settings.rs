@@ -66,6 +66,8 @@ pub enum SettingKey {
     Animations,
     /// режим для слабых ПК: "auto" (сам, когда кадры рисует процессор) | "on" | "off" → Theme.lowPower
     LowPowerMode,
+    /// выбор графического процессора для рендеринга: "auto" | "integrated" | "discrete"
+    GpuPreference,
     /// язык интерфейса: "system" (как в ОС) | "en" | "ru" | "pt" (mf_i18n::parse_setting); меняется на лету
     Language,
     // Раскладка
@@ -109,11 +111,15 @@ pub enum SettingKey {
     DeviceName,
     /// свой Client ID (личное приложение Web API); "" — нет
     WebClientId,
+    /// окно с инструкцией, когда общий Client ID упёрся в лимит: true — «больше не показывать»
+    ApiLimitTipDismissed,
     /// "off" | "system" | "http" | "socks"; пароль — в хранилище секретов (sf-auth, слот Proxy)
     ProxyMode,
     ProxyHost,
     ProxyPort,
     ProxyUsername,
+    /// обложки и картинки грузить напрямую, мимо прокси (по умолчанию — через него, как всё остальное)
+    CoversBypassProxy,
     // Локальные данные
     /// закреплённые URI (плейлисты/альбомы/станции), JSON-массив строк — get_string_list/set_string_list
     Pins,
@@ -124,6 +130,21 @@ pub enum SettingKey {
     // Поведение
     CloseToTray,
     WheelStep,
+    /// плеер поверх всего вне главного окна: "off" | "island" (островок у верхнего края экрана) | "taskbar" (в панели задач
+    /// Windows) | "both" (и то и другое, Windows)
+    FloatingPlayer,
+    /// вид островка и виджета: "black" (чёрный, как железо) | "color" (тёмный тон обложки со свечением)
+    FloatingPlayerStyle,
+    /// место виджета в панели задач: "tray" (у трея) | "left" | "appsLeft" | "appsRight" | доля 0..1 свободной ширины ("0.42")
+    TaskbarWidgetPos,
+    /// сколько раз под раскрытым островком показана подсказка с клавишами (до 3)
+    FloatingKeyHints,
+    /// мониторы для островка: "" / "0" (основной) | "0,1" | "all"
+    FloatingIslandScreens,
+    /// мониторы для панели задач: "" / "0" (основной) | "0,1" | "all"
+    TaskbarScreens,
+    /// позиции на панели задач для каждого монитора: JSON {"0":"tray","1":"appsRight"}
+    TaskbarPositions,
     // Updates
     /// check GitHub Releases for a new version on startup and every 6 h (no network when off)
     AutoUpdateCheck,
@@ -150,7 +171,7 @@ pub enum SettingType {
 }
 
 impl SettingKey {
-    pub const ALL: [SettingKey; 65] = [
+    pub const ALL: [SettingKey; 75] = [
         SettingKey::ThemeMode,
         SettingKey::SchemeVariant,
         SettingKey::AccentFromCover,
@@ -178,6 +199,7 @@ impl SettingKey {
         SettingKey::LyricsSyncMs,
         SettingKey::Animations,
         SettingKey::LowPowerMode,
+        SettingKey::GpuPreference,
         SettingKey::Language,
         SettingKey::RightPanelOpen,
         SettingKey::RightPanelTab,
@@ -204,15 +226,24 @@ impl SettingKey {
         SettingKey::DjVoice,
         SettingKey::DeviceName,
         SettingKey::WebClientId,
+        SettingKey::ApiLimitTipDismissed,
         SettingKey::ProxyMode,
         SettingKey::ProxyHost,
         SettingKey::ProxyPort,
         SettingKey::ProxyUsername,
+        SettingKey::CoversBypassProxy,
         SettingKey::Pins,
         SettingKey::HiddenTracks,
         SettingKey::RadioSeeds,
         SettingKey::CloseToTray,
         SettingKey::WheelStep,
+        SettingKey::FloatingPlayer,
+        SettingKey::FloatingPlayerStyle,
+        SettingKey::TaskbarWidgetPos,
+        SettingKey::FloatingKeyHints,
+        SettingKey::FloatingIslandScreens,
+        SettingKey::TaskbarScreens,
+        SettingKey::TaskbarPositions,
         SettingKey::AutoUpdateCheck,
         SettingKey::UpdateChannel,
         SettingKey::SkippedVersion,
@@ -249,6 +280,7 @@ impl SettingKey {
             LyricsSyncMs => "lyricsSyncMs",
             Animations => "animations",
             LowPowerMode => "lowPowerMode",
+            GpuPreference => "gpuPreference",
             Language => "language",
             RightPanelOpen => "rightPanelOpen",
             RightPanelTab => "rightPanelTab",
@@ -275,15 +307,24 @@ impl SettingKey {
             DjVoice => "djVoice",
             DeviceName => "deviceName",
             WebClientId => "webClientId",
+            ApiLimitTipDismissed => "apiLimitTipDismissed",
             ProxyMode => "proxyMode",
             ProxyHost => "proxyHost",
             ProxyPort => "proxyPort",
             ProxyUsername => "proxyUsername",
+            CoversBypassProxy => "coversBypassProxy",
             Pins => "pins",
             HiddenTracks => "hiddenTracks",
             RadioSeeds => "radioSeeds",
             CloseToTray => "closeToTray",
             WheelStep => "wheelStep",
+            FloatingPlayer => "floatingPlayer",
+            FloatingPlayerStyle => "floatingPlayerStyle",
+            TaskbarWidgetPos => "taskbarWidgetPos",
+            FloatingKeyHints => "floatingKeyHints",
+            FloatingIslandScreens => "floatingIslandScreens",
+            TaskbarScreens => "taskbarScreens",
+            TaskbarPositions => "taskbarPositions",
             AutoUpdateCheck => "autoUpdateCheck",
             UpdateChannel => "updateChannel",
             SkippedVersion => "skippedVersion",
@@ -334,6 +375,7 @@ impl SettingKey {
             LyricsSyncMs => Int(0),
             Animations => Str("system".into()),
             LowPowerMode => Str("auto".into()),
+            GpuPreference => Str("auto".into()),
             Language => Str("system".into()),
             RightPanelOpen => Bool(false),
             RightPanelTab => Str("queue".into()),
@@ -360,15 +402,24 @@ impl SettingKey {
             DjVoice => Bool(true),
             DeviceName => Str(String::new()),
             WebClientId => Str(String::new()),
+            ApiLimitTipDismissed => Bool(false),
             ProxyMode => Str("system".into()),
             ProxyHost => Str(String::new()),
             ProxyPort => Str(String::new()),
             ProxyUsername => Str(String::new()),
+            CoversBypassProxy => Bool(false),
             Pins => Str(String::new()),
             HiddenTracks => Str(String::new()),
             RadioSeeds => Str(String::new()),
             CloseToTray => Bool(true),
             WheelStep => Int(150),
+            FloatingPlayer => Str("off".into()),
+            FloatingPlayerStyle => Str("black".into()),
+            TaskbarWidgetPos => Str("tray".into()),
+            FloatingKeyHints => Int(0),
+            FloatingIslandScreens => Str(String::new()),
+            TaskbarScreens => Str(String::new()),
+            TaskbarPositions => Str(String::new()),
             AutoUpdateCheck => Bool(true),
             UpdateChannel => Str("stable".into()),
             SkippedVersion => Str(String::new()),
@@ -427,6 +478,35 @@ impl SettingKey {
                     "three" => "three",
                     "one" => "one",
                     _ => "all",
+                }.into())
+            }
+            (SettingKey::FloatingPlayer, SettingValue::Str(s)) => {
+                SettingValue::Str(match s.as_str() {
+                    "island" => "island",
+                    "taskbar" => "taskbar",
+                    "both" => "both",
+                    _ => "off",
+                }.into())
+            }
+            (SettingKey::FloatingPlayerStyle, SettingValue::Str(s)) => {
+                SettingValue::Str(if s == "color" { "color" } else { "black" }.into())
+            }
+            (SettingKey::TaskbarWidgetPos, SettingValue::Str(s)) => SettingValue::Str(
+                if matches!(s.as_str(), "left" | "appsLeft" | "appsRight" | "tray") {
+                    s
+                } else {
+                    match s.trim().parse::<f64>() {
+                        Ok(f) if f.is_finite() => format!("{:.4}", f.clamp(0.0, 1.0)),
+                        _ => "tray".into(),
+                    }
+                },
+            ),
+            (SettingKey::FloatingKeyHints, SettingValue::Int(n)) => SettingValue::Int(n.clamp(0, 3)),
+            (SettingKey::GpuPreference, SettingValue::Str(s)) => {
+                SettingValue::Str(match s.as_str() {
+                    "integrated" => "integrated",
+                    "discrete" => "discrete",
+                    _ => "auto",
                 }.into())
             }
             (SettingKey::UpdateChannel, SettingValue::Str(channel)) => {
@@ -1037,7 +1117,7 @@ mod tests {
 
     #[test]
     fn schema() {
-        assert_eq!(SettingKey::ALL.len(), 65);
+        assert_eq!(SettingKey::ALL.len(), 75);
         for key in SettingKey::ALL {
             assert_eq!(SettingKey::from_name(key.name()), Some(key));
             assert_eq!(key.default_value().value_type(), key.value_type());
@@ -1063,6 +1143,21 @@ mod tests {
         assert_eq!(SettingKey::LyricsVisibleLines.normalize(Str("auto".into())), Str("all".into()));
         assert_eq!(SettingKey::LyricsVisibleLines.normalize(Str("three".into())), Str("three".into()));
         assert_eq!(SettingKey::LyricsVisibleLines.normalize(Str("one".into())), Str("one".into()));
+        assert_eq!(SettingKey::FloatingPlayer.normalize(Str("island".into())), Str("island".into()));
+        assert_eq!(SettingKey::FloatingPlayer.normalize(Str("taskbar".into())), Str("taskbar".into()));
+        assert_eq!(SettingKey::FloatingPlayer.normalize(Str("both".into())), Str("both".into()));
+        assert_eq!(SettingKey::FloatingPlayer.normalize(Str("notch".into())), Str("off".into()));
+        assert_eq!(SettingKey::FloatingPlayerStyle.normalize(Str("color".into())), Str("color".into()));
+        assert_eq!(SettingKey::FloatingPlayerStyle.normalize(Str("pink".into())), Str("black".into()));
+        assert_eq!(SettingKey::TaskbarWidgetPos.normalize(Str("appsRight".into())), Str("appsRight".into()));
+        assert_eq!(SettingKey::TaskbarWidgetPos.normalize(Str("0.5".into())), Str("0.5000".into()));
+        assert_eq!(SettingKey::TaskbarWidgetPos.normalize(Str("7".into())), Str("1.0000".into()));
+        assert_eq!(SettingKey::TaskbarWidgetPos.normalize(Str("middle".into())), Str("tray".into()));
+        assert_eq!(SettingKey::FloatingKeyHints.normalize(Int(9)), Int(3));
+        assert_eq!(SettingKey::GpuPreference.normalize(Str("auto".into())), Str("auto".into()));
+        assert_eq!(SettingKey::GpuPreference.normalize(Str("integrated".into())), Str("integrated".into()));
+        assert_eq!(SettingKey::GpuPreference.normalize(Str("discrete".into())), Str("discrete".into()));
+        assert_eq!(SettingKey::GpuPreference.normalize(Str("custom".into())), Str("auto".into()));
     }
 
     #[test]
@@ -1320,11 +1415,12 @@ mod tests {
             "calmWhenInactive", "lyricsMode", "lyricsFontScale", "lyricsScrim",
             "lyricsTextAlign", "lyricsFillMode", "lyricsVisibleLines", "lyricsHighlight", "lyricsBlurAmount",
             "lyricsLineSpacing", "lyricsAnimate", "lyricsShowSource", "lyricsSyncMs",
-            "animations", "lowPowerMode", "rightPanelOpen", "rightPanelTab", "sidebarCollapsed", "windowWidth",
-            "windowHeight", "windowX", "windowY", "windowMaximized", "closeToTray", "wheelStep", "libraryView",
+            "animations", "lowPowerMode", "gpuPreference", "rightPanelOpen", "rightPanelTab", "sidebarCollapsed", "windowWidth",
+            "windowHeight", "windowX", "windowY", "windowMaximized", "closeToTray", "wheelStep", "floatingPlayer", "floatingPlayerStyle",
+            "taskbarWidgetPos", "floatingKeyHints", "libraryView",
             "librarySort", "homeHidden", "bitrate", "normalisation", "gapless", "autoplay", "volume", "audioDevice",
-            "audioCache", "audioCacheMb", "playbackAuthorized", "deviceName", "webClientId", "proxyMode", "proxyHost",
-            "proxyPort", "proxyUsername", "pins", "hiddenTracks", "radioSeeds", "language", "autoUpdateCheck",
+            "audioCache", "audioCacheMb", "playbackAuthorized", "deviceName", "webClientId", "apiLimitTipDismissed", "proxyMode", "proxyHost",
+            "proxyPort", "proxyUsername", "coversBypassProxy", "pins", "hiddenTracks", "radioSeeds", "language", "autoUpdateCheck",
             "updateChannel", "skippedVersion",
         ] {
             assert!(names.contains(&name), "{name}");
