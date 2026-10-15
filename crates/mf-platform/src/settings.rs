@@ -44,14 +44,26 @@ pub enum SettingKey {
     LyricsFontScale,
     /// затемняющая подложка за текстом: "none" | "soft" | "strong"
     LyricsScrim,
-    /// выравнивание текста песни: "left" | "center"
+    /// выравнивание текста песни: "left" | "center" | "right"
     LyricsTextAlign,
     /// режим заполнения: "word" | "line" | "off"
     LyricsFillMode,
-    /// фильтр видимых строк: "all" | "three" | "one"
+    /// фильтр видимых строк: "all" | "three" | "one" | "1"…"15"
     LyricsVisibleLines,
     /// множитель градиента и свечения (0..2)
     LyricsHighlight,
+    /// масштаб активной строки (0.0 — по стилю, либо 1.0…1.35)
+    LyricsActiveScale,
+    /// масштаб неактивных строк (0.0 — по стилю, либо 0.8…1.0)
+    LyricsIdleScale,
+    /// амплитуда волны слов (0.0…2.0)
+    LyricsWordBounce,
+    /// непрозрачность неактивных строк (0.15…0.75)
+    LyricsDimOpacity,
+    /// длительность скролла строки в мс (-1 — по стилю, либо 200…800)
+    LyricsScrollMs,
+    /// задержка каскада соседних строк в мс (-1 — по стилю, либо 0…80)
+    LyricsStaggerMs,
     /// степень размытия неактивных строк (0..1)
     LyricsBlurAmount,
     /// множитель межстрочного интервала (0.8..1.6)
@@ -171,7 +183,7 @@ pub enum SettingType {
 }
 
 impl SettingKey {
-    pub const ALL: [SettingKey; 75] = [
+    pub const ALL: [SettingKey; 81] = [
         SettingKey::ThemeMode,
         SettingKey::SchemeVariant,
         SettingKey::AccentFromCover,
@@ -192,6 +204,12 @@ impl SettingKey {
         SettingKey::LyricsFillMode,
         SettingKey::LyricsVisibleLines,
         SettingKey::LyricsHighlight,
+        SettingKey::LyricsActiveScale,
+        SettingKey::LyricsIdleScale,
+        SettingKey::LyricsWordBounce,
+        SettingKey::LyricsDimOpacity,
+        SettingKey::LyricsScrollMs,
+        SettingKey::LyricsStaggerMs,
         SettingKey::LyricsBlurAmount,
         SettingKey::LyricsLineSpacing,
         SettingKey::LyricsAnimate,
@@ -273,6 +291,12 @@ impl SettingKey {
             LyricsFillMode => "lyricsFillMode",
             LyricsVisibleLines => "lyricsVisibleLines",
             LyricsHighlight => "lyricsHighlight",
+            LyricsActiveScale => "lyricsActiveScale",
+            LyricsIdleScale => "lyricsIdleScale",
+            LyricsWordBounce => "lyricsWordBounce",
+            LyricsDimOpacity => "lyricsDimOpacity",
+            LyricsScrollMs => "lyricsScrollMs",
+            LyricsStaggerMs => "lyricsStaggerMs",
             LyricsBlurAmount => "lyricsBlurAmount",
             LyricsLineSpacing => "lyricsLineSpacing",
             LyricsAnimate => "lyricsAnimate",
@@ -368,6 +392,12 @@ impl SettingKey {
             LyricsFillMode => Str("word".into()),
             LyricsVisibleLines => Str("all".into()),
             LyricsHighlight => Float(1.0),
+            LyricsActiveScale => Float(0.0),
+            LyricsIdleScale => Float(0.0),
+            LyricsWordBounce => Float(1.0),
+            LyricsDimOpacity => Float(0.35),
+            LyricsScrollMs => Int(-1),
+            LyricsStaggerMs => Int(-1),
             LyricsBlurAmount => Float(1.0),
             LyricsLineSpacing => Float(1.0),
             LyricsAnimate => Bool(true),
@@ -451,6 +481,24 @@ impl SettingKey {
             (SettingKey::LyricsHighlight, SettingValue::Float(v)) => {
                 SettingValue::Float(if v.is_finite() { v.clamp(0.0, 2.0) } else { 1.0 })
             }
+            (SettingKey::LyricsActiveScale, SettingValue::Float(v)) => {
+                SettingValue::Float(if v.is_finite() && v >= 1.0 { v.clamp(1.0, 1.35) } else { 0.0 })
+            }
+            (SettingKey::LyricsIdleScale, SettingValue::Float(v)) => {
+                SettingValue::Float(if v.is_finite() && v > 0.0 { v.clamp(0.8, 1.0) } else { 0.0 })
+            }
+            (SettingKey::LyricsWordBounce, SettingValue::Float(v)) => {
+                SettingValue::Float(if v.is_finite() { v.clamp(0.0, 2.0) } else { 1.0 })
+            }
+            (SettingKey::LyricsDimOpacity, SettingValue::Float(v)) => {
+                SettingValue::Float(if v.is_finite() { v.clamp(0.15, 0.75) } else { 0.35 })
+            }
+            (SettingKey::LyricsScrollMs, SettingValue::Int(ms)) => {
+                SettingValue::Int(if ms == -1 { -1 } else { ms.clamp(200, 800) })
+            }
+            (SettingKey::LyricsStaggerMs, SettingValue::Int(ms)) => {
+                SettingValue::Int(if ms == -1 { -1 } else { ms.clamp(0, 80) })
+            }
             (SettingKey::LyricsBlurAmount, SettingValue::Float(v)) => {
                 SettingValue::Float(if v.is_finite() { v.clamp(0.0, 1.0) } else { 1.0 })
             }
@@ -463,6 +511,7 @@ impl SettingKey {
             (SettingKey::LyricsTextAlign, SettingValue::Str(s)) => {
                 SettingValue::Str(match s.as_str() {
                     "center" => "center",
+                    "right" => "right",
                     _ => "left",
                 }.into())
             }
@@ -475,10 +524,14 @@ impl SettingKey {
             }
             (SettingKey::LyricsVisibleLines, SettingValue::Str(s)) => {
                 SettingValue::Str(match s.as_str() {
-                    "three" => "three",
-                    "one" => "one",
-                    _ => "all",
-                }.into())
+                    "three" => "three".into(),
+                    "one" => "one".into(),
+                    "all" => "all".into(),
+                    other => match other.trim().parse::<u32>() {
+                        Ok(n) if (1..=15).contains(&n) => other.trim().into(),
+                        _ => "all".into(),
+                    },
+                })
             }
             (SettingKey::FloatingPlayer, SettingValue::Str(s)) => {
                 SettingValue::Str(match s.as_str() {
@@ -719,6 +772,19 @@ impl SettingsStore {
             }
         }
         let _ = self.changes.send(key);
+        if key == SettingKey::LyricsMode {
+            // При смене стиля текста сбрасываем ручные параметры к значениям по умолчанию для стиля
+            for reset_key in [
+                SettingKey::LyricsActiveScale,
+                SettingKey::LyricsWordBounce,
+                SettingKey::LyricsDimOpacity,
+                SettingKey::LyricsScrollMs,
+                SettingKey::LyricsStaggerMs,
+                SettingKey::LyricsIdleScale,
+            ] {
+                self.set(reset_key, reset_key.default_value());
+            }
+        }
         true
     }
 
@@ -1117,7 +1183,7 @@ mod tests {
 
     #[test]
     fn schema() {
-        assert_eq!(SettingKey::ALL.len(), 75);
+        assert_eq!(SettingKey::ALL.len(), 81);
         for key in SettingKey::ALL {
             assert_eq!(SettingKey::from_name(key.name()), Some(key));
             assert_eq!(key.default_value().value_type(), key.value_type());
@@ -1137,6 +1203,7 @@ mod tests {
         assert_eq!(SettingKey::Crossfade.normalize(Int(40)), Int(CROSSFADE_MAX_S));
         assert_eq!(SettingKey::LyricsTextAlign.normalize(Str("auto".into())), Str("left".into()));
         assert_eq!(SettingKey::LyricsTextAlign.normalize(Str("center".into())), Str("center".into()));
+        assert_eq!(SettingKey::LyricsTextAlign.normalize(Str("right".into())), Str("right".into()));
         assert_eq!(SettingKey::LyricsFillMode.normalize(Str("auto".into())), Str("word".into()));
         assert_eq!(SettingKey::LyricsFillMode.normalize(Str("line".into())), Str("line".into()));
         assert_eq!(SettingKey::LyricsFillMode.normalize(Str("off".into())), Str("off".into()));
@@ -1158,6 +1225,45 @@ mod tests {
         assert_eq!(SettingKey::GpuPreference.normalize(Str("integrated".into())), Str("integrated".into()));
         assert_eq!(SettingKey::GpuPreference.normalize(Str("discrete".into())), Str("discrete".into()));
         assert_eq!(SettingKey::GpuPreference.normalize(Str("custom".into())), Str("auto".into()));
+        assert_eq!(SettingKey::LyricsVisibleLines.normalize(Str("1".into())), Str("1".into()));
+        assert_eq!(SettingKey::LyricsVisibleLines.normalize(Str("5".into())), Str("5".into()));
+        assert_eq!(SettingKey::LyricsVisibleLines.normalize(Str("15".into())), Str("15".into()));
+        assert_eq!(SettingKey::LyricsVisibleLines.normalize(Str("0".into())), Str("all".into()));
+        assert_eq!(SettingKey::LyricsVisibleLines.normalize(Str("16".into())), Str("all".into()));
+        assert_eq!(SettingKey::LyricsActiveScale.normalize(Float(0.0)), Float(0.0));
+        assert_eq!(SettingKey::LyricsActiveScale.normalize(Float(0.5)), Float(0.0));
+        assert_eq!(SettingKey::LyricsActiveScale.normalize(Float(0.99)), Float(0.0));
+        assert_eq!(SettingKey::LyricsActiveScale.normalize(Float(1.0)), Float(1.0));
+        assert_eq!(SettingKey::LyricsActiveScale.normalize(Float(1.12)), Float(1.12));
+        assert_eq!(SettingKey::LyricsActiveScale.normalize(Float(1.5)), Float(1.35));
+        assert_eq!(SettingKey::LyricsActiveScale.normalize(Float(-0.2)), Float(0.0));
+        assert_eq!(SettingKey::LyricsActiveScale.normalize(Float(f64::NAN)), Float(0.0));
+        assert_eq!(SettingKey::LyricsIdleScale.normalize(Float(0.0)), Float(0.0));
+        assert_eq!(SettingKey::LyricsIdleScale.normalize(Float(-0.2)), Float(0.0));
+        assert_eq!(SettingKey::LyricsIdleScale.normalize(Float(f64::NAN)), Float(0.0));
+        assert_eq!(SettingKey::LyricsIdleScale.normalize(Float(0.5)), Float(0.8));
+        assert_eq!(SettingKey::LyricsIdleScale.normalize(Float(0.85)), Float(0.85));
+        assert_eq!(SettingKey::LyricsIdleScale.normalize(Float(1.5)), Float(1.0));
+        assert_eq!(SettingKey::LyricsWordBounce.normalize(Float(1.0)), Float(1.0));
+        assert_eq!(SettingKey::LyricsWordBounce.normalize(Float(2.5)), Float(2.0));
+        assert_eq!(SettingKey::LyricsWordBounce.normalize(Float(-0.5)), Float(0.0));
+        assert_eq!(SettingKey::LyricsWordBounce.normalize(Float(f64::NAN)), Float(1.0));
+        assert_eq!(SettingKey::LyricsDimOpacity.normalize(Float(0.35)), Float(0.35));
+        assert_eq!(SettingKey::LyricsDimOpacity.normalize(Float(0.1)), Float(0.15));
+        assert_eq!(SettingKey::LyricsDimOpacity.normalize(Float(0.9)), Float(0.75));
+        assert_eq!(SettingKey::LyricsDimOpacity.normalize(Float(f64::NAN)), Float(0.35));
+        assert_eq!(SettingKey::LyricsScrollMs.normalize(Int(-1)), Int(-1));
+        assert_eq!(SettingKey::LyricsScrollMs.normalize(Int(100)), Int(200));
+        assert_eq!(SettingKey::LyricsScrollMs.normalize(Int(450)), Int(450));
+        assert_eq!(SettingKey::LyricsScrollMs.normalize(Int(1200)), Int(800));
+        assert_eq!(SettingKey::LyricsStaggerMs.normalize(Int(-1)), Int(-1));
+        assert_eq!(SettingKey::LyricsStaggerMs.normalize(Int(-5)), Int(0));
+        assert_eq!(SettingKey::LyricsStaggerMs.normalize(Int(30)), Int(30));
+        assert_eq!(SettingKey::LyricsStaggerMs.normalize(Int(150)), Int(80));
+        assert_eq!(SettingKey::LyricsSyncMs.normalize(Int(-600)), Int(-500));
+        assert_eq!(SettingKey::LyricsSyncMs.normalize(Int(0)), Int(0));
+        assert_eq!(SettingKey::LyricsSyncMs.normalize(Int(250)), Int(250));
+        assert_eq!(SettingKey::LyricsSyncMs.normalize(Int(800)), Int(500));
     }
 
     #[test]
@@ -1413,7 +1519,9 @@ mod tests {
             "themeMode", "schemeVariant", "accentFromCover", "customSeed", "windowButtons", "trackTransition",
             "backdropMode", "nowPlayingBlur", "nowPlayingDrift", "ambientBackground", "coverSpin", "coverPulse",
             "calmWhenInactive", "lyricsMode", "lyricsFontScale", "lyricsScrim",
-            "lyricsTextAlign", "lyricsFillMode", "lyricsVisibleLines", "lyricsHighlight", "lyricsBlurAmount",
+            "lyricsTextAlign", "lyricsFillMode", "lyricsVisibleLines", "lyricsHighlight",
+            "lyricsActiveScale", "lyricsIdleScale", "lyricsWordBounce", "lyricsDimOpacity",
+            "lyricsScrollMs", "lyricsStaggerMs", "lyricsBlurAmount",
             "lyricsLineSpacing", "lyricsAnimate", "lyricsShowSource", "lyricsSyncMs",
             "animations", "lowPowerMode", "gpuPreference", "rightPanelOpen", "rightPanelTab", "sidebarCollapsed", "windowWidth",
             "windowHeight", "windowX", "windowY", "windowMaximized", "closeToTray", "wheelStep", "floatingPlayer", "floatingPlayerStyle",
@@ -1431,7 +1539,48 @@ mod tests {
         assert_eq!(SettingKey::ProxyPort.value_type(), SettingType::Str);
         assert_eq!(SettingKey::AudioCacheMb.value_type(), SettingType::Int);
         assert_eq!(SettingKey::Normalisation.value_type(), SettingType::Bool);
+        assert_eq!(SettingKey::LyricsScrollMs.default_value(), SettingValue::Int(-1));
+        assert_eq!(SettingKey::LyricsStaggerMs.default_value(), SettingValue::Int(-1));
+        assert_eq!(SettingKey::LyricsIdleScale.default_value(), SettingValue::Float(0.0));
         assert!(BITRATES.iter().any(|b| SettingKey::Bitrate.default_value() == SettingValue::Int(*b)));
+    }
+
+    #[test]
+    fn lyrics_mode_change_resets_manual_adjustments() {
+        let store = SettingsStore::in_memory();
+        // Задаём кастомные значения для шести ручных регулировок текста
+        store.set(SettingKey::LyricsActiveScale, SettingValue::Float(1.2));
+        store.set(SettingKey::LyricsWordBounce, SettingValue::Float(1.5));
+        store.set(SettingKey::LyricsDimOpacity, SettingValue::Float(0.6));
+        store.set(SettingKey::LyricsScrollMs, SettingValue::Int(350));
+        store.set(SettingKey::LyricsStaggerMs, SettingValue::Int(15));
+        store.set(SettingKey::LyricsIdleScale, SettingValue::Float(0.85));
+
+        // Изначальный режим — normal. Меняем на spicy: шесть регулировок должны сброситься к дефолтам стиля
+        assert!(store.set(SettingKey::LyricsMode, SettingValue::Str("spicy".into())));
+        assert_eq!(store.get(SettingKey::LyricsActiveScale), SettingValue::Float(0.0));
+        assert_eq!(store.get(SettingKey::LyricsWordBounce), SettingValue::Float(1.0));
+        assert_eq!(store.get(SettingKey::LyricsDimOpacity), SettingValue::Float(0.35));
+        assert_eq!(store.get(SettingKey::LyricsScrollMs), SettingValue::Int(-1));
+        assert_eq!(store.get(SettingKey::LyricsStaggerMs), SettingValue::Int(-1));
+        assert_eq!(store.get(SettingKey::LyricsIdleScale), SettingValue::Float(0.0));
+
+        // Пользователь настраивает параметры в новом режиме
+        store.set(SettingKey::LyricsActiveScale, SettingValue::Float(1.15));
+        store.set(SettingKey::LyricsWordBounce, SettingValue::Float(0.8));
+        store.set(SettingKey::LyricsDimOpacity, SettingValue::Float(0.5));
+        store.set(SettingKey::LyricsScrollMs, SettingValue::Int(400));
+        store.set(SettingKey::LyricsStaggerMs, SettingValue::Int(25));
+        store.set(SettingKey::LyricsIdleScale, SettingValue::Float(0.95));
+
+        // Повторное применение того же режима (spicy -> spicy) НЕ должно сбрасывать настройки
+        assert!(!store.set(SettingKey::LyricsMode, SettingValue::Str("spicy".into())));
+        assert_eq!(store.get(SettingKey::LyricsActiveScale), SettingValue::Float(1.15));
+        assert_eq!(store.get(SettingKey::LyricsWordBounce), SettingValue::Float(0.8));
+        assert_eq!(store.get(SettingKey::LyricsDimOpacity), SettingValue::Float(0.5));
+        assert_eq!(store.get(SettingKey::LyricsScrollMs), SettingValue::Int(400));
+        assert_eq!(store.get(SettingKey::LyricsStaggerMs), SettingValue::Int(25));
+        assert_eq!(store.get(SettingKey::LyricsIdleScale), SettingValue::Float(0.95));
     }
 
     #[test]
