@@ -1959,4 +1959,88 @@ mod tests {
             "librespot must go through the proxy, got {seen:?}"
         );
     }
+
+    /// Аудио с CDN часто по http://: через прокси и оно идёт туннелем CONNECT, а не «GET http://…» —
+    /// его многие прокси не пропускают, и треки не грузились, хотя страницы работали.
+    #[tokio::test]
+    async fn plain_http_audio_is_tunnelled_through_the_proxy() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let proxy = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = proxy.local_addr().unwrap();
+        let proxy_thread = std::thread::spawn(move || {
+            let (mut client, _) = proxy.accept().unwrap();
+            client.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+            let mut buf = [0u8; 4096];
+            let n = client.read(&mut buf).unwrap_or(0);
+            let _ = client.write_all(b"HTTP/1.1 405 Method Not Allowed\r\n\r\n");
+            String::from_utf8_lossy(&buf[..n]).into_owned()
+        });
+
+        let config = sf_auth::ProxyConfig::from_parts(
+            sf_auth::ProxyMode::Http,
+            "127.0.0.1",
+            &address.port().to_string(),
+            "",
+            "",
+        )
+        .unwrap();
+        let proxy_url = config.librespot_url().unwrap();
+        let client = librespot_core::http_client::HttpClient::new(Some(&proxy_url));
+        let request = http::Request::builder()
+            .method("GET")
+            .uri("http://audio4-fa.scdn.co/audio/0123")
+            .body(Default::default())
+            .unwrap();
+        let _ = tokio::time::timeout(Duration::from_secs(5), client.request(request)).await;
+        let seen = proxy_thread.join().unwrap();
+        assert!(
+            seen.starts_with("CONNECT audio4-fa.scdn.co:80 HTTP/1.1"),
+            "plain-HTTP audio must be tunnelled, got {seen:?}"
+        );
+    }
+
+    /// HTTP-прокси с логином: движок не отказывается от него, а отдаёт логин в Proxy-Authorization.
+    #[tokio::test]
+    async fn librespot_authenticates_to_an_http_proxy_with_a_login() {
+        use base64::Engine as _;
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let proxy = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = proxy.local_addr().unwrap();
+        let proxy_thread = std::thread::spawn(move || {
+            let (mut client, _) = proxy.accept().unwrap();
+            client.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+            let mut buf = [0u8; 4096];
+            let n = client.read(&mut buf).unwrap_or(0);
+            let _ = client.write_all(b"HTTP/1.1 407 Proxy Authentication Required\r\n\r\n");
+            String::from_utf8_lossy(&buf[..n]).into_owned()
+        });
+
+        let config = sf_auth::ProxyConfig::from_parts(
+            sf_auth::ProxyMode::Http,
+            "127.0.0.1",
+            &address.port().to_string(),
+            "alice",
+            "s3cret:pass",
+        )
+        .unwrap();
+        assert!(config.engine_unsupported().is_none());
+        let proxy_url = config.librespot_url().expect("an HTTP proxy with a login is available to the engine");
+        let client = librespot_core::http_client::HttpClient::new(Some(&proxy_url));
+        let request = http::Request::builder()
+            .method("GET")
+            .uri("https://apresolve.spotify.com/")
+            .body(Default::default())
+            .unwrap();
+        let _ = tokio::time::timeout(Duration::from_secs(5), client.request(request)).await;
+        let seen = proxy_thread.join().unwrap();
+        let login = base64::engine::general_purpose::STANDARD.encode("alice:s3cret:pass");
+        assert!(
+            seen.contains(&format!("Basic {login}")),
+            "the proxy login must go out as Proxy-Authorization, got {seen:?}"
+        );
+    }
 }

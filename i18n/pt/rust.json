@@ -103,7 +103,6 @@
   "Playback": "Reprodução",
   "Playback on this computer is off": "A reprodução neste computador está desligada",
   "Playback on this computer is unavailable": "A reprodução neste computador não está disponível",
-  "Playback on this computer only works through an HTTP proxy without a password — otherwise audio would bypass the proxy": "A reprodução neste computador só funciona por um proxy HTTP sem senha — caso contrário, o áudio passaria por fora do proxy",
   "Playback on this computer: {0}": "Reprodução neste computador: {0}",
   "Playback setup cancelled": "Configuração da reprodução cancelada",
   "Playing on this computer requires Spotify Premium": "É preciso Spotify Premium para tocar neste computador",
@@ -238,5 +237,6 @@
   "{0}. Return to Materialfy and try again.": "{0}. Volte ao Materialfy e tente novamente.",
   "“{0}” added to queue": "“{0}” adicionado à fila",
   "“{0}” didn’t show up in Spotify Connect — try again": "“{0}” não apareceu no Spotify Connect — tente novamente",
-  "“{0}” is no longer visible on the network": "“{0}” não está mais visível na rede"
+  "“{0}” is no longer visible on the network": "“{0}” não está mais visível na rede",
+  "Playback on this computer only works through an HTTP proxy — over SOCKS5 audio would bypass the proxy": "A reprodução neste computador só funciona por um proxy HTTP — via SOCKS5 o áudio ignoraria o proxy"
 }
