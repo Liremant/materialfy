@@ -1,0 +1,1 @@
+../../../src/materialfy/qml/Md3/ImageGate.qml

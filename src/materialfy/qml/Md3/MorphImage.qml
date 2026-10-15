@@ -98,22 +98,28 @@ Item {
             _gateOn = true
             image.source = _want
         }
-        function _releaseGate() {
+        function _releaseGate(clearLoading) {
             // слот держит и ожидающий (_hold), и загрузившийся (_gateOn) — иначе слоты утекают:
             // очередь встаёт, и все обложки после первых двенадцати не грузятся никогда
-            if (_hold || _gateOn) {
+            if (_hold) {
                 _hold = false
+                ImageGate.cancel(image)   // слота у ждущего нет — только снять заявку
+            }
+            if (_gateOn) {
                 _gateOn = false
-                ImageGate.release(root)
+                if (clearLoading && image.status === Image.Loading)
+                    image.source = ""
+                ImageGate.release(image)
             }
         }
-        on_WantChanged: {
+        function _requestGate() {
             if (_want === "") {
-                _releaseGate()
-                _gateOn = false
+                _releaseGate(true)
                 image.source = ""
             } else if (!_hold && !_gateOn) {
-                if (ImageGate.acquire(root)) {
+                // в очередь ставим сам Image (у него qmlContinue): очередь зовёт continue на том,
+                // кого поставили — заявка от root промолчала бы в release и обложка не грузилась никогда
+                if (ImageGate.acquire(image)) {
                     _gateOn = true
                     image.source = _want
                 } else {
@@ -123,10 +129,17 @@ Item {
                 image.source = _want
             }
         }
-        // обложка ушла из виду (делегат переиспользован/скрыт) — слот отдаём очереди
-        onVisibleChanged: if (!root.visible) _releaseGate()
-        Component.onDestruction: _releaseGate()
-        source: _gateOn ? _want : ""
+        on_WantChanged: _requestGate()
+        // Скрытый queued Image снимается из очереди, а при повторном показе снова просит слот.
+        // Это слушает root.visible: сам Image всегда visible:false и его собственный сигнал здесь
+        // не сообщает о скрытии/показе MorphImage.
+        Connections {
+            target: root
+            function onVisibleChanged() { root.visible ? image._requestGate() : image._releaseGate(true) }
+        }
+        Component.onDestruction: _releaseGate(true)
+        // source управляется только переходами gate: imperative assignment не спорит с _want
+        // binding'ом и не создаёт цикл source → status → release → source.
         sourceSize: Qt.size(_fit(root.width * Screen.devicePixelRatio), _fit(root.height * Screen.devicePixelRatio))
         retainWhileLoading: true
         smooth: true
@@ -137,7 +150,7 @@ Item {
             else if (status === Image.Error || status === Image.Null)
                 shown = false
             if (status === Image.Ready || status === Image.Error)
-                _releaseGate()
+                _releaseGate(false)
             if (status === Image.Error)
                 root._failed()
         }
