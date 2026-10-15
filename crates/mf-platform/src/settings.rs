@@ -72,6 +72,8 @@ pub enum SettingKey {
     LyricsAnimate,
     /// показывать метку источника текста
     LyricsShowSource,
+    /// сдвиг синхронизации в миллисекундах (-500..500)
+    LyricsSyncMs,
     /// "system" | "full" | "reduced" → Theme.reducedMotion
     Animations,
     /// режим для слабых ПК: "auto" (сам, когда кадры рисует процессор) | "on" | "off" → Theme.lowPower
@@ -181,7 +183,7 @@ pub enum SettingType {
 }
 
 impl SettingKey {
-    pub const ALL: [SettingKey; 80] = [
+    pub const ALL: [SettingKey; 81] = [
         SettingKey::ThemeMode,
         SettingKey::SchemeVariant,
         SettingKey::AccentFromCover,
@@ -212,6 +214,7 @@ impl SettingKey {
         SettingKey::LyricsLineSpacing,
         SettingKey::LyricsAnimate,
         SettingKey::LyricsShowSource,
+        SettingKey::LyricsSyncMs,
         SettingKey::Animations,
         SettingKey::LowPowerMode,
         SettingKey::GpuPreference,
@@ -298,6 +301,7 @@ impl SettingKey {
             LyricsLineSpacing => "lyricsLineSpacing",
             LyricsAnimate => "lyricsAnimate",
             LyricsShowSource => "lyricsShowSource",
+            LyricsSyncMs => "lyricsSyncMs",
             Animations => "animations",
             LowPowerMode => "lowPowerMode",
             GpuPreference => "gpuPreference",
@@ -398,6 +402,7 @@ impl SettingKey {
             LyricsLineSpacing => Float(1.0),
             LyricsAnimate => Bool(true),
             LyricsShowSource => Bool(true),
+            LyricsSyncMs => Int(0),
             Animations => Str("system".into()),
             LowPowerMode => Str("auto".into()),
             GpuPreference => Str("auto".into()),
@@ -477,7 +482,7 @@ impl SettingKey {
                 SettingValue::Float(if v.is_finite() { v.clamp(0.0, 2.0) } else { 1.0 })
             }
             (SettingKey::LyricsActiveScale, SettingValue::Float(v)) => {
-                SettingValue::Float(if v.is_finite() { v.clamp(0.0, 1.35) } else { 0.0 })
+                SettingValue::Float(if v.is_finite() && v >= 1.0 { v.clamp(1.0, 1.35) } else { 0.0 })
             }
             (SettingKey::LyricsIdleScale, SettingValue::Float(v)) => {
                 SettingValue::Float(if v.is_finite() && v > 0.0 { v.clamp(0.8, 1.0) } else { 0.0 })
@@ -499,6 +504,9 @@ impl SettingKey {
             }
             (SettingKey::LyricsLineSpacing, SettingValue::Float(v)) => {
                 SettingValue::Float(if v.is_finite() { v.clamp(0.8, 1.6) } else { 1.0 })
+            }
+            (SettingKey::LyricsSyncMs, SettingValue::Int(ms)) => {
+                SettingValue::Int(ms.clamp(-500, 500))
             }
             (SettingKey::LyricsTextAlign, SettingValue::Str(s)) => {
                 SettingValue::Str(match s.as_str() {
@@ -766,12 +774,16 @@ impl SettingsStore {
         let _ = self.changes.send(key);
         if key == SettingKey::LyricsMode {
             // При смене стиля текста сбрасываем ручные параметры к значениям по умолчанию для стиля
-            self.set(SettingKey::LyricsActiveScale, SettingValue::Float(0.0));
-            self.set(SettingKey::LyricsWordBounce, SettingValue::Float(1.0));
-            self.set(SettingKey::LyricsDimOpacity, SettingValue::Float(0.35));
-            self.set(SettingKey::LyricsScrollMs, SettingValue::Int(-1));
-            self.set(SettingKey::LyricsStaggerMs, SettingValue::Int(-1));
-            self.set(SettingKey::LyricsIdleScale, SettingValue::Float(0.0));
+            for reset_key in [
+                SettingKey::LyricsActiveScale,
+                SettingKey::LyricsWordBounce,
+                SettingKey::LyricsDimOpacity,
+                SettingKey::LyricsScrollMs,
+                SettingKey::LyricsStaggerMs,
+                SettingKey::LyricsIdleScale,
+            ] {
+                self.set(reset_key, reset_key.default_value());
+            }
         }
         true
     }
@@ -1171,7 +1183,7 @@ mod tests {
 
     #[test]
     fn schema() {
-        assert_eq!(SettingKey::ALL.len(), 80);
+        assert_eq!(SettingKey::ALL.len(), 81);
         for key in SettingKey::ALL {
             assert_eq!(SettingKey::from_name(key.name()), Some(key));
             assert_eq!(key.default_value().value_type(), key.value_type());
@@ -1219,6 +1231,9 @@ mod tests {
         assert_eq!(SettingKey::LyricsVisibleLines.normalize(Str("0".into())), Str("all".into()));
         assert_eq!(SettingKey::LyricsVisibleLines.normalize(Str("16".into())), Str("all".into()));
         assert_eq!(SettingKey::LyricsActiveScale.normalize(Float(0.0)), Float(0.0));
+        assert_eq!(SettingKey::LyricsActiveScale.normalize(Float(0.5)), Float(0.0));
+        assert_eq!(SettingKey::LyricsActiveScale.normalize(Float(0.99)), Float(0.0));
+        assert_eq!(SettingKey::LyricsActiveScale.normalize(Float(1.0)), Float(1.0));
         assert_eq!(SettingKey::LyricsActiveScale.normalize(Float(1.12)), Float(1.12));
         assert_eq!(SettingKey::LyricsActiveScale.normalize(Float(1.5)), Float(1.35));
         assert_eq!(SettingKey::LyricsActiveScale.normalize(Float(-0.2)), Float(0.0));
@@ -1245,6 +1260,10 @@ mod tests {
         assert_eq!(SettingKey::LyricsStaggerMs.normalize(Int(-5)), Int(0));
         assert_eq!(SettingKey::LyricsStaggerMs.normalize(Int(30)), Int(30));
         assert_eq!(SettingKey::LyricsStaggerMs.normalize(Int(150)), Int(80));
+        assert_eq!(SettingKey::LyricsSyncMs.normalize(Int(-600)), Int(-500));
+        assert_eq!(SettingKey::LyricsSyncMs.normalize(Int(0)), Int(0));
+        assert_eq!(SettingKey::LyricsSyncMs.normalize(Int(250)), Int(250));
+        assert_eq!(SettingKey::LyricsSyncMs.normalize(Int(800)), Int(500));
     }
 
     #[test]
@@ -1503,7 +1522,7 @@ mod tests {
             "lyricsTextAlign", "lyricsFillMode", "lyricsVisibleLines", "lyricsHighlight",
             "lyricsActiveScale", "lyricsIdleScale", "lyricsWordBounce", "lyricsDimOpacity",
             "lyricsScrollMs", "lyricsStaggerMs", "lyricsBlurAmount",
-            "lyricsLineSpacing", "lyricsAnimate", "lyricsShowSource",
+            "lyricsLineSpacing", "lyricsAnimate", "lyricsShowSource", "lyricsSyncMs",
             "animations", "lowPowerMode", "gpuPreference", "rightPanelOpen", "rightPanelTab", "sidebarCollapsed", "windowWidth",
             "windowHeight", "windowX", "windowY", "windowMaximized", "closeToTray", "wheelStep", "floatingPlayer", "floatingPlayerStyle",
             "taskbarWidgetPos", "floatingKeyHints", "libraryView",

@@ -1075,7 +1075,7 @@ Page {
             readonly property real activeScaleVal: Settings.lyricsActiveScale > 0 ? Settings.lyricsActiveScale : styleScale
             title: I18n.t("Active line scale")
             description: Math.round(activeScaleVal * 100) <= 100
-                         ? I18n.t("Same size as other lines")
+                         ? I18n.t("Standard size: the singing line is not enlarged")
                          : I18n.t("{0}%: enlarges the currently singing line", Math.round(activeScaleVal * 100))
             Slider {
                 wheelEnabled: false
@@ -1233,8 +1233,9 @@ Page {
 
         SettingRow {
             id: idleScaleRow
-            // Настройка 0 = по стилю (100% = без сжатия)
-            readonly property real effective: Settings.lyricsIdleScale > 0 ? Settings.lyricsIdleScale : 1.0
+            // Настройка 0 = по стилю: отображается значение текущего стиля
+            readonly property real styleScale: Settings.lyricsMode === "spicy" ? 0.88 : (Settings.lyricsMode === "karaoke" ? 0.90 : 0.94)
+            readonly property real effective: Settings.lyricsIdleScale > 0 ? Settings.lyricsIdleScale : styleScale
             title: I18n.t("Inactive lines size")
             description: I18n.t("{0}%: how much the lines around the singing one stay smaller", Math.round(effective * 100))
             Slider {
@@ -1345,6 +1346,23 @@ Page {
             title: I18n.t("Lyrics source label")
             description: I18n.t("Shows the source badge (e.g. “Spotify · line by line”)")
             Switch { checked: Settings.lyricsShowSource; onToggled: c => Settings.lyricsShowSource = c }
+        }
+
+        SettingRow {
+            title: I18n.t("Sync adjustment")
+            description: Settings.lyricsSyncMs === 0 ? I18n.t("Exact sync with playback (0 ms)")
+                         : (Settings.lyricsSyncMs > 0 ? I18n.t("Lyrics lead playback by {0} ms", Settings.lyricsSyncMs)
+                         : I18n.t("Lyrics lag playback by {0} ms", Math.abs(Settings.lyricsSyncMs)))
+            Slider {
+                wheelEnabled: false
+                width: 220
+                from: -500
+                to: 500
+                stepSize: 25
+                value: Settings.lyricsSyncMs
+                valueText: v => (v > 0 ? "+" : "") + Math.round(v) + " ms"
+                onMoved: v => Settings.lyricsSyncMs = Math.round(v / 25) * 25
+            }
         }
 
         RowLayout {

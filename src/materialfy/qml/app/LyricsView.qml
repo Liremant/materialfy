@@ -44,11 +44,10 @@ Item {
         : (spicy ? 1.12 : (karaoke ? 1.16 : 1.0))
     readonly property real baseIdleScale: spicy ? 0.88 : (karaoke ? 0.90 : 0.94)
     readonly property real idleScale: Settings.lyricsIdleScale > 0
-        ? Math.min(activeScale, baseIdleScale * Settings.lyricsIdleScale)
+        ? Math.min(activeScale, Settings.lyricsIdleScale)
         : baseIdleScale
     readonly property real wordBounce: Settings.lyricsWordBounce ?? 1.0
     readonly property real dimAlpha: Settings.lyricsDimOpacity ?? (spicy ? 0.34 : 0.35)
-    readonly property bool uniformDim: fillMode === "off"
     readonly property real baseSpacingScale: spicy ? 1.12 : (karaoke ? 1.08 : 1.0)
     readonly property real spacingScale: baseSpacingScale * Settings.lyricsLineSpacing
     readonly property real highlightMultiplier: Settings.lyricsHighlight
@@ -265,8 +264,13 @@ Item {
         function onStateChanged() { root.resyncPlayback() }
     }
 
+    Connections {
+        target: Settings
+        function onLyricsSyncMsChanged() { root.tick() }
+    }
+
     function tick() {
-        pos = playerPos()
+        pos = playerPos() + Settings.lyricsSyncMs / 1000
         const L = lines
 
         // Подсветка и заливка идут ровно по синхронизированной позиции: активна всегда строго одна текущая строка
@@ -315,8 +319,8 @@ Item {
     }
 
     function seekTo(t) {
-        // клик по строке перематывает к её началу с защитой от старого отсчёта плеера
-        const at = Math.max(0, t)
+        // строки показаны со сдвигом синхронизации — перематываем туда, где строка и правда звучит
+        const at = Math.max(0, t + 0.02 - Settings.lyricsSyncMs / 1000)
         const now = Date.now()
         _seekTarget = at
         _seekStartMs = now
@@ -626,13 +630,11 @@ Item {
         Behavior on lineScale {
             enabled: root.motion && !Theme.lowPower
             NumberAnimation {
-                id: scaleAnim
                 duration: root.karaoke ? 380 : (root.spicy ? 320 : 300)
                 easing.type: Easing.BezierSpline
                 easing.bezierCurve: root.scrollBezier
             }
         }
-        readonly property bool scaling: scaleAnim.running
         readonly property real lineSize: root.activeFontPx
         readonly property real rowH: root.rowH
 
@@ -793,9 +795,10 @@ Item {
 
             // Неактивные строки размываются статически без анимации blur,
             // чтобы Qt отрисовывал FBO один раз и кэшировал текстуру.
+            // Размытие сохраняется во время масштабирования, чтобы слой не мигал при переключении.
             readonly property real lineBlur: (root.spicy ? 0.34 : 0.28) * root.blurAmount
             readonly property bool blurred: root.blurInactive && line.inLineRange && line.dist < 6
-                && !line.isTarget && !line.filling && !line.hovered && !line.scaling
+                && !line.isTarget && !line.filling && !line.hovered
             layer.enabled: blurred
             layer.smooth: true
             layer.effect: MultiEffect {
@@ -972,16 +975,17 @@ Item {
             const e = (modelData.e ?? 0)
             const t = root.pos
             const attack = Math.min(0.22, Math.max(0.13, dur * 0.62))
+            const fallStart = Math.max(e, s + attack)
             const release = root.karaoke ? 0.24 : 0.21
             if (t <= s)
                 return 0
-            if (t >= e + release)
+            if (t >= fallStart + release)
                 return 0
             if (t < s + attack)
                 return word.ease((t - s) / attack)
-            if (t <= e)
+            if (t <= fallStart)
                 return 1.0
-            return 1.0 - word.ease((t - e) / release)
+            return 1.0 - word.ease((t - fallStart) / release)
         }
 
         readonly property bool alreadySung: sungState === 1 || ((lineActive || lineOutgoing) && root.pos >= (modelData.e ?? 0))
@@ -1025,11 +1029,7 @@ Item {
         }
 
         readonly property real glow: {
-            if (!wordAnimating)
-                return 0
-            if (root.fillMode === "line")
-                return root.spicy && lineActive ? 0.45 * root.highlightMultiplier : 0
-            if (root.fillMode !== "word")
+            if (!wordAnimating || root.fillMode !== "word")
                 return 0
             if (root.spicy)
                 return 0.90 * word.envelope * root.highlightMultiplier
@@ -1072,8 +1072,8 @@ Item {
                 id: wordTranslate
                 y: word.sungLiftEm * word.fontSize
                 Behavior on y {
-                    // Behavior работает только вне активной строки (на активной sungLiftEm меняется непрерывно)
-                    enabled: !word.lineActive && root.motion && !Theme.lowPower
+                    // Behavior работает только вне анимации слова (во время волны sungLiftEm меняется непрерывно)
+                    enabled: !word.wordAnimating && root.motion && !Theme.lowPower
                     NumberAnimation { duration: 105; easing.type: Easing.OutCubic }
                 }
             }
