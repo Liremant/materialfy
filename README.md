@@ -1,13 +1,15 @@
-<p align="center"><b>English</b> · <a href="README.ru.md">Русский</a></p>
+<p align="center"><b>English</b> · <a href="README.ru.md">Русский</a> · <a href="README.pt-BR.md">Português</a></p>
 
 <div align="center">
 
+<h1>
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/brand/wordmark-on-dark.svg">
   <img src="docs/brand/wordmark.svg" width="420" alt="Materialfy">
 </picture>
+</h1>
 
-[![Build](https://github.com/fatyzzz/materialfy/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/fatyzzz/materialfy/actions/workflows/build.yml)
+[![Release build](https://github.com/fatyzzz/materialfy/actions/workflows/release.yml/badge.svg)](https://github.com/fatyzzz/materialfy/actions/workflows/release.yml)
 [![Release](https://img.shields.io/github/v/release/fatyzzz/materialfy?label=release)](https://github.com/fatyzzz/materialfy/releases/latest)
 
 Desktop Spotify client built with Rust and Qt Quick, with a Material 3 Expressive interface.<br>
@@ -110,6 +112,8 @@ Taken with a Premium account and music playing; the colours follow the cover of 
   recent releases from artists you follow.
 - Podcasts: show and episode pages, listening progress, chapters, skip back 10 seconds and forward 30.
 - Synced lyrics. The app takes lyrics from Spotify first and falls back to LRCLIB, NetEase and Musixmatch.
+  Three styles to choose from (classic, Spicy, karaoke), text size
+  and background scrim.
 - Material You color scheme from the current track's cover or from a chosen accent color, light and dark themes.
   Animations can be shortened or follow the system setting.
 - Three window layouts: full, compact for a narrow window, and a mini player with an "Always on top" option

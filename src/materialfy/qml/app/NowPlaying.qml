@@ -546,10 +546,7 @@ Item {
                     visible: shown > 0.001 && root.visible
                     opacity: Math.pow(shown, 1.6)
                     transform: Translate { x: -(1 - lyricsView.shown) * 80 }
-                    fontSize: Math.max(26, Math.min(40, root.width / 36))
-                    // слои blur строк строятся после свапа: в первые кадры анимации панель
-                    // и так перерисовывается целиком, не надо к ней же строить 5 текстур
-                    blurInactive: shown > 0.99
+                    baseFontSize: Math.max(26, Math.min(40, root.width / 36))
                 }
             }
         }

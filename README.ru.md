@@ -1,4 +1,4 @@
-<p align="center"><a href="README.md">English</a> · <b>Русский</b></p>
+<p align="center"><a href="README.md">English</a> · <b>Русский</b> · <a href="README.pt-BR.md">Português</a></p>
 
 <div align="center">
 
@@ -7,7 +7,7 @@
   <img src="docs/brand/wordmark.svg" width="420" alt="Materialfy">
 </picture>
 
-[![Build](https://github.com/fatyzzz/materialfy/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/fatyzzz/materialfy/actions/workflows/build.yml)
+[![Release build](https://github.com/fatyzzz/materialfy/actions/workflows/release.yml/badge.svg)](https://github.com/fatyzzz/materialfy/actions/workflows/release.yml)
 [![Release](https://img.shields.io/github/v/release/fatyzzz/materialfy?label=release)](https://github.com/fatyzzz/materialfy/releases/latest)
 
 Настольный клиент Spotify на Rust и Qt Quick, интерфейс в стиле Material 3 Expressive.<br>
@@ -110,7 +110,8 @@ Materialfy ставят вместо официального настольно
   «Новинки» собирает свежие релизы исполнителей, на которых вы подписаны.
 - Подкасты: страницы шоу и выпусков, прогресс прослушивания, главы, перемотка на 10 секунд назад и 30 вперёд.
 - Синхронный текст песни. Сначала программа берёт текст у Spotify, при его отсутствии ищет в LRCLIB, NetEase
-  и Musixmatch.
+  и Musixmatch. Три стиля на выбор (классический, Spicy, караоке), размер текста
+  и подложка под текстом.
 - Схема Material You из обложки текущего трека или из выбранного акцентного цвета, светлая и тёмная тема.
   Анимации можно укоротить или взять настройку системы.
 - Три раскладки окна: полная, компактная для узкого окна и мини-плеер с пунктом «поверх всех окон»
