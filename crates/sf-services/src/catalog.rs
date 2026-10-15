@@ -531,6 +531,8 @@ impl CatalogService {
         let (read, overview) = with_extras(read, overview, EXTRAS_GRACE).await;
         let overview = overview.flatten();
         let uri = format!("spotify:artist:{artist_id}");
+        // похожих уже дала сессия — Web API за ними не ходит
+        let session_related = matches!(&read, Some(Ok(record)) if !record.related.is_empty());
         let main = async {
             match read {
                 Some(Ok(record)) => Ok((record.artist, record.top_tracks, record.albums, record.appears_on, record.related)),
@@ -541,7 +543,9 @@ impl CatalogService {
         let extras = async {
             match overview {
                 Some(_) => (false, Vec::new()),
-                None => tokio::join!(self.followed(&uri), self.related(artist_id)),
+                None => tokio::join!(self.followed(&uri), async {
+                    if session_related { Vec::new() } else { self.related(artist_id).await }
+                }),
             }
         };
         let (main, extras) = with_extras(main, extras, EXTRAS_GRACE).await;

@@ -471,9 +471,10 @@ impl ApiClient {
             format!("{base}{path}")
         };
         let provider = self.provider()?;
-        // запись сбрасывает кэш GET, чем бы ни кончилась
-        let _wrote = (method != Method::GET).then(|| WroteGuard(&self.limits));
-        self.limits.admit(self.source, limits::priority_of(method == Method::GET, path)).await?;
+        // запись сбрасывает кэш GET, чем бы ни кончилась; команды плееру и очередь — нет: их GET не кэшируются
+        let _wrote = (method != Method::GET && !path.starts_with("/me/player")).then(|| WroteGuard(&self.limits));
+        let priority = limits::priority_of(method == Method::GET, path);
+        self.limits.admit(self.source, priority).await?;
         let started = Instant::now();
         // Один логический запрос, даже если он ждёт семафор или охлаждение: признак активности живёт всё это время.
         self.activity.begin();
@@ -534,8 +535,15 @@ impl ApiClient {
                 // останавливать весь источник; такую очередь отдаём UI как RateLimited.
                 tracing::warn!("Spotify is rate limiting source={} wait={wait:?}", self.source);
                 drop(permit);
-                self.extend_cooldown(wait.min(MAX_RETRY_AFTER)).await;
-                let retries = if queue_write { QUEUE_RATE_LIMIT_RETRIES } else { RATE_LIMIT_RETRIES };
+                self.extend_cooldown(limits::jittered(wait).min(MAX_RETRY_AFTER)).await;
+                // фон и опрос после 429 не повторяют: каждый повтор — ещё запрос в и так полное окно
+                let retries = if queue_write {
+                    QUEUE_RATE_LIMIT_RETRIES
+                } else if priority == limits::Priority::Interactive {
+                    RATE_LIMIT_RETRIES
+                } else {
+                    0
+                };
                 let over_budget = deadline.is_some_and(|deadline| Instant::now() + wait > deadline);
                 if attempt > retries || over_budget || (queue_write && wait > MAX_RETRY_AFTER) {
                     return Err(ApiError::RateLimited);
@@ -544,7 +552,7 @@ impl ApiClient {
             }
             if status.is_server_error() && method == Method::GET && attempt == 1 {
                 drop(permit);
-                tokio::time::sleep(Duration::from_millis(800)).await;
+                tokio::time::sleep(limits::jittered(Duration::from_millis(700))).await;
                 continue;
             }
             let text = response.text().await?;

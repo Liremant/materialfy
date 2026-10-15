@@ -406,7 +406,8 @@ impl ReleasesService {
         if followed.is_empty() {
             followed = self.library.artists().into_iter().map(|a| a.artist_id).collect();
         }
-        if followed.is_empty() {
+        // сессия ответила «ни на кого не подписан» — Web API скажет то же
+        if followed.is_empty() && !answered {
             match sf_api::limits::background(within(WEB_TIMEOUT, followed_artists(&self.auth.api()))).await {
                 Ok(ids) => {
                     answered = true;

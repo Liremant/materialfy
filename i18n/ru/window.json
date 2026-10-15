@@ -56,5 +56,15 @@
   "Your own spot. Hold the player in the taskbar and drag it to move it again": "Своё место. Чтобы передвинуть, зажми плеер в панели задач и перетащи",
   "pause": "пауза",
   "tracks": "треки",
-  "volume": "громкость"
+  "volume": "громкость",
+  "Spotify is limiting requests": "Spotify ограничивает запросы",
+  "Materialfy shares one Spotify developer app with many people, and Spotify has slowed it down. Playback and most pages go through your account and keep working; search, some artist pages and library changes may wait. Your own free app removes the limit for good and takes about two minutes.": "Materialfy делит одно приложение разработчика Spotify со многими людьми, и Spotify его притормозил. Воспроизведение и большинство страниц идут через ваш аккаунт и работают; поиск, часть страниц артистов и изменения в библиотеке могут подождать. Своё бесплатное приложение снимает ограничение насовсем — это займёт пару минут.",
+  "Open the Spotify developer dashboard and sign in with your Spotify account": "Откройте панель разработчика Spotify и войдите своим аккаунтом Spotify",
+  "Open dashboard": "Открыть панель",
+  "Create an app with any name and description. Add this address to Redirect URIs, tick Web API and save": "Создайте приложение с любым названием и описанием. Добавьте этот адрес в Redirect URIs, отметьте Web API и сохраните",
+  "Open the app’s settings, copy its Client ID and paste it here": "Откройте настройки приложения, скопируйте Client ID и вставьте сюда",
+  "Done: requests now go through your app": "Готово: запросы теперь идут через ваше приложение",
+  "Don’t show again": "Больше не показывать",
+  "Covers bypass the proxy": "Обложки мимо прокси",
+  "Load covers and pictures directly: faster on a slow proxy and saves its traffic. Spotify sees your real address for these images": "Загружать обложки и картинки напрямую: быстрее при медленном прокси и экономит его трафик. Для этих картинок Spotify увидит ваш настоящий адрес"
 }

@@ -708,6 +708,10 @@ Window {
         id: newPlaylistDialog
         z: 2100
     }
+    // общий Client ID упёрся в лимит: как подключить своё приложение
+    ApiLimitDialog {
+        z: 2120
+    }
     UpdateSheet {
         z: 2150
     }

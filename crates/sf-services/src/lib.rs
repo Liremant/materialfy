@@ -101,6 +101,23 @@ pub struct Services {
     media: Arc<Mutex<Option<glue::MediaStop>>>,
 }
 
+/// Настройка «Обложки мимо прокси» → флаг клиента обложек (меняется сразу, без перезапуска).
+fn follow_covers_bypass(rt: &Handle, settings: &Arc<SettingsStore>, direct: Arc<std::sync::atomic::AtomicBool>) {
+    let settings = settings.clone();
+    let mut changes = settings.subscribe();
+    rt.spawn(async move {
+        loop {
+            match changes.recv().await {
+                Ok(SettingKey::CoversBypassProxy) | Err(broadcast::error::RecvError::Lagged(_)) => {
+                    direct.store(settings.get_bool(SettingKey::CoversBypassProxy), std::sync::atomic::Ordering::Relaxed);
+                }
+                Ok(_) => {}
+                Err(broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    });
+}
+
 impl Services {
     /// Порядок: HTTP (прокси из настроек) → ApiGateway → PlayerHandle → Auth → History → Library → Catalog →
     /// Wave → Releases → Home → Lyrics → Devices → glue (настройки → плеер) → медиаклавиши.
@@ -112,11 +129,14 @@ impl Services {
             sf_api::Http::unavailable(error)
         });
         let api = Arc::new(ApiGateway::new(http.clone(), Arc::new(sf_api::NetActivity::default())));
+        let covers_direct = Arc::new(std::sync::atomic::AtomicBool::new(settings.get_bool(SettingKey::CoversBypassProxy)));
+        follow_covers_bypass(rt, &settings, covers_direct.clone());
         let config = PlayerConfig {
             cover_dir: mf_platform::dirs::cache_subdir("covers"),
             session_file: options.persist_session.then(mf_platform::dirs::session_file),
             volume: settings.get_f64(SettingKey::Volume).clamp(0.0, 1.0),
-            http: http.clone(),
+            // клиент только для обложек: по настройке «Обложки мимо прокси» — напрямую
+            http: http.bypassing(covers_direct),
         };
         let player = PlayerHandle::start(rt, config, api.clone()).map_err(|e| anyhow::anyhow!("player: {e}"))?;
         let store = sf_auth::Store::with_runtime(mf_platform::dirs::state_dir(), rt.clone());

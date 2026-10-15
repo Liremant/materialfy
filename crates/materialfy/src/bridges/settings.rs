@@ -84,10 +84,14 @@ pub mod qobject {
         #[qproperty(bool, dj_voice, cxx_name = "djVoice", READ, WRITE = set_dj_voice, NOTIFY = dj_voice_changed)]
         #[qproperty(QString, device_name, cxx_name = "deviceName", READ, WRITE = set_device_name, NOTIFY = device_name_changed)]
         #[qproperty(QString, web_client_id, cxx_name = "webClientId", READ, WRITE = set_web_client_id, NOTIFY = web_client_id_changed)]
+        /// окно «Web API ограничен» с инструкцией больше не показывать
+        #[qproperty(bool, api_limit_tip_dismissed, cxx_name = "apiLimitTipDismissed", READ, WRITE = set_api_limit_tip_dismissed, NOTIFY = api_limit_tip_dismissed_changed)]
         #[qproperty(QString, proxy_mode, cxx_name = "proxyMode", READ, NOTIFY = proxy_mode_changed)]
         #[qproperty(QString, proxy_host, cxx_name = "proxyHost", READ, NOTIFY = proxy_host_changed)]
         #[qproperty(QString, proxy_port, cxx_name = "proxyPort", READ, NOTIFY = proxy_port_changed)]
         #[qproperty(QString, proxy_username, cxx_name = "proxyUsername", READ, NOTIFY = proxy_username_changed)]
+        /// обложки мимо прокси (применяется сразу, без «Применить»)
+        #[qproperty(bool, covers_bypass_proxy, cxx_name = "coversBypassProxy", READ, WRITE = set_covers_bypass_proxy, NOTIFY = covers_bypass_proxy_changed)]
         #[qproperty(bool, close_to_tray, cxx_name = "closeToTray", READ, WRITE = set_close_to_tray, NOTIFY = close_to_tray_changed)]
         #[qproperty(i32, wheel_step, cxx_name = "wheelStep", READ, WRITE = set_wheel_step, NOTIFY = wheel_step_changed)]
         /// "off" | "island" | "taskbar" — плеер вне главного окна (FloatingIsland / TaskbarPlayer)
@@ -169,6 +173,8 @@ pub mod qobject {
         fn set_dj_voice(self: Pin<&mut Settings>, value: bool);
         fn set_device_name(self: Pin<&mut Settings>, value: QString);
         fn set_web_client_id(self: Pin<&mut Settings>, value: QString);
+        fn set_api_limit_tip_dismissed(self: Pin<&mut Settings>, value: bool);
+        fn set_covers_bypass_proxy(self: Pin<&mut Settings>, value: bool);
         fn set_close_to_tray(self: Pin<&mut Settings>, value: bool);
         fn set_wheel_step(self: Pin<&mut Settings>, value: i32);
         fn set_floating_player(self: Pin<&mut Settings>, value: QString);
@@ -342,6 +348,9 @@ pub mod qobject {
         #[cxx_name = "webClientIdChanged"]
         fn web_client_id_changed(self: Pin<&mut Settings>);
         #[qsignal]
+        #[cxx_name = "apiLimitTipDismissedChanged"]
+        fn api_limit_tip_dismissed_changed(self: Pin<&mut Settings>);
+        #[qsignal]
         #[cxx_name = "proxyModeChanged"]
         fn proxy_mode_changed(self: Pin<&mut Settings>);
         #[qsignal]
@@ -353,6 +362,9 @@ pub mod qobject {
         #[qsignal]
         #[cxx_name = "proxyUsernameChanged"]
         fn proxy_username_changed(self: Pin<&mut Settings>);
+        #[qsignal]
+        #[cxx_name = "coversBypassProxyChanged"]
+        fn covers_bypass_proxy_changed(self: Pin<&mut Settings>);
         #[qsignal]
         #[cxx_name = "closeToTrayChanged"]
         fn close_to_tray_changed(self: Pin<&mut Settings>);
@@ -611,6 +623,8 @@ settings! {
     dj_voice: bool = DjVoice, set_dj_voice, dj_voice_changed;
     device_name: QString = DeviceName, set_device_name, device_name_changed;
     web_client_id: QString = WebClientId, set_web_client_id, web_client_id_changed;
+    api_limit_tip_dismissed: bool = ApiLimitTipDismissed, set_api_limit_tip_dismissed, api_limit_tip_dismissed_changed;
+    covers_bypass_proxy: bool = CoversBypassProxy, set_covers_bypass_proxy, covers_bypass_proxy_changed;
     close_to_tray: bool = CloseToTray, set_close_to_tray, close_to_tray_changed;
     wheel_step: i32 = WheelStep, set_wheel_step, wheel_step_changed;
     floating_player: QString = FloatingPlayer, set_floating_player, floating_player_changed;
@@ -767,10 +781,12 @@ impl cxx_qt::Initialize for qobject::Settings {
         }
         forward_events(self.qt_thread(), store().subscribe(), Self::on_store);
         let auth = ctx().services.auth.watch();
-        self.as_mut().on_auth(auth.borrow().clone());
+        let current = auth.borrow().clone();
+        self.as_mut().on_auth(current);
         forward_watch(self.qt_thread(), auth, Self::on_auth);
         let limits = ctx().services.auth.api().web_api_limits();
-        self.as_mut().on_web_api_limits(limits.borrow().clone());
+        let current = limits.borrow().clone();
+        self.as_mut().on_web_api_limits(current);
         forward_watch(self.qt_thread(), limits, Self::on_web_api_limits);
     }
 }

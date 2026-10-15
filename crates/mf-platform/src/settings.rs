@@ -111,11 +111,15 @@ pub enum SettingKey {
     DeviceName,
     /// свой Client ID (личное приложение Web API); "" — нет
     WebClientId,
+    /// окно с инструкцией, когда общий Client ID упёрся в лимит: true — «больше не показывать»
+    ApiLimitTipDismissed,
     /// "off" | "system" | "http" | "socks"; пароль — в хранилище секретов (sf-auth, слот Proxy)
     ProxyMode,
     ProxyHost,
     ProxyPort,
     ProxyUsername,
+    /// обложки и картинки грузить напрямую, мимо прокси (по умолчанию — через него, как всё остальное)
+    CoversBypassProxy,
     // Локальные данные
     /// закреплённые URI (плейлисты/альбомы/станции), JSON-массив строк — get_string_list/set_string_list
     Pins,
@@ -167,7 +171,7 @@ pub enum SettingType {
 }
 
 impl SettingKey {
-    pub const ALL: [SettingKey; 73] = [
+    pub const ALL: [SettingKey; 75] = [
         SettingKey::ThemeMode,
         SettingKey::SchemeVariant,
         SettingKey::AccentFromCover,
@@ -222,10 +226,12 @@ impl SettingKey {
         SettingKey::DjVoice,
         SettingKey::DeviceName,
         SettingKey::WebClientId,
+        SettingKey::ApiLimitTipDismissed,
         SettingKey::ProxyMode,
         SettingKey::ProxyHost,
         SettingKey::ProxyPort,
         SettingKey::ProxyUsername,
+        SettingKey::CoversBypassProxy,
         SettingKey::Pins,
         SettingKey::HiddenTracks,
         SettingKey::RadioSeeds,
@@ -301,10 +307,12 @@ impl SettingKey {
             DjVoice => "djVoice",
             DeviceName => "deviceName",
             WebClientId => "webClientId",
+            ApiLimitTipDismissed => "apiLimitTipDismissed",
             ProxyMode => "proxyMode",
             ProxyHost => "proxyHost",
             ProxyPort => "proxyPort",
             ProxyUsername => "proxyUsername",
+            CoversBypassProxy => "coversBypassProxy",
             Pins => "pins",
             HiddenTracks => "hiddenTracks",
             RadioSeeds => "radioSeeds",
@@ -394,10 +402,12 @@ impl SettingKey {
             DjVoice => Bool(true),
             DeviceName => Str(String::new()),
             WebClientId => Str(String::new()),
+            ApiLimitTipDismissed => Bool(false),
             ProxyMode => Str("system".into()),
             ProxyHost => Str(String::new()),
             ProxyPort => Str(String::new()),
             ProxyUsername => Str(String::new()),
+            CoversBypassProxy => Bool(false),
             Pins => Str(String::new()),
             HiddenTracks => Str(String::new()),
             RadioSeeds => Str(String::new()),
@@ -1107,7 +1117,7 @@ mod tests {
 
     #[test]
     fn schema() {
-        assert_eq!(SettingKey::ALL.len(), 73);
+        assert_eq!(SettingKey::ALL.len(), 75);
         for key in SettingKey::ALL {
             assert_eq!(SettingKey::from_name(key.name()), Some(key));
             assert_eq!(key.default_value().value_type(), key.value_type());
@@ -1409,8 +1419,8 @@ mod tests {
             "windowHeight", "windowX", "windowY", "windowMaximized", "closeToTray", "wheelStep", "floatingPlayer", "floatingPlayerStyle",
             "taskbarWidgetPos", "floatingKeyHints", "libraryView",
             "librarySort", "homeHidden", "bitrate", "normalisation", "gapless", "autoplay", "volume", "audioDevice",
-            "audioCache", "audioCacheMb", "playbackAuthorized", "deviceName", "webClientId", "proxyMode", "proxyHost",
-            "proxyPort", "proxyUsername", "pins", "hiddenTracks", "radioSeeds", "language", "autoUpdateCheck",
+            "audioCache", "audioCacheMb", "playbackAuthorized", "deviceName", "webClientId", "apiLimitTipDismissed", "proxyMode", "proxyHost",
+            "proxyPort", "proxyUsername", "coversBypassProxy", "pins", "hiddenTracks", "radioSeeds", "language", "autoUpdateCheck",
             "updateChannel", "skippedVersion",
         ] {
             assert!(names.contains(&name), "{name}");

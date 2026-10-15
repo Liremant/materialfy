@@ -77,7 +77,13 @@ struct State {
     watching: Option<String>,
     /// названия и обложки контекстов по URI; None — у контекста нет названия
     contexts: HashMap<String, Option<(String, String)>>,
+    /// когда опрос состояния в последний раз ушёл в Web API из-за отказа сессии
+    web_poll_at: Option<Instant>,
 }
+
+/// Опрос состояния и очереди при сбое сессии идёт в Web API не чаще этого: кластер обычно оживает сам,
+/// а каждый такой запрос тратит общую квоту.
+const WEB_POLL_FALLBACK_EVERY: Duration = Duration::from_secs(60);
 
 /// WebBackend поверх сессии: чтения и команды Connect идут через librespot, остальное и отказы — в Web API.
 pub struct ConnectBackend {
@@ -149,11 +155,32 @@ impl ConnectBackend {
             ApiCall::AddMany { request, uris, device } => {
                 return self.add_many(&link, *request, uris, device.clone()).await;
             }
-            ApiCall::AlbumTracks { .. } => return self.web.call(call).await,
+            // треки альбома — из метаданных сессии (без квоты Web API)
+            ApiCall::AlbumTracks { request, id } => {
+                match crate::engine::session_reads::album_with_tracks(&link.session, id).await {
+                    Ok((_, tracks)) => Ok(ApiReply::AlbumTracks {
+                        request: *request,
+                        result: Ok(tracks.iter().map(super::map::track).collect()),
+                    }),
+                    Err(error) => Err(format!("album tracks via the session: {error:?}")),
+                }
+            }
         };
         match result {
             Ok(reply) => reply,
             Err(error) => {
+                if let ApiCall::Playback { seq } | ApiCall::Queue { seq } = &call {
+                    let mut state = self.lock();
+                    if state.web_poll_at.is_some_and(|at| at.elapsed() < WEB_POLL_FALLBACK_EVERY) {
+                        tracing::debug!("the session route failed ({error}); the Web API was asked recently");
+                        let failed = sf_api::ApiError::Network(error);
+                        return match &call {
+                            ApiCall::Playback { .. } => ApiReply::Playback { seq: *seq, result: Err(failed) },
+                            _ => ApiReply::Queue { seq: *seq, result: Err(failed) },
+                        };
+                    }
+                    state.web_poll_at = Some(Instant::now());
+                }
                 tracing::debug!("the session route failed ({error}); falling back to the Web API");
                 self.web.call(call).await
             }
@@ -534,11 +561,7 @@ impl PlayerHandle {
 
 impl WebBackend for ConnectBackend {
     fn call(&self, call: ApiCall) -> BoxFuture<ApiReply> {
-        let link = match &call {
-            ApiCall::AlbumTracks { .. } => None,
-            _ => (self.link)(),
-        };
-        match (link, self.me.upgrade()) {
+        match ((self.link)(), self.me.upgrade()) {
             (Some(link), Some(me)) => Box::pin(me.run(link, call)),
             _ => self.web.call(call),
         }

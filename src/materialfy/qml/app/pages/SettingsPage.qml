@@ -1607,6 +1607,14 @@ Page {
             }
         }
 
+        // обложки по умолчанию идут через прокси, как всё остальное; CDN картинок часто открыт и напрямую
+        SettingRow {
+            visible: (Settings.proxyMode || "off") !== "off"
+            title: I18n.t("Covers bypass the proxy")
+            description: I18n.t("Load covers and pictures directly: faster on a slow proxy and saves its traffic. Spotify sees your real address for these images")
+            Switch { checked: Settings.coversBypassProxy; onToggled: c => Settings.coversBypassProxy = c }
+        }
+
         Label {
             Layout.fillWidth: true
             text: I18n.t("The proxy password is stored in Credential Manager. Local network device discovery bypasses the proxy.")
