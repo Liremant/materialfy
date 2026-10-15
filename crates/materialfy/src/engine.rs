@@ -348,8 +348,9 @@ pub fn run(cli: Cli) -> i32 {
         }
     };
 
-    // Плеер уже работает (возможно, спрятан в трей) — показываем его окно вместо второго экземпляра
-    if cli.main_mode() && !cli.new_instance && rt.block_on(mf_platform::single_instance::raise_running_instance()) {
+    // Плеер уже работает (возможно, спрятан в трей или ещё запускается) — показываем его окно вместо второго
+    // экземпляра. --new-instance — для разработки и снимков
+    if cli.main_mode() && !cli.new_instance && !rt.block_on(mf_platform::single_instance::become_primary()) {
         return 0;
     }
     if let Some(guard) = qml_guard {
