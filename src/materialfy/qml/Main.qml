@@ -333,6 +333,7 @@ Window {
                         // startPage=artist:<id> (album:, playlist:, show:, episode:) — страница с параметром. Каталог
                         // читается через сессию librespot, поэтому такая страница открывается, когда сессия поднялась
                         Component.onCompleted: {
+                            Qt.callLater(router._prewarm)   // до любого return: работает и без deep-link
                             const [name, id] = win.startPage.split(":")
                             if (!id) {
                                 reset(name)
@@ -347,7 +348,6 @@ Window {
                             }
                             Auth.playbackChanged.connect(open)
                             open()
-                            Qt.callLater(router._prewarm)   // после первой отрисовки главной
                         }
                     }
                     Connections {

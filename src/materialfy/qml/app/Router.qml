@@ -37,6 +37,7 @@ Item {
     Timer {
         id: prewarmTimer
         interval: 80
+        repeat: true
         property var names: []
         property int at: 0
         onTriggered: {

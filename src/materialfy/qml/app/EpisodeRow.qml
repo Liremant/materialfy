@@ -244,7 +244,9 @@ Item {
                     // «⋯» создаётся с первого наведения и остаётся (строк много, а наведена одна);
                     // видимость — на самой кнопке, как и раньше
                     Loader {
+                        // невидимый item всё равно занимает ширину в Row — прячем сам Loader
                         active: root.hovered || root.isCurrent || item !== null
+                        visible: item !== null && item.visible
                         sourceComponent: IconButton {
                             id: moreButton
                             icon: "more_horiz"

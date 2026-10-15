@@ -19,15 +19,13 @@ Page {
     // Keep the model stable while visible and release it when the retained page is hidden/destroyed.
     property var radarTracks: null
     property string _radarOwnerId: ""
+    // Скрытие снимает владение (отмена чтения), модель остаётся: возврат на Releases
+    // не пересоздаёт строки. Обнуление — при смене id и уничтожении.
     function _syncRadarModel() {
-        if (!visible) {
-            _releaseRadarModel()
-            return
-        }
         if (radarId === _radarOwnerId)
             return
         _releaseRadarModel()
-        if (radarId !== "") {
+        if (radarId !== "" && visible) {
             _radarOwnerId = radarId
             radarTracks = Library.playlistTracks(radarId)
         }
@@ -37,6 +35,11 @@ Page {
             Library.releasePlaylist(_radarOwnerId)
         _radarOwnerId = ""
         radarTracks = null
+    }
+    function _releaseRadarOwnership() {
+        if (_radarOwnerId !== "")
+            Library.releasePlaylist(_radarOwnerId)
+        _radarOwnerId = ""
     }
     readonly property bool radarPlaying: radarUri !== "" && Player.contextUri === radarUri
     property bool allTracks: false
@@ -54,7 +57,7 @@ Page {
             _syncRadarModel()
             Releases.refresh(false)
         } else {
-            _releaseRadarModel()
+            _releaseRadarOwnership()
         }
     }
     Component.onDestruction: _releaseRadarModel()

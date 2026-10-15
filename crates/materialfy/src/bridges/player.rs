@@ -268,8 +268,8 @@ pub struct PlayerRust {
     queue_rows: Arc<Vec<QueueRow>>,
     /// типизированное значение устройства из снимка: чтобы не перестраивать QMap на каждую сверку
     device_item: Option<DeviceItem>,
-    /// снимок, отклонённый из-за эхо-удержания: пересинхронизация по истечении ECHO_HOLD
-    stale: Option<PlayerSnapshot>,
+    /// эхо отклонено удержанием: по истечении ECHO_HOLD перепроверить громкость и режимы
+    stale: Option<()>,
 }
 
 impl Default for PlayerRust {
@@ -384,14 +384,18 @@ impl qobject::Player {
         let thread = self.qt_thread();
         ctx().rt.spawn(async move {
             tokio::time::sleep(super::ECHO_HOLD + std::time::Duration::from_millis(100)).await;
-            let _ = thread.queue(move |mut player| player.resync());
+            let _ = thread.queue(move |player| player.resync());
         });
     }
 
     fn resync(mut self: Pin<&mut Self>) {
-        // sync() сам разберётся: удержание уже истекло, отличия применятся; новые сеттеры
-        // во время ожидания продлевают своё удержание, и повторный sync снова отложит снимок.
-        let Some(s) = self.stale.clone() else { return };
+        // stale — только флаг «перепроверить»: за 600 мс трек или устройство могли смениться,
+        // применение старого снимка целиком откатывало бы свежее состояние. Берём текущий.
+        if self.stale.is_none() {
+            return;
+        }
+        self.as_mut().rust_mut().stale = None;
+        let s = ctx().services.player.snapshot();
         self.as_mut().sync(&s, false);
     }
 
@@ -740,7 +744,7 @@ impl qobject::Player {
         // никогда не перепроверится, и UI застрянет на запрошенном значении.
         if held(self.volume_set_at) && self.volume != s.volume {
             let mut this = self.as_mut().rust_mut();
-            this.stale = Some(s.clone());
+            this.stale = Some(());
             self.as_mut().schedule_resync();
         }
         if !held(self.volume_set_at) && self.volume != s.volume {
@@ -760,7 +764,7 @@ impl qobject::Player {
         // режимы
         if held(self.mode_set_at) && (self.shuffle != s.shuffle || self.repeat_mode != s.repeat) {
             let mut this = self.as_mut().rust_mut();
-            this.stale = Some(s.clone());
+            this.stale = Some(());
             self.as_mut().schedule_resync();
         }
         if !held(self.mode_set_at) && (self.shuffle != s.shuffle || self.repeat_mode != s.repeat) {

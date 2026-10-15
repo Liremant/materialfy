@@ -149,11 +149,19 @@ enum OpenAction {
 }
 
 impl PlaylistPage {
+    /// Шапка этого экрана уже сверена со snapshot: страница не может устареть незаметно.
+    fn header_confirmed(&self) -> bool {
+        self.header.as_ref().is_some_and(|h| {
+            let snapshot = h.snapshot_id.clone().unwrap_or_default();
+            !snapshot.is_empty() && snapshot == self.snapshot
+        })
+    }
+
     fn open_action(&self, force: bool) -> OpenAction {
         if self.loading {
             return if force { OpenAction::Fetch } else { OpenAction::Loading };
         }
-        if !force && self.complete && !self.reload_after_write {
+        if !force && self.complete && !self.reload_after_write && self.header_confirmed() {
             OpenAction::Idle
         } else {
             OpenAction::Fetch
@@ -1559,9 +1567,11 @@ impl LibraryService {
                     let page = state.pages.entry(id.clone()).or_default();
                     page.rows = cached.items.clone();
                     page.snapshot = cached.snapshot;
-                    cached_events(&id, &cached.items)
+                    let events = cached_events(&id, &cached.items);
+                    // под той же блокировкой: replay шлёт синхронно под lock — окно между
+                    // unlock и send дало бы дубли поверх свежих строк
+                    service.send(events);
                 };
-                service.send(events);
             }
         }
         let api = service.auth.api();
@@ -1685,8 +1695,8 @@ impl LibraryService {
                         page.rows.clear();
                     }
                     page.rows.extend(added.iter().cloned());
+                    service.send([LibraryEvent::PlaylistTracks { id: id.clone(), change }]);
                 }
-                service.send([LibraryEvent::PlaylistTracks { id: id.clone(), change }]);
             }
             rows.extend(added);
             match next {
@@ -1705,9 +1715,10 @@ impl LibraryService {
             page.snapshot = snapshot.clone();
             page.complete = true;
             page.read = None;
-            change.map(|change| LibraryEvent::PlaylistTracks { id: id.clone(), change })
+            if let Some(change) = change {
+                service.send([LibraryEvent::PlaylistTracks { id: id.clone(), change }]);
+            }
         };
-        service.send(event);
         service.send([LibraryEvent::PlaylistInfo(id.clone())]);
         service.refresh_mosaic(&id, &rows);
         finish(&service, None);
@@ -3380,7 +3391,21 @@ mod tests {
 
     #[test]
     fn reopening_a_ready_playlist_does_not_refetch_or_reset() {
+        // Без подтверждённой шапки (snapshot не сверялся) готовая страница перечитывается:
+        // дешёвая проверка snapshot ловит изменения с других устройств.
         let (id, state) = page_with("spotify:playlist:a", true, false, false);
+        assert_eq!(state.pages[&id].open_action(false), OpenAction::Fetch);
+        assert_eq!(state.pages[&id].open_action(true), OpenAction::Fetch);
+
+        // Шапка сверена со snapshot и треки на месте — повторное открытие ничего не делает.
+        let (id, mut state) = page_with("spotify:playlist:a", true, false, false);
+        let page = state.pages.get_mut(&id).unwrap();
+        page.snapshot = "snap".into();
+        page.header = Some(serde_json::from_str(
+            r#"{"id":"a","name":"A","uri":"spotify:playlist:a","snapshot_id":"snap","items":{"total":3},
+                "images":[],"owner":{"id":"me","display_name":"Me"},"public":true}"#,
+        )
+        .unwrap());
         assert_eq!(state.pages[&id].open_action(false), OpenAction::Idle);
         assert_eq!(state.pages[&id].open_action(true), OpenAction::Fetch);
     }

@@ -26,7 +26,7 @@ ApplicationWindow {
                 width: 96
                 height: 96
                 eager: true
-                source: "file:///tmp/mfgate-test.png"
+                source: Qt.resolvedUrl("cover.png")
                 onStatusChanged: {
                     if (status === Image.Ready)
                         win.readyCount += 1

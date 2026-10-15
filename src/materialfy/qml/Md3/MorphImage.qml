@@ -97,6 +97,8 @@ Item {
         function qmlContinue() {
             _gateOn = true
             image.source = _want
+            if (image.status !== Image.Loading)
+                _releaseGate(false)
         }
         function _releaseGate(clearLoading) {
             // слот держит и ожидающий (_hold), и загрузившийся (_gateOn) — иначе слоты утекают:
@@ -124,10 +126,17 @@ Item {
                     image.source = _want
                 } else {
                     _hold = true
+                    // reuseItems: пока строка ждёт очереди, retainWhileLoading показывает прошлую
+                    // запись — чужая обложка не должна висеть до своего хода
+                    image.source = ""
                 }
             } else if (_gateOn) {
                 image.source = _want
             }
+            // setSource с тем же URL ничего не делает и statusChanged не приходит: слот,
+            // выданный под грузку уже загруженной обложки, утечёт. Слот нужен только пока грузит.
+            if (_gateOn && image.status !== Image.Loading)
+                _releaseGate(false)
         }
         on_WantChanged: _requestGate()
         // Скрытый queued Image снимается из очереди, а при повторном показе снова просит слот.

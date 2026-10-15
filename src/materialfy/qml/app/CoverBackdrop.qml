@@ -73,16 +73,18 @@ Item {
         }
     }
 
-    // Статичный фон без «плавания»: та же крошечная копия, растянутая билинейно (smooth) —
+    // Статичный фон без «плавания»: та же крошечная копия (img._side px), растянутая билинейно —
     // почти тот же мягкий градиент, что в шейдере, но без полноэкранного прохода в каждом кадре.
+    // Декод offscreen (sourceSize + asynchronous): полноразмерная обложка в GUI-потоке — фриз.
     Image {
+        id: staticImg
         anchors.fill: parent
         source: img.source
-        visible: !root._palette && img.status === Image.Ready && root.ready && !root._flowing
+        sourceSize: Qt.size(root._side, root._side)
+        asynchronous: true
+        visible: !root._palette && staticImg.status === Image.Ready && root.ready && !root._flowing
         fillMode: Image.PreserveAspectCrop
         smooth: true
-        asynchronous: false
-        opacity: root._palette ? 1 : 1.15
     }
 
     ShaderEffect {

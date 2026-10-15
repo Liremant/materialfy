@@ -45,24 +45,26 @@ TrackListPage {
     // последний release отменяет идущее чтение; возврат на страницу перечитывает кэш кусками.
     // Шапка (playlistInfo) независима и не releasing'ся.
     property string _acquiredId: ""
+    // Скрытие страницы (Router прячет на каждом push, сцена — в мини-режиме) снимает владение:
+    // идущее чтение отменяется, но модель и строки остаются — «назад» не пересоздаёт список
+    // во время анимации и сохраняет прокрутку. Модель обнуляется при смене id и уничтожении.
     function _syncModel() {
-        if (!visible) {
-            _releaseModel()
-            return
-        }
         if (playlistId === _acquiredId)
             return
         _releaseModel()
-        if (playlistId !== "") {
+        if (playlistId !== "" && visible) {
             _acquiredId = playlistId
             model = Library.playlistTracks(playlistId)
         }
     }
-    function _releaseModel() {
+    function _releaseOwnership() {
         if (_acquiredId === "")
             return
         Library.releasePlaylist(_acquiredId)
         _acquiredId = ""
+    }
+    function _releaseModel() {
+        _releaseOwnership()
         model = null
     }
     Component.onCompleted: { _reload(); _syncModel() }
@@ -71,7 +73,7 @@ TrackListPage {
         if (visible)
             _syncModel()
         else
-            _releaseModel()
+            _releaseOwnership()
     }
     Component.onDestruction: _releaseModel()
     emptyIcon: "queue_music"

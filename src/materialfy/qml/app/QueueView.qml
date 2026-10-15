@@ -210,8 +210,8 @@ Item {
         boundsBehavior: Flickable.StopAtBounds
         acceptedButtons: Qt.NoButton
         cacheBuffer: 400
-      // без reuseItems: замер на живой очереди показал регрессию — при частых диффах плеера
-      // переклейка данных на переиспользуемые делегаты дороже обновления биндингов на месте
+        // без reuseItems: замер на живой очереди показал регрессию — при частых диффах плеера
+        // переклейка данных на переиспользуемые делегаты дороже обновления биндингов на месте
 
         section.property: "section"
         section.criteria: ViewSection.FullString

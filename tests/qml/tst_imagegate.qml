@@ -1,7 +1,8 @@
 // Учёт слотов ImageGate ( Md3/ImageGate.qml — тот самый синглтон, не копия):
 //   QT_QPA_PLATFORM=offscreen /usr/lib/qt6/bin/qmltestrunner -input tests/qml/tst_imagegate.qml
-// (синглтон отдаёт tests/qml/gate/qmldir через симлинк на настоящий файл; весь модуль Md3 сюда
-//  нельзя — его синглтоны тянут Materialfy.Core, которого вне приложения нет)
+// (tests/qml/gate/ImageGate.qml — копия настоящего синглтона: симлинк не работает на Windows
+//  (core.symlinks=false), весь модуль Md3 сюда нельзя — его синглтоны тянут Materialfy.Core.
+//  Копию при изменении оригинала нужно обновлять: они в одном коммите.)
 // Контракт: acquire до limit — слот сразу; дальше — очередь; release будит ждущего через
 // qmlContinue; cancel убирает ждущего без возврата слота (слот ему не выдавался);
 // лишний release не уводит счётчик в минус; мёртвая заявка пропускается.
