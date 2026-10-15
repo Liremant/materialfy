@@ -104,10 +104,14 @@ Window {
     // В покое — полоса у самой кромки над полоской (курсор «упёрся» в край), на Mac — вырез; иначе — сам островок.
     // Зажата кнопка мыши (тащат окно к краю, выделяют) — не раскрываемся.
     property int _dwell: 0
+    readonly property int shrinkMs: 220
+    readonly property var growCurve: [0.38, 1.21, 0.22, 1.0, 1.0, 1.0]
+    readonly property var shrinkCurve: [0.3, 0.0, 0.1, 1.0, 1.0, 1.0]
     property bool _inside: false
     on_InsideChanged: WindowShell.keyHook(root, _inside && mode !== "idle")
     Timer {
-        interval: 100
+        // раскрыт — чаще: уход курсора ловим за ~40 мс, а не за 100
+        interval: root._open || root._peek ? 40 : 100
         repeat: true
         running: root.visible && root.forcedState === ""
         onTriggered: {
@@ -131,7 +135,8 @@ Window {
                 leave.stop()
         }
     }
-    Timer { id: leave; interval: 350; onTriggered: root._collapse() }
+    // Короткая пауза — прощает выскочивший на пару пикселей курсор, но не держит островок открытым
+    Timer { id: leave; interval: 120; onTriggered: root._collapse() }
 
     function _expand() {
         leave.stop()
@@ -248,8 +253,25 @@ Window {
         // 0 — компактный, 1 — раскрытый: по нему слои переливаются друг в друга
         readonly property real t: Math.max(0, Math.min(1, (height - root.notchH - 36) / (root.expandedH - root.notchH - 36)))
 
-        Behavior on width { enabled: root.motion; NumberAnimation { duration: Theme.motion.spatialDefault; easing.type: Easing.BezierSpline; easing.bezierCurve: [0.38, 1.21, 0.22, 1.0, 1.0, 1.0] } }
-        Behavior on height { enabled: root.motion; NumberAnimation { duration: Theme.motion.spatialDefault; easing.type: Easing.BezierSpline; easing.bezierCurve: [0.38, 1.21, 0.22, 1.0, 1.0, 1.0] } }
+        // Раскрытие — пружина; сворачивание — быстрое и без отскока: убрал мышь — островок сразу уходит
+        Behavior on width {
+            id: widthMotion
+            enabled: root.motion
+            NumberAnimation {
+                duration: widthMotion.targetValue < island.width ? root.shrinkMs : Theme.motion.spatialDefault
+                easing.type: Easing.BezierSpline
+                easing.bezierCurve: widthMotion.targetValue < island.width ? root.shrinkCurve : root.growCurve
+            }
+        }
+        Behavior on height {
+            id: heightMotion
+            enabled: root.motion
+            NumberAnimation {
+                duration: heightMotion.targetValue < island.height ? root.shrinkMs : Theme.motion.spatialDefault
+                easing.type: Easing.BezierSpline
+                easing.bezierCurve: heightMotion.targetValue < island.height ? root.shrinkCurve : root.growCurve
+            }
+        }
 
         Rectangle {
             id: bg
