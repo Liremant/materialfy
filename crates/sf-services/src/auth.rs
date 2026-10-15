@@ -1206,7 +1206,9 @@ impl AuthService {
             return;
         }
         if self.refuse_unsupported_proxy() {
-            self.session_login_failed(&self.snapshot.borrow().playback_error.clone());
+            // текст — копией: borrow() держит замок снимка, а session_login_failed в него пишет (взаимная блокировка)
+            let text = self.snapshot.borrow().playback_error.clone();
+            self.session_login_failed(&text);
             return;
         }
         let (epoch, generation, proxy) = {
@@ -1429,7 +1431,9 @@ impl AuthService {
             return;
         }
         if self.refuse_unsupported_proxy() {
-            self.session_login_failed(&self.snapshot.borrow().playback_error.clone());
+            // текст — копией: borrow() держит замок снимка, а session_login_failed в него пишет (взаимная блокировка)
+            let text = self.snapshot.borrow().playback_error.clone();
+            self.session_login_failed(&text);
             return;
         }
         let http = match self.http.client() {
