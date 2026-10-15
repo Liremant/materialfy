@@ -66,6 +66,8 @@ pub enum SettingKey {
     Animations,
     /// режим для слабых ПК: "auto" (сам, когда кадры рисует процессор) | "on" | "off" → Theme.lowPower
     LowPowerMode,
+    /// выбор графического процессора для рендеринга: "auto" | "integrated" | "discrete"
+    GpuPreference,
     /// язык интерфейса: "system" (как в ОС) | "en" | "ru" | "pt" (mf_i18n::parse_setting); меняется на лету
     Language,
     // Раскладка
@@ -165,7 +167,7 @@ pub enum SettingType {
 }
 
 impl SettingKey {
-    pub const ALL: [SettingKey; 72] = [
+    pub const ALL: [SettingKey; 73] = [
         SettingKey::ThemeMode,
         SettingKey::SchemeVariant,
         SettingKey::AccentFromCover,
@@ -193,6 +195,7 @@ impl SettingKey {
         SettingKey::LyricsSyncMs,
         SettingKey::Animations,
         SettingKey::LowPowerMode,
+        SettingKey::GpuPreference,
         SettingKey::Language,
         SettingKey::RightPanelOpen,
         SettingKey::RightPanelTab,
@@ -271,6 +274,7 @@ impl SettingKey {
             LyricsSyncMs => "lyricsSyncMs",
             Animations => "animations",
             LowPowerMode => "lowPowerMode",
+            GpuPreference => "gpuPreference",
             Language => "language",
             RightPanelOpen => "rightPanelOpen",
             RightPanelTab => "rightPanelTab",
@@ -363,6 +367,7 @@ impl SettingKey {
             LyricsSyncMs => Int(0),
             Animations => Str("system".into()),
             LowPowerMode => Str("auto".into()),
+            GpuPreference => Str("auto".into()),
             Language => Str("system".into()),
             RightPanelOpen => Bool(false),
             RightPanelTab => Str("queue".into()),
@@ -487,6 +492,13 @@ impl SettingKey {
                 },
             ),
             (SettingKey::FloatingKeyHints, SettingValue::Int(n)) => SettingValue::Int(n.clamp(0, 3)),
+            (SettingKey::GpuPreference, SettingValue::Str(s)) => {
+                SettingValue::Str(match s.as_str() {
+                    "integrated" => "integrated",
+                    "discrete" => "discrete",
+                    _ => "auto",
+                }.into())
+            }
             (SettingKey::UpdateChannel, SettingValue::Str(channel)) => {
                 SettingValue::Str(if channel.trim().eq_ignore_ascii_case("beta") { "beta" } else { "stable" }.into())
             }
@@ -1095,7 +1107,7 @@ mod tests {
 
     #[test]
     fn schema() {
-        assert_eq!(SettingKey::ALL.len(), 72);
+        assert_eq!(SettingKey::ALL.len(), 73);
         for key in SettingKey::ALL {
             assert_eq!(SettingKey::from_name(key.name()), Some(key));
             assert_eq!(key.default_value().value_type(), key.value_type());
@@ -1132,6 +1144,10 @@ mod tests {
         assert_eq!(SettingKey::TaskbarWidgetPos.normalize(Str("7".into())), Str("1.0000".into()));
         assert_eq!(SettingKey::TaskbarWidgetPos.normalize(Str("middle".into())), Str("tray".into()));
         assert_eq!(SettingKey::FloatingKeyHints.normalize(Int(9)), Int(3));
+        assert_eq!(SettingKey::GpuPreference.normalize(Str("auto".into())), Str("auto".into()));
+        assert_eq!(SettingKey::GpuPreference.normalize(Str("integrated".into())), Str("integrated".into()));
+        assert_eq!(SettingKey::GpuPreference.normalize(Str("discrete".into())), Str("discrete".into()));
+        assert_eq!(SettingKey::GpuPreference.normalize(Str("custom".into())), Str("auto".into()));
     }
 
     #[test]
@@ -1389,7 +1405,7 @@ mod tests {
             "calmWhenInactive", "lyricsMode", "lyricsFontScale", "lyricsScrim",
             "lyricsTextAlign", "lyricsFillMode", "lyricsVisibleLines", "lyricsHighlight", "lyricsBlurAmount",
             "lyricsLineSpacing", "lyricsAnimate", "lyricsShowSource", "lyricsSyncMs",
-            "animations", "lowPowerMode", "rightPanelOpen", "rightPanelTab", "sidebarCollapsed", "windowWidth",
+            "animations", "lowPowerMode", "gpuPreference", "rightPanelOpen", "rightPanelTab", "sidebarCollapsed", "windowWidth",
             "windowHeight", "windowX", "windowY", "windowMaximized", "closeToTray", "wheelStep", "floatingPlayer", "floatingPlayerStyle",
             "taskbarWidgetPos", "floatingKeyHints", "libraryView",
             "librarySort", "homeHidden", "bitrate", "normalisation", "gapless", "autoplay", "volume", "audioDevice",

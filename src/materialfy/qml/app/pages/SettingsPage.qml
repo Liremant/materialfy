@@ -975,6 +975,24 @@ Page {
                 onActivated: i => Settings.lowPowerMode = ["auto", "on", "off"][i]
             }
         }
+        // Видеокарта (Linux, гибридная графика): по умолчанию — как решит система; «Дискретная» включает PRIME offload
+        SettingRow {
+            visible: Qt.platform.os === "linux"
+            title: I18n.t("Graphics processor")
+            description: (Settings.gpuPreference === "integrated"
+                         ? I18n.t("Forces integrated graphics")
+                         : Settings.gpuPreference === "discrete"
+                         ? I18n.t("Forces dedicated graphics card")
+                         : I18n.t("The system picks the graphics card"))
+                         + " · " + I18n.t("Takes effect after restarting the app")
+            ButtonGroup {
+                model: [I18n.t("System"), I18n.t("Integrated"), I18n.t("Discrete")]
+                autoSelect: false
+                size: page.compact ? "xs" : "s"
+                currentIndex: Math.max(0, ["auto", "integrated", "discrete"].indexOf(Settings.gpuPreference))
+                onActivated: i => Settings.gpuPreference = ["auto", "integrated", "discrete"][i]
+            }
+        }
 
         SettingRow {
             title: I18n.t("Save power in background")
