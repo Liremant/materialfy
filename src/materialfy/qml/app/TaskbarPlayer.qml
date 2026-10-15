@@ -135,6 +135,11 @@ Window {
     }
     Timer { id: volumeShown; interval: 1100 }
 
+    function _time(ms) {
+        const s = Math.max(0, Math.floor(ms / 1000))
+        return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0")
+    }
+
     Item {
         id: content
         anchors.fill: parent
@@ -270,7 +275,7 @@ Window {
                 anchors.leftMargin: 9
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
-                anchors.verticalCenterOffset: -3
+                anchors.verticalCenterOffset: -5
                 spacing: -2
                 Label {
                     width: parent.width
@@ -282,32 +287,41 @@ Window {
                 }
                 Label {
                     width: parent.width
-                    text: volumeShown.running ? I18n.t("Volume {0}%", Math.round(Player.volume * 100)) : Player.artist
+                    text: volumeShown.running ? I18n.t("Volume {0}%", Math.round(Player.volume * 100))
+                        : seekBar.scrubbing ? root._time(seekBar.shownValue * Player.durationMs) + " / " + root._time(Player.durationMs)
+                        : Player.artist
                     type: "labelSmall"
                     weight: 400
                     color: root.inkDim
                     elide: Text.ElideRight
                 }
             }
-            // тонкая волна прогресса под подписями; не бежит (виджет виден всегда), двигается с позицией трека
+            // волна прогресса под подписями: не бежит (виджет виден всегда), двигается с позицией трека.
+            // Клик или протяжка — перемотка (поверх области «открыть / перетащить виджет»); пока навели или
+            // тянут, вместо исполнителя — время
             WavyProgress {
+                id: seekBar
+                readonly property bool scrubbing: dragging || seekHover.hovered
                 anchors.left: texts.left
                 anchors.right: parent.right
                 anchors.rightMargin: 4
-                // сразу под исполнителем, а не у кромки пилюли
                 anchors.top: texts.bottom
-                anchors.topMargin: 1
-                height: 5
-                thickness: 2
-                amplitude: 1.4
+                height: 8
+                z: 2
+                thickness: scrubbing ? 4 : 3
+                amplitude: 1.5
                 wavelength: 12
                 speed: 0
                 gap: 3
-                wavy: Player.playing
+                wavy: Player.playing && !scrubbing
                 value: Player.position
+                interactive: Player.durationMs > 0
                 activeColor: root.accent
                 stopColor: activeColor
-                trackColor: Qt.alpha(root.ink, 0.2)
+                trackColor: Qt.alpha(root.ink, 0.32)
+                onCommitted: v => Player.seek(v)
+                Behavior on thickness { NumberAnimation { duration: Theme.motion.effectsFast } }
+                HoverHandler { id: seekHover; margin: 4 }
             }
 
             MouseArea {
