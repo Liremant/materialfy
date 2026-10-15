@@ -241,459 +241,480 @@ Window {
     }
 
     // ================= Тело островка =================
+    // Островок и его фон — источник снимка для шторки смены темы (окно постоянного размера: снимок не тянется)
     Item {
-        id: island
-        anchors.horizontalCenter: parent.horizontalCenter
-        width: root.targetW
-        height: root.targetH
-        readonly property real radius: root.mode === "idle" ? 3
-            : root.mode === "expanded" ? 30
-            : root.mode === "announcement" || root.mode === "peek" ? 22
-            : 18
-        // 0 — компактный, 1 — раскрытый: по нему слои переливаются друг в друга
-        readonly property real t: Math.max(0, Math.min(1, (height - root.notchH - 36) / (root.expandedH - root.notchH - 36)))
+        id: stage
+        anchors.fill: parent
 
-        // Раскрытие — пружина; сворачивание — быстрое и без отскока: убрал мышь — островок сразу уходит
-        Behavior on width {
-            id: widthMotion
-            enabled: root.motion
-            NumberAnimation {
-                duration: widthMotion.targetValue < island.width ? root.shrinkMs : Theme.motion.spatialDefault
-                easing.type: Easing.BezierSpline
-                easing.bezierCurve: widthMotion.targetValue < island.width ? root.shrinkCurve : root.growCurve
-            }
-        }
-        Behavior on height {
-            id: heightMotion
-            enabled: root.motion
-            NumberAnimation {
-                duration: heightMotion.targetValue < island.height ? root.shrinkMs : Theme.motion.spatialDefault
-                easing.type: Easing.BezierSpline
-                easing.bezierCurve: heightMotion.targetValue < island.height ? root.shrinkCurve : root.growCurve
-            }
-        }
+        Item {
+            id: island
+            anchors.horizontalCenter: parent.horizontalCenter
+            width: root.targetW
+            height: root.targetH
+            readonly property real radius: root.mode === "idle" ? 3
+                : root.mode === "expanded" ? 30
+                : root.mode === "announcement" || root.mode === "peek" ? 22
+                : 18
+            // 0 — компактный, 1 — раскрытый: по нему слои переливаются друг в друга
+            readonly property real t: Math.max(0, Math.min(1, (height - root.notchH - 36) / (root.expandedH - root.notchH - 36)))
 
-        Rectangle {
-            id: bg
-            anchors.fill: parent
-            topLeftRadius: 0
-            topRightRadius: 0
-            bottomLeftRadius: island.radius
-            bottomRightRadius: island.radius
-            antialiasing: true
-            clip: true
-            color: root.mode === "idle" ? (root.colorMode ? Theme.primary : "#101114") : root.body
-            opacity: root.mode === "idle" && root.mac ? 0 : 1
-            border.width: root.mode === "idle" ? 1 : 0
-            border.color: Qt.rgba(1, 1, 1, 0.28)
-
-            // Цветной: обложка размыта под тёмным стеклом; переливается только раскрытый островок. clip режет
-            // по прямоугольнику — по фигуре островка обрезает маска
-            Item {
-                id: coverFill
-                anchors.fill: parent
-                visible: root._onCover && root.mode !== "idle"
-                layer.enabled: visible
-                layer.effect: MultiEffect {
-                    maskEnabled: true
-                    maskSource: coverMask
-                    maskThresholdMin: 0.5
-                    maskSpreadAtMin: 1.0
-                }
-                CoverBackdrop {
-                    anchors.fill: parent
-                    source: Player.cover
-                    mode: Settings.backdropMode
-                    blur: Settings.nowPlayingBlur
-                    flow: Settings.nowPlayingDrift
-                    running: root.mode === "expanded" && root.motion
-                }
-                Rectangle {
-                    anchors.fill: parent
-                    color: Qt.rgba(0, 0, 0, 0.42)
+            // Раскрытие — пружина; сворачивание — быстрое и без отскока: убрал мышь — островок сразу уходит
+            Behavior on width {
+                id: widthMotion
+                enabled: root.motion
+                NumberAnimation {
+                    duration: widthMotion.targetValue < island.width ? root.shrinkMs : Theme.motion.spatialDefault
+                    easing.type: Easing.BezierSpline
+                    easing.bezierCurve: widthMotion.targetValue < island.width ? root.shrinkCurve : root.growCurve
                 }
             }
+            Behavior on height {
+                id: heightMotion
+                enabled: root.motion
+                NumberAnimation {
+                    duration: heightMotion.targetValue < island.height ? root.shrinkMs : Theme.motion.spatialDefault
+                    easing.type: Easing.BezierSpline
+                    easing.bezierCurve: heightMotion.targetValue < island.height ? root.shrinkCurve : root.growCurve
+                }
+            }
+
             Rectangle {
-                id: coverMask
+                id: bg
                 anchors.fill: parent
-                visible: false
-                layer.enabled: coverFill.visible
                 topLeftRadius: 0
                 topRightRadius: 0
                 bottomLeftRadius: island.radius
                 bottomRightRadius: island.radius
-            }
-        }
-
-        // «Плечи»: вогнутые скругления у кромки экрана рядом с вырезом (Mac)
-        component Ear: Item {
-            id: earItem
-            property bool mirrored: false
-            width: root.ear
-            height: root.ear
-            visible: root.mac && root.mode !== "idle"
-            clip: true
-            Rectangle {
-                readonly property real r: root.ear + 30
-                x: earItem.mirrored ? root.ear - r : -r
-                y: root.ear - r
-                width: 2 * r
-                height: 2 * r
-                radius: r
-                color: "transparent"
-                border.width: 30
-                border.color: root.body
                 antialiasing: true
-            }
-        }
-        Ear { x: -root.ear }
-        Ear { x: island.width; mirrored: true }
-
-        WheelHandler {
-            acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
-            onWheel: event => {
-                const touchpad = event.pixelDelta.y !== 0 && event.angleDelta.y % 120 !== 0
-                root.nudgeVolume(touchpad ? event.pixelDelta.y / 600 : event.angleDelta.y / 120 * 0.05)
-            }
-        }
-        TapHandler {
-            acceptedButtons: Qt.LeftButton
-            onTapped: {
-                if (root.mode === "peek")
-                    WindowShell.raiseMain()
-                else if (root.mode !== "expanded")
-                    root._expand()
-            }
-        }
-        TapHandler {
-            acceptedButtons: Qt.RightButton
-            onTapped: point => islandMenu.openAt(island.mapToItem(root.contentItem, point.position.x, point.position.y))
-        }
-
-        // ================= Компактный слой: compact / volume / announcement / peek =================
-        Item {
-            id: compactLayer
-            x: 0
-            y: root.mac && root.mode !== "compact" ? root.notchH : 0
-            width: parent.width
-            height: parent.height - y
-            visible: root.mode !== "idle" && island.t < 0.7
-            opacity: Math.max(0, 1 - island.t * 1.6)
-
-            // обложка слева (в покое — значок приложения)
-            Item {
-                id: cmpCover
-                x: root.mode === "announcement" || root.mode === "peek" ? 10 : 9
-                anchors.verticalCenter: parent.verticalCenter
-                width: root.mode === "announcement" ? 34 : root.mode === "peek" ? 28 : 22
-                height: width
-                Behavior on width { enabled: root.motion; NumberAnimation { duration: Theme.motion.spatialFast; easing.type: Easing.OutCubic } }
-
-                MorphImage {
-                    id: cmpCoverImg
-                    anchors.fill: parent
-                    visible: Player.hasTrack && Player.cover !== ""
-                    source: Player.cover
-                    eager: true
-                    fallbackKind: Player.album !== "" ? "album" : "track"
-                    fallbackArtist: Player.artist.split(", ")[0]
-                    fallbackTitle: Player.album !== "" ? Player.album : Player.title
-                    shape: root._danceShape !== "" ? root._danceShape : Player.playing ? "cookie12" : "softSquare"
-                    MaskSpin { target: cmpCoverImg; spinning: Settings.coverSpin && Player.playing && Player.isLocal === true && root.motion }
-                }
-                MorphShape {
-                    anchors.fill: parent
-                    visible: !cmpCoverImg.visible
-                    shape: "softSquare"
-                    color: Qt.alpha(root.ink, 0.14)
-                    Icon {
-                        anchors.centerIn: parent
-                        name: !Player.hasTrack ? "music_note" : Player.isEpisode ? "podcasts" : "music_note"
-                        size: Math.round(parent.width * 0.58)
-                        color: root.inkDim
-                    }
-                }
-                CoverVolume {
-                    id: cmpVolume
-                    anchors.fill: parent
-                    radius: Player.playing ? width / 2 : width * 0.3
-                    accent: root.accent
-                }
-            }
-
-            // баннер смены трека и peek: две строки текста
-            Item {
-                id: textBox
-                anchors.left: cmpCover.right
-                anchors.leftMargin: 10
-                anchors.right: root.mode === "peek" ? parent.right : cmpBars.left
-                anchors.rightMargin: root.mode === "peek" ? 14 : 8
-                anchors.verticalCenter: parent.verticalCenter
-                height: textCol.height
-                visible: root.mode === "announcement" || root.mode === "peek"
                 clip: true
-                Column {
-                    id: textCol
-                    width: parent.width
-                    spacing: 1
-                    transform: Translate { x: root.mode === "announcement" ? root._textSlideX : 0 }
-                    opacity: root.mode === "announcement" ? root._textSlideOpacity : 1
-                    Label {
-                        width: parent.width
-                        text: Player.hasTrack ? Player.title : I18n.t("Nothing playing")
-                        type: "labelLarge"
-                        weight: 600
-                        color: root.ink
-                        elide: Text.ElideRight
-                    }
-                    Label {
-                        width: parent.width
-                        text: !Player.hasTrack ? I18n.t("Click to open Materialfy")
-                            : Player.errorText !== "" ? Player.errorText : Player.artist
-                        type: "labelMedium"
-                        weight: 400
-                        color: Player.hasTrack && Player.errorText !== "" ? Theme.error : root.inkDim
-                        elide: Text.ElideRight
-                    }
-                }
-            }
+                color: root.mode === "idle" ? (root.colorMode ? Theme.primary : "#101114") : root.body
+                opacity: root.mode === "idle" && root.mac ? 0 : 1
+                border.width: root.mode === "idle" ? 1 : 0
+                border.color: Qt.rgba(1, 1, 1, 0.28)
 
-            // громкость: проценты по центру
-            Row {
-                anchors.centerIn: parent
-                visible: root.mode === "volume"
-                spacing: 6
-                Icon {
-                    anchors.verticalCenter: parent.verticalCenter
-                    name: Player.volume <= 0 ? "volume_off" : Player.volume < 0.4 ? "volume_down" : "volume_up"
-                    size: 16
-                    fill: 1
-                    color: root.accent
-                }
-                Label {
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: Math.round(Player.volume * 100) + "%"
-                    type: "labelLarge"
-                    weight: 600
-                    font.features: { "tnum": 1 }
-                    color: root.ink
-                }
-            }
-
-            // полоски уровня справа, на паузе — значок паузы
-            Item {
-                id: cmpBars
-                anchors.right: parent.right
-                anchors.rightMargin: 12
-                anchors.verticalCenter: parent.verticalCenter
-                width: 22
-                height: 16
-                visible: root.mode === "compact" || root.mode === "announcement" || root.mode === "volume"
-                Bars {
-                    anchors.fill: parent
-                    visible: Player.playing
-                }
-                Icon {
-                    anchors.centerIn: parent
-                    name: "pause"
-                    size: 16
-                    fill: 1
-                    color: root.accent
-                    visible: !Player.playing
-                }
-            }
-
-            // шторка: старое название уезжает за лучом от обложки
-            AnnouncementCurtain {
-                id: curtain
-                anchors.fill: parent
-                visible: root.mode === "announcement" && running
-                cmpCover: cmpCover
-                motion: root.motion
-                ink: root.ink
-                inkDim: root.inkDim
-                accent: root.accent
-                colorMode: root.colorMode
-            }
-        }
-
-        // ================= Раскрытый слой =================
-        Item {
-            id: expLayer
-            anchors.fill: parent
-            visible: island.t > 0.2
-            opacity: Math.max(0, Math.min(1, (island.t - 0.2) / 0.65))
-            clip: true
-            readonly property int topY: root.notchH + 14
-
-            Item {
-                id: headerRow
-                x: 18
-                y: expLayer.topY
-                width: parent.width - 36
-                height: 52
-
+                // Цветной: обложка размыта под тёмным стеклом и «плавает», пока играет (настройки фона плеера). clip режет
+                // по прямоугольнику — по фигуре островка обрезает маска
                 Item {
-                    id: expCover
-                    width: 52
-                    height: 52
-                    MorphImage {
-                        id: expCoverImg
+                    id: coverFill
+                    anchors.fill: parent
+                    visible: root._onCover && root.mode !== "idle"
+                    layer.enabled: visible
+                    layer.effect: MultiEffect {
+                        maskEnabled: true
+                        maskSource: coverMask
+                        maskThresholdMin: 0.5
+                        maskSpreadAtMin: 1.0
+                    }
+                    // с двойным буфером: без провала в цвет, пока грузится новая обложка
+                    TrackBackdrop {
                         anchors.fill: parent
-                        visible: Player.cover !== ""
-                        source: Player.coverLarge !== "" ? Player.coverLarge : Player.cover
+                        source: Player.cover
+                        mode: Settings.backdropMode
+                        blur: Settings.nowPlayingBlur
+                        flow: Settings.nowPlayingDrift
+                        running: root.mode !== "idle" && root.motion && Player.playing
+                        // меняется вместе с цветами — под шторкой islandWipe, как фон окна приложения
+                        followTheme: Settings.accentFromCover
+                    }
+                    Rectangle {
+                        anchors.fill: parent
+                        color: Qt.rgba(0, 0, 0, 0.42)
+                    }
+                }
+                Rectangle {
+                    id: coverMask
+                    anchors.fill: parent
+                    visible: false
+                    layer.enabled: coverFill.visible
+                    topLeftRadius: 0
+                    topRightRadius: 0
+                    bottomLeftRadius: island.radius
+                    bottomRightRadius: island.radius
+                }
+            }
+
+            // «Плечи»: вогнутые скругления у кромки экрана рядом с вырезом (Mac)
+            component Ear: Item {
+                id: earItem
+                property bool mirrored: false
+                width: root.ear
+                height: root.ear
+                visible: root.mac && root.mode !== "idle"
+                clip: true
+                Rectangle {
+                    readonly property real r: root.ear + 30
+                    x: earItem.mirrored ? root.ear - r : -r
+                    y: root.ear - r
+                    width: 2 * r
+                    height: 2 * r
+                    radius: r
+                    color: "transparent"
+                    border.width: 30
+                    border.color: root.body
+                    antialiasing: true
+                }
+            }
+            Ear { x: -root.ear }
+            Ear { x: island.width; mirrored: true }
+
+            WheelHandler {
+                acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                onWheel: event => {
+                    const touchpad = event.pixelDelta.y !== 0 && event.angleDelta.y % 120 !== 0
+                    root.nudgeVolume(touchpad ? event.pixelDelta.y / 600 : event.angleDelta.y / 120 * 0.05)
+                }
+            }
+            TapHandler {
+                acceptedButtons: Qt.LeftButton
+                onTapped: {
+                    if (root.mode === "peek")
+                        WindowShell.raiseMain()
+                    else if (root.mode !== "expanded")
+                        root._expand()
+                }
+            }
+            TapHandler {
+                acceptedButtons: Qt.RightButton
+                onTapped: point => islandMenu.openAt(island.mapToItem(root.contentItem, point.position.x, point.position.y))
+            }
+
+            // ================= Компактный слой: compact / volume / announcement / peek =================
+            Item {
+                id: compactLayer
+                x: 0
+                y: root.mac && root.mode !== "compact" ? root.notchH : 0
+                width: parent.width
+                height: parent.height - y
+                visible: root.mode !== "idle" && island.t < 0.7
+                opacity: Math.max(0, 1 - island.t * 1.6)
+
+                // обложка слева (в покое — значок приложения)
+                Item {
+                    id: cmpCover
+                    x: root.mode === "announcement" || root.mode === "peek" ? 10 : 9
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: root.mode === "announcement" ? 34 : root.mode === "peek" ? 28 : 22
+                    height: width
+                    Behavior on width { enabled: root.motion; NumberAnimation { duration: Theme.motion.spatialFast; easing.type: Easing.OutCubic } }
+
+                    MorphImage {
+                        id: cmpCoverImg
+                        anchors.fill: parent
+                        visible: Player.hasTrack && Player.cover !== ""
+                        source: Player.cover
+                        eager: true
                         fallbackKind: Player.album !== "" ? "album" : "track"
                         fallbackArtist: Player.artist.split(", ")[0]
                         fallbackTitle: Player.album !== "" ? Player.album : Player.title
                         shape: root._danceShape !== "" ? root._danceShape : Player.playing ? "cookie12" : "softSquare"
                         pulse: root.motion && Player.playing && Settings.coverPulse ? Math.min(0.24, Player.level * 0.35) : 0
-                        MaskSpin { target: expCoverImg; spinning: Settings.coverSpin && Player.playing && Player.isLocal === true && root.motion }
+                        MaskSpin { target: cmpCoverImg; spinning: Settings.coverSpin && Player.playing && Player.isLocal === true && root.motion }
                     }
                     MorphShape {
                         anchors.fill: parent
-                        visible: Player.cover === ""
+                        visible: !cmpCoverImg.visible
                         shape: "softSquare"
                         color: Qt.alpha(root.ink, 0.14)
-                        Icon { anchors.centerIn: parent; name: Player.isEpisode ? "podcasts" : "music_note"; size: 28; color: root.inkDim }
+                        Icon {
+                            anchors.centerIn: parent
+                            name: !Player.hasTrack ? "music_note" : Player.isEpisode ? "podcasts" : "music_note"
+                            size: Math.round(parent.width * 0.58)
+                            color: root.inkDim
+                        }
                     }
                     CoverVolume {
-                        id: expVolume
+                        id: cmpVolume
                         anchors.fill: parent
                         radius: Player.playing ? width / 2 : width * 0.3
                         accent: root.accent
                     }
-                    TapHandler { onTapped: WindowShell.raiseMain() }
                 }
 
-                Column {
-                    anchors.left: expCover.right
-                    anchors.leftMargin: 12
-                    anchors.right: sideButtons.left
-                    anchors.rightMargin: 8
+                // баннер смены трека и peek: две строки текста
+                Item {
+                    id: textBox
+                    anchors.left: cmpCover.right
+                    anchors.leftMargin: 10
+                    anchors.right: root.mode === "peek" ? parent.right : cmpBars.left
+                    anchors.rightMargin: root.mode === "peek" ? 14 : 8
                     anchors.verticalCenter: parent.verticalCenter
-                    spacing: 2
+                    height: textCol.height
+                    visible: root.mode === "announcement" || root.mode === "peek"
                     clip: true
-                    transform: Translate { x: root._textSlideX }
-                    opacity: root._textSlideOpacity
-                    Label {
+                    Column {
+                        id: textCol
                         width: parent.width
-                        text: Player.title
-                        type: "titleSmall"
+                        spacing: 1
+                        transform: Translate { x: root.mode === "announcement" ? root._textSlideX : 0 }
+                        opacity: root.mode === "announcement" ? root._textSlideOpacity : 1
+                        Label {
+                            width: parent.width
+                            text: Player.hasTrack ? Player.title : I18n.t("Nothing playing")
+                            type: "labelLarge"
+                            weight: 600
+                            color: root.ink
+                            elide: Text.ElideRight
+                        }
+                        Label {
+                            width: parent.width
+                            text: !Player.hasTrack ? I18n.t("Click to open Materialfy")
+                                : Player.errorText !== "" ? Player.errorText : Player.artist
+                            type: "labelMedium"
+                            weight: 400
+                            color: Player.hasTrack && Player.errorText !== "" ? Theme.error : root.inkDim
+                            elide: Text.ElideRight
+                        }
+                    }
+                }
+
+                // громкость: проценты по центру
+                Row {
+                    anchors.centerIn: parent
+                    visible: root.mode === "volume"
+                    spacing: 6
+                    Icon {
+                        anchors.verticalCenter: parent.verticalCenter
+                        name: Player.volume <= 0 ? "volume_off" : Player.volume < 0.4 ? "volume_down" : "volume_up"
+                        size: 16
+                        fill: 1
+                        color: root.accent
+                    }
+                    Label {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: Math.round(Player.volume * 100) + "%"
+                        type: "labelLarge"
+                        weight: 600
+                        font.features: { "tnum": 1 }
                         color: root.ink
-                        elide: Text.ElideRight
+                    }
+                }
+
+                // полоски уровня справа, на паузе — значок паузы
+                Item {
+                    id: cmpBars
+                    anchors.right: parent.right
+                    anchors.rightMargin: 12
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 22
+                    height: 16
+                    visible: root.mode === "compact" || root.mode === "announcement" || root.mode === "volume"
+                    Bars {
+                        anchors.fill: parent
+                        visible: Player.playing
+                    }
+                    Icon {
+                        anchors.centerIn: parent
+                        name: "pause"
+                        size: 16
+                        fill: 1
+                        color: root.accent
+                        visible: !Player.playing
+                    }
+                }
+
+                // шторка: старое название уезжает за лучом от обложки
+                AnnouncementCurtain {
+                    id: curtain
+                    anchors.fill: parent
+                    visible: root.mode === "announcement" && running
+                    cmpCover: cmpCover
+                    motion: root.motion
+                    ink: root.ink
+                    inkDim: root.inkDim
+                    accent: root.accent
+                    colorMode: root.colorMode
+                }
+            }
+
+            // ================= Раскрытый слой =================
+            Item {
+                id: expLayer
+                anchors.fill: parent
+                visible: island.t > 0.2
+                opacity: Math.max(0, Math.min(1, (island.t - 0.2) / 0.65))
+                clip: true
+                readonly property int topY: root.notchH + 14
+
+                Item {
+                    id: headerRow
+                    x: 18
+                    y: expLayer.topY
+                    width: parent.width - 36
+                    height: 52
+
+                    Item {
+                        id: expCover
+                        width: 52
+                        height: 52
+                        MorphImage {
+                            id: expCoverImg
+                            anchors.fill: parent
+                            visible: Player.cover !== ""
+                            source: Player.coverLarge !== "" ? Player.coverLarge : Player.cover
+                            fallbackKind: Player.album !== "" ? "album" : "track"
+                            fallbackArtist: Player.artist.split(", ")[0]
+                            fallbackTitle: Player.album !== "" ? Player.album : Player.title
+                            shape: root._danceShape !== "" ? root._danceShape : Player.playing ? "cookie12" : "softSquare"
+                            pulse: root.motion && Player.playing && Settings.coverPulse ? Math.min(0.24, Player.level * 0.35) : 0
+                            MaskSpin { target: expCoverImg; spinning: Settings.coverSpin && Player.playing && Player.isLocal === true && root.motion }
+                        }
+                        MorphShape {
+                            anchors.fill: parent
+                            visible: Player.cover === ""
+                            shape: "softSquare"
+                            color: Qt.alpha(root.ink, 0.14)
+                            Icon { anchors.centerIn: parent; name: Player.isEpisode ? "podcasts" : "music_note"; size: 28; color: root.inkDim }
+                        }
+                        CoverVolume {
+                            id: expVolume
+                            anchors.fill: parent
+                            radius: Player.playing ? width / 2 : width * 0.3
+                            accent: root.accent
+                        }
+                        TapHandler { onTapped: WindowShell.raiseMain() }
+                    }
+
+                    Column {
+                        anchors.left: expCover.right
+                        anchors.leftMargin: 12
+                        anchors.right: sideButtons.left
+                        anchors.rightMargin: 8
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 2
+                        clip: true
+                        transform: Translate { x: root._textSlideX }
+                        opacity: root._textSlideOpacity
+                        Label {
+                            width: parent.width
+                            text: Player.title
+                            type: "titleSmall"
+                            color: root.ink
+                            elide: Text.ElideRight
+                        }
+                        Label {
+                            width: parent.width
+                            text: Player.errorText !== "" ? Player.errorText : Player.artist
+                            type: "bodySmall"
+                            color: Player.errorText !== "" ? Theme.error : root.inkDim
+                            elide: Text.ElideRight
+                        }
+                        TapHandler { onTapped: WindowShell.raiseMain() }
+                    }
+
+                    Row {
+                        id: sideButtons
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 2
+                        IslandBtn {
+                            readonly property string trackId: Player.track && Player.track.trackId ? String(Player.track.trackId) : ""
+                            readonly property bool liked: Library.likesRevision >= 0 && trackId !== "" && Library.isLiked(trackId)
+                            visible: Player.isEpisode !== true
+                            icon: "favorite"
+                            filled: liked
+                            tint: liked ? root.accent : root.inkDim
+                            onClicked: Library.toggleLike(Player.track)
+                        }
+                        IslandBtn {
+                            icon: "open_in_new"
+                            tint: root.inkDim
+                            onClicked: WindowShell.raiseMain()
+                        }
+                    }
+                }
+
+                // время — волна — время
+                PlayerProgress { id: progress; active: expLayer.visible && !seek.dragging }
+                Item {
+                    x: 18
+                    y: expLayer.topY + 60
+                    width: parent.width - 36
+                    height: 16
+                    Label {
+                        id: elapsed
+                        anchors.left: parent.left
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 34
+                        text: root._time(seek.dragging ? seek.dragValue * Player.durationMs : Player.positionMs)
+                        type: "labelSmall"
+                        font.features: { "tnum": 1 }
+                        color: root.inkDim
+                    }
+                    WavyProgress {
+                        id: seek
+                        anchors.left: elapsed.right
+                        anchors.right: remaining.left
+                        anchors.leftMargin: 6
+                        anchors.rightMargin: 6
+                        anchors.verticalCenter: parent.verticalCenter
+                        height: 14
+                        thickness: 3
+                        amplitude: Player.playing && root.motion ? 2.5 : 0
+                        wavelength: 24
+                        value: progress.value
+                        wavy: Player.playing && root.motion
+                        interactive: true
+                        activeColor: root.accent
+                        stopColor: activeColor
+                        trackColor: Qt.alpha(root.ink, 0.2)
+                        onCommitted: v => Player.seek(v)
                     }
                     Label {
-                        width: parent.width
-                        text: Player.errorText !== "" ? Player.errorText : Player.artist
-                        type: "bodySmall"
-                        color: Player.errorText !== "" ? Theme.error : root.inkDim
-                        elide: Text.ElideRight
+                        id: remaining
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: 34
+                        horizontalAlignment: Text.AlignRight
+                        text: root._time(Player.durationMs)
+                        type: "labelSmall"
+                        font.features: { "tnum": 1 }
+                        color: root.inkDim
                     }
-                    TapHandler { onTapped: WindowShell.raiseMain() }
                 }
 
                 Row {
-                    id: sideButtons
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    spacing: 2
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    y: expLayer.topY + 84
+                    spacing: 14
                     IslandBtn {
-                        readonly property string trackId: Player.track && Player.track.trackId ? String(Player.track.trackId) : ""
-                        readonly property bool liked: Library.likesRevision >= 0 && trackId !== "" && Library.isLiked(trackId)
-                        visible: Player.isEpisode !== true
-                        icon: "favorite"
-                        filled: liked
-                        tint: liked ? root.accent : root.inkDim
-                        onClicked: Library.toggleLike(Player.track)
+                        anchors.verticalCenter: parent.verticalCenter
+                        size: 40
+                        icon: "skip_previous"
+                        iconSize: 26
+                        filled: true
+                        onClicked: Player.previous()
+                    }
+                    PlayButton {
+                        anchors.verticalCenter: parent.verticalCenter
+                        size: 46
+                        playing: Player.playing
+                        containerColor: root.accent
+                        iconColor: root.colorMode ? root.body : Theme.fgPrimaryFixed
+                        spin: root.motion && Player.isLocal === true
+                        onClicked: Player.togglePlay()
                     }
                     IslandBtn {
-                        icon: "open_in_new"
-                        tint: root.inkDim
-                        onClicked: WindowShell.raiseMain()
+                        anchors.verticalCenter: parent.verticalCenter
+                        size: 40
+                        icon: "skip_next"
+                        iconSize: 26
+                        filled: true
+                        onClicked: Player.next()
                     }
-                }
-            }
-
-            // время — волна — время
-            PlayerProgress { id: progress; active: expLayer.visible && !seek.dragging }
-            Item {
-                x: 18
-                y: expLayer.topY + 60
-                width: parent.width - 36
-                height: 16
-                Label {
-                    id: elapsed
-                    anchors.left: parent.left
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: 34
-                    text: root._time(seek.dragging ? seek.dragValue * Player.durationMs : Player.positionMs)
-                    type: "labelSmall"
-                    font.features: { "tnum": 1 }
-                    color: root.inkDim
-                }
-                WavyProgress {
-                    id: seek
-                    anchors.left: elapsed.right
-                    anchors.right: remaining.left
-                    anchors.leftMargin: 6
-                    anchors.rightMargin: 6
-                    anchors.verticalCenter: parent.verticalCenter
-                    height: 14
-                    thickness: 3
-                    amplitude: Player.playing && root.motion ? 2.5 : 0
-                    wavelength: 24
-                    value: progress.value
-                    wavy: Player.playing && root.motion
-                    interactive: true
-                    activeColor: root.accent
-                    stopColor: activeColor
-                    trackColor: Qt.alpha(root.ink, 0.2)
-                    onCommitted: v => Player.seek(v)
-                }
-                Label {
-                    id: remaining
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: 34
-                    horizontalAlignment: Text.AlignRight
-                    text: root._time(Player.durationMs)
-                    type: "labelSmall"
-                    font.features: { "tnum": 1 }
-                    color: root.inkDim
-                }
-            }
-
-            Row {
-                anchors.horizontalCenter: parent.horizontalCenter
-                y: expLayer.topY + 84
-                spacing: 14
-                IslandBtn {
-                    anchors.verticalCenter: parent.verticalCenter
-                    size: 40
-                    icon: "skip_previous"
-                    iconSize: 26
-                    filled: true
-                    onClicked: Player.previous()
-                }
-                PlayButton {
-                    anchors.verticalCenter: parent.verticalCenter
-                    size: 46
-                    playing: Player.playing
-                    containerColor: root.accent
-                    iconColor: root.colorMode ? root.body : Theme.fgPrimaryFixed
-                    spin: root.motion && Player.isLocal === true
-                    onClicked: Player.togglePlay()
-                }
-                IslandBtn {
-                    anchors.verticalCenter: parent.verticalCenter
-                    size: 40
-                    icon: "skip_next"
-                    iconSize: 26
-                    filled: true
-                    onClicked: Player.next()
                 }
             }
         }
+    }
+
+    // Смена цветов под новую обложку — той же шторкой, что и в окне приложения, и одновременно с ней
+    ThemeWipe {
+        id: islandWipe
+        anchors.fill: parent
+        source: stage
+        mode: Theme.reducedMotion ? "dissolve" : Settings.trackTransition
+        originItem: root.mode === "expanded" ? expCover : cmpCover
+        Component.onCompleted: Theme.addWipe(islandWipe)
+        Component.onDestruction: Theme.removeWipe(islandWipe)
     }
 
     // ================= Подсказка с клавишами (первые три раскрытия) =================

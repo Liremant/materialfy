@@ -466,11 +466,13 @@ Window {
         Component.onCompleted: Theme.wipe = themeWipe
     }
     Binding { target: Theme; property: "wipeDirection"; value: Player.direction }
-    // Уровень звука — полноэкранному плееру и мини-режиму («дыхание» обложки) и полоскам островка
+    // Уровень звука — полноэкранному плееру и мини-режиму («дыхание» обложки), полоскам островка и пульсу
+    // обложки в панели задач
     Binding {
         target: Player
         property: "levelsWanted"
         value: nowPlaying.wantsLevels || (islandWindow.object !== null && islandWindow.object.wantsLevels)
+            || (taskbarWindow.object !== null && taskbarWindow.object.wantsLevels)
     }
 
     // ---- Плеер вне окна: живёт рядом с главным окном, и пока оно свёрнуто или в трее ----

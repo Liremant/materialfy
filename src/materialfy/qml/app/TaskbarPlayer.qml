@@ -39,6 +39,8 @@ Window {
     transientParent: null
 
     readonly property bool motion: !Theme.reducedMotion && !Theme.lowPower
+    // уровень звука нужен только «пульсу» обложки
+    readonly property bool wantsLevels: visible && motion && Settings.coverPulse && Player.playing && Player.isLocal === true
     readonly property bool colorMode: Settings.floatingPlayerStyle === "color"
     readonly property bool _onCover: colorMode && Player.cover !== ""
     // На тёмном стекле над обложкой и на чёрном — светлые; цветной без обложки — тональный контейнер
@@ -163,7 +165,7 @@ Window {
             border.width: 1
             border.color: Qt.rgba(1, 1, 1, root.colorMode ? 0.14 : 0.10)
 
-            // Цветной: обложка, размытая и неподвижная (виджет на экране всегда — фон не переливается);
+            // Цветной: обложка, размытая и «плавающая», как фон плеера в приложении (настройки фона);
             // по форме пилюли обрезает маска (clip режет по прямоугольнику)
             Item {
                 id: coverFill
@@ -181,8 +183,8 @@ Window {
                     source: Player.cover
                     mode: Settings.backdropMode
                     blur: Settings.nowPlayingBlur
-                    flow: 0
-                    running: false
+                    flow: Settings.nowPlayingDrift
+                    running: root.motion && Player.playing
                     followTheme: Settings.accentFromCover
                 }
                 Rectangle {
@@ -244,6 +246,9 @@ Window {
                     fallbackTitle: Player.album !== "" ? Player.album : Player.title
                     // MD3E: на паузе — мягкий квадрат, играет — «печенье»; при наведении — круг
                     shape: hover.hovered ? "circle" : Player.playing ? "cookie12" : "softSquare"
+                    // как в приложении: «Пульс обложки» и «Вращение рамки» из настроек
+                    pulse: root.wantsLevels ? Math.min(0.24, Player.level * 0.35) : 0
+                    MaskSpin { target: coverImage; spinning: Settings.coverSpin && Player.playing && Player.isLocal === true && root.motion }
                 }
                 MorphShape {
                     anchors.fill: parent
@@ -381,6 +386,17 @@ Window {
                 onClicked: Player.next()
             }
         }
+    }
+
+    // Смена цветов под новую обложку — той же шторкой, что и в окне приложения, и одновременно с ней
+    ThemeWipe {
+        id: barWipe
+        anchors.fill: parent
+        source: content
+        mode: Theme.reducedMotion ? "dissolve" : Settings.trackTransition
+        originItem: coverImage
+        Component.onCompleted: Theme.addWipe(barWipe)
+        Component.onDestruction: Theme.removeWipe(barWipe)
     }
 
     FloatingMenu {
