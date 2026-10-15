@@ -86,7 +86,7 @@ Item {
 
     // Переход в раздел верхнего уровня: стек сбрасывается.
     function reset(name, props) {
-        if (depth === 1 && (_same(current, name, props) || _pendingSame(name, props)))
+        if (_pendingSame(name, props) || (depth === 1 && _same(current, name, props)))
             return
         if (_pending)
             _cancelPending()                // reset всё равно переписывает стек — инкубация больше не нужна
@@ -171,8 +171,13 @@ Item {
 
     function _onIncubated(incubator) {
         const p = _pending
-        if (p === null || p.incubator !== incubator)
-            return                              // отменено или уже разобрано — cancel() уничтожил недостроенное сам
+        if (p === null || p.incubator !== incubator) {
+            // Устаревший запрос (сменился push/reset/back): недостроенное уничтожаем,
+            // чтобы оно не копилося в container с opacity 0 и не продолжало загрузки.
+            if (incubator.status === Component.Ready && incubator.object)
+                incubator.object.destroy()
+            return
+        }
         if (incubator.status === Component.Loading)
             return
         _pending = null
@@ -202,12 +207,11 @@ Item {
         const p = _pending
         if (p === null)
             return
+        // У JS-инкубатора нет cancel(): помечаем запрос устаревшим. _onIncubated увидит
+        // p !== _pending и уничтожит недостроенный объект сам, когда статус дойдёт до Ready.
         _pending = null
-        p.incubator.cancel()
-        // cancel() убирает недостроенное; но если статус уже успел дойти до Ready — объект остался, добиваем сами
-        const orphan = p.incubator.object
-        if (orphan)
-            orphan.destroy()
+        if (p.incubator.status === Component.Ready && p.incubator.object)
+            p.incubator.object.destroy()
     }
 
     function _animate(from, to, kind) {

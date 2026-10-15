@@ -268,6 +268,8 @@ pub struct PlayerRust {
     queue_rows: Arc<Vec<QueueRow>>,
     /// типизированное значение устройства из снимка: чтобы не перестраивать QMap на каждую сверку
     device_item: Option<DeviceItem>,
+    /// снимок, отклонённый из-за эхо-удержания: пересинхронизация по истечении ECHO_HOLD
+    stale: Option<PlayerSnapshot>,
 }
 
 impl Default for PlayerRust {
@@ -322,6 +324,7 @@ impl Default for PlayerRust {
             mode_set_at: None,
             position_set_at: None,
             volume_save: 0,
+            stale: None,
             queue_rows: Arc::default(),
             device_item: None,
         }
@@ -372,6 +375,22 @@ impl qobject::Player {
         self.as_mut().volume_changed();
         ctx().services.player.set_volume(value);
         self.schedule_volume_save(generation);
+    }
+
+    /// Снимок был отклонён эхо-удержанием: перепроверить громкость и режимы, когда удержание истечёт.
+    fn schedule_resync(self: Pin<&mut Self>) {
+        let thread = self.qt_thread();
+        ctx().rt.spawn(async move {
+            tokio::time::sleep(super::ECHO_HOLD + std::time::Duration::from_millis(100)).await;
+            let _ = thread.queue(move |mut player| player.resync());
+        });
+    }
+
+    fn resync(mut self: Pin<&mut Self>) {
+        // sync() сам разберётся: удержание уже истекло, отличия применятся; новые сеттеры
+        // во время ожидания продлевают своё удержание, и повторный sync снова отложит снимок.
+        let Some(s) = self.stale.clone() else { return };
+        self.as_mut().sync(&s, false);
     }
 
     fn schedule_volume_save(self: Pin<&mut Self>, generation: u64) {
@@ -709,11 +728,19 @@ impl qobject::Player {
 
     fn sync_volume(mut self: Pin<&mut Self>, s: &PlayerSnapshot) {
         // громкость; изменение из системной панели (SMTC/MPRIS) тоже сохраняется в Settings.volume
+        // Отклонённое из-за удержания эхо запоминаем: иначе на паузе (позиция не тикает) оно
+        // никогда не перепроверится, и UI застрянет на запрошенном значении.
+        if held(self.volume_set_at) && self.volume != s.volume {
+            let mut this = self.as_mut().rust_mut();
+            this.stale = Some(s.clone());
+            self.as_mut().schedule_resync();
+        }
         if !held(self.volume_set_at) && self.volume != s.volume {
             let mut this = self.as_mut().rust_mut();
             this.volume = s.volume;
             this.volume_save += 1;
             let generation = this.volume_save;
+            this.stale = None;
             self.as_mut().volume_changed();
             if s.is_local || s.device.is_none() {
                 self.as_mut().schedule_volume_save(generation);
@@ -723,6 +750,11 @@ impl qobject::Player {
 
     fn sync_mode(mut self: Pin<&mut Self>, s: &PlayerSnapshot) {
         // режимы
+        if held(self.mode_set_at) && (self.shuffle != s.shuffle || self.repeat_mode != s.repeat) {
+            let mut this = self.as_mut().rust_mut();
+            this.stale = Some(s.clone());
+            self.as_mut().schedule_resync();
+        }
         if !held(self.mode_set_at) && (self.shuffle != s.shuffle || self.repeat_mode != s.repeat) {
             let mut this = self.as_mut().rust_mut();
             this.shuffle = s.shuffle;

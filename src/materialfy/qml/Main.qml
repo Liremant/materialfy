@@ -658,6 +658,11 @@ Window {
                 return
             if (nowPlaying.open)
                 nowPlaying.hide()
+            // Поиск уже открыт: дедуп reset не перестроит страницу и focus не случится сам — зовём явно.
+            if (router.currentName === "search" && router.currentItem && router.currentItem.focusSearch) {
+                router.currentItem.focusSearch()
+                return
+            }
             router.reset("search")
             // фокус берёт сама SearchPage в Component.onCompleted — при инкубации reset currentItem ещё старый
         }
