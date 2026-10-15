@@ -294,8 +294,9 @@ Window {
                 anchors.left: texts.left
                 anchors.right: parent.right
                 anchors.rightMargin: 4
-                anchors.bottom: parent.bottom
-                anchors.bottomMargin: 1
+                // сразу под исполнителем, а не у кромки пилюли
+                anchors.top: texts.bottom
+                anchors.topMargin: 1
                 height: 5
                 thickness: 2
                 amplitude: 1.4
