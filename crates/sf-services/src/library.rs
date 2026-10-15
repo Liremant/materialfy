@@ -1559,7 +1559,7 @@ impl LibraryService {
                 }
                 known::remember(cached.items.iter());
                 // кэш уходит кусками (первый Reset, дальше Append), а не одним гигантским Reset
-                let events = {
+                {
                     let mut state = lock(&service.state);
                     if !read_is_current(&state, &id, generation, page_generation) {
                         return;
@@ -1704,7 +1704,7 @@ impl LibraryService {
                 _ => break,
             }
         }
-        let event = {
+        {
             let mut state = lock(&service.state);
             if !read_is_current(&state, &id, generation, page_generation) {
                 return;

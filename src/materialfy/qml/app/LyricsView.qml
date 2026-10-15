@@ -308,11 +308,14 @@ Item {
             _targetScrollIndex = si
     }
 
-    // Заливка слов — по общим часам Ticker (~30 Гц), а не в каждом кадре монитора (раньше обычный
-    // рендер гонял FrameAnimation: на 144–280 Гц пересчёт pos перерисовывал всё окно без нужды).
-    // На программном рендере (lowPower) так было с самого начала — ветка та же, но таймер общий.
+    // Волна по словам считается от позиции в каждом кадре: на общих 30 Гц она шла бы ступеньками
+    // на мониторах 120–240 Гц. Программный рендер (lowPower) — по общим часам Ticker (~30 Гц).
+    FrameAnimation {
+        running: root.live && root.advancing && !Theme.lowPower
+        onTriggered: root.tick()
+    }
     TickAnimation {
-        running: root.live && root.advancing
+        running: root.live && root.advancing && Theme.lowPower
         onTriggered: root.tick()
     }
 
