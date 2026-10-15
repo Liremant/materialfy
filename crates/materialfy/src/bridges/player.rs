@@ -369,6 +369,8 @@ impl qobject::Player {
         }
         let mut this = self.as_mut().rust_mut();
         this.volume = value;
+        // Новое решение пользователя отменяет ожидаемое эхо-перепроверку
+        this.stale = None;
         this.volume_set_at = Some(Instant::now());
         this.volume_save += 1;
         let generation = this.volume_save;
@@ -414,6 +416,7 @@ impl qobject::Player {
         }
         let mut this = self.as_mut().rust_mut();
         this.shuffle = value;
+        this.stale = None;
         this.mode_set_at = Some(Instant::now());
         self.mode_changed();
         ctx().services.player.set_shuffle(value);
@@ -430,6 +433,7 @@ impl qobject::Player {
             return;
         }
         let mut this = self.as_mut().rust_mut();
+        this.stale = None;
         this.repeat_mode = repeat;
         this.repeat = QString::from(repeat.as_str());
         this.mode_set_at = Some(Instant::now());
@@ -624,6 +628,10 @@ impl qobject::Player {
     // --- снимок плеера → свойства -------------------------------------------
 
     fn on_event(mut self: Pin<&mut Self>, delivery: Delivery<PlayerEvent>) {
+        // Смена устройства/переподключение: отклонённые эхо-снимки прошлого соединения неактуальны
+        if matches!(delivery, Delivery::Event(PlayerEvent::DeviceChanged)) {
+            self.as_mut().rust_mut().stale = None;
+        }
         if let Delivery::Event(PlayerEvent::Notice(text)) = &delivery {
             tracing::debug!("Player.notice: {text}");
             self.as_mut().notice(QString::from(text.as_str()));
