@@ -1,178 +1,315 @@
 import QtQuick
-import Qt.labs.platform as Platform
+import QtQuick.Effects
 import Md3
 import Materialfy.Core
 
-// Островок («динамический вырез»): отдельное окно поверх всех у верхнего края экрана, на котором главное окно.
-// Чёрное, как железо, при любой теме; прижато к краю, скруглены только нижние углы, у края — вогнутые «плечи».
-// Три вида одного и того же объекта (как Dynamic Island у Apple):
-//   compact  — слева обложка, справа «эквалайзер» в такт (на паузе — значок паузы): одна мысль на две стороны;
-//   minimal  — давно на паузе: только обложка;
-//   expanded — наведение мыши (через 120 мс; сворачивается через 400 мс после ухода) и на 2.5 с при смене трека:
-//              обложка, название, перемотка, «назад / играть / дальше», лайк.
-// Обложка и полоски не пропадают при смене вида, а переезжают — объект тот же, меняется только размер.
-// Окно — во весь размер раскрытого островка, а мышь ловит только форма (маска окна, WindowShell.setMask):
-// прозрачная часть пропускает клики к окнам под ней.
+// Островок («динамический вырез»): отдельное окно поверх всех у верхнего края экрана. Чёрный (как железо)
+// или цветной (тон обложки). Верх прямой — островок растёт из кромки экрана; на Mac с вырезом его верх —
+// сам вырез, по бокам вогнутые «плечи». Состояния (макет docs/design/50-dynamic-island.html):
+//   idle         — ничего не играет: тонкая полоска 120 × 5 у кромки (на Mac — ничего, вырез и есть полоска).
+//                  Курсор упёрся в верхний край над ней (на Mac — навели на вырез) — выезжает peek
+//   peek         — 260 × 44: «Ничего не играет», клик открывает Materialfy
+//   compact      — 164 × 36: обложка слева, полоски уровня (или пауза) справа
+//   volume       — 240 × 36: колесо или ↑ ↓ — проценты по центру, уровень на обложке
+//   announcement — 360 × 52 на 2,5 с при смене трека: обложка, название и исполнитель со шторкой
+//   expanded     — 400 × 158 при наведении: обложка, кнопки, волна прогресса, «назад / пуск / дальше»
+// Наведение — опросом курсора (WindowShell.cursorIn), а не HoverHandler: окно с маской и без фокуса Qt
+// узнаёт о мыши поздно, а полоску в покое курсор только задевает у самого края. Клавиши без фокуса
+// (← → треки, ↑ ↓ громкость, пробел) — пока курсор над островком (cpp/floating.cpp).
 Window {
     id: root
 
     required property Window mainWindow
-    // --set islandState=compact | minimal | expanded — вид для снимков (наведение и пауза не влияют)
+    property var targetScreen: null
+    property int screenIndex: 0
     property string forcedState: ""
-    // --set floatingShot=<path.png>: снимок окна через 9 с (прозрачный фон — альфа-каналом)
     property string shotPath: ""
+
     Timer {
         interval: 9000
         running: root.shotPath !== ""
         onTriggered: root.contentItem.grabToImage(result => result.saveToFile(root.shotPath))
     }
 
-    // Уровни звука нужны, пока видны живые полоски (Main.qml собирает это с полноэкранным плеером)
-    readonly property bool wantsLevels: visible && Player.playing && Player.isLocal === true && !Theme.lowPower
+    readonly property bool mac: Qt.platform.os === "osx"
+    // на Mac верхние 32 px — вырез: там ничего не видно, содержимое раскрытого островка — под ним
+    readonly property int notchH: mac ? 32 : 0
+    readonly property int ear: 10
 
-    // ---- Размеры (логические px) ----
-    readonly property real compactW: 220
-    readonly property real compactH: 34
-    readonly property real minimalW: 46
-    readonly property real expandedW: 420
-    readonly property real expandedH: 152
-    readonly property real ear: 8          // вогнутое скругление у края экрана
+    readonly property bool motion: !Theme.reducedMotion && !Theme.lowPower
+    readonly property bool wantsLevels: visible && mode !== "idle" && mode !== "peek" && Player.playing
+        && Player.isLocal === true && !Theme.lowPower
 
-    // Цвета: Чёрный (OLED аппаратный) или Цветной (адаптивная тональная палитра)
-    readonly property bool colorMode: Settings.floatingPlayerStyle === "color"
-    readonly property color body: colorMode ? Theme.surfaceContainerHighest : "#000000"
-    readonly property color ink: colorMode ? Theme.fgSurface : "#ffffff"
-    readonly property color inkDim: colorMode ? Theme.fgSurfaceVariant : Qt.rgba(1, 1, 1, 0.62)
-    readonly property color accent: colorMode ? Theme.primary : (Theme.dark ? Theme.primary : Theme.inversePrimary)
+    // ---- Цвета: чёрный (как железо) или цветной (тон обложки) ----
+    readonly property bool colorMode: Settings.floatingPlayerStyle === "color" && !mac  // на Mac тело сливается с вырезом
+    // цветной: размытая обложка под тёмным стеклом (текст светлый) или, пока обложки нет, тональный контейнер
+    readonly property bool _onCover: colorMode && Player.cover !== ""
+    readonly property color body: colorMode ? Theme.primaryContainer : "#000000"
+    readonly property color ink: colorMode && !_onCover ? Theme.fgPrimaryContainer : "#ffffff"
+    readonly property color inkDim: Qt.alpha(ink, 0.72)
+    // на чёрном — «фиксированный» акцент MD3: он одинаково светлый в светлой и тёмной теме приложения
+    readonly property color accent: colorMode ? ink : Theme.primaryFixedDim
 
-    // Без анимации размеров: reduced motion и режим для слабых ПК
-    readonly property bool still: Theme.reducedMotion || Theme.lowPower
+    // ---- Состояние ----
+    property bool _open: false          // раскрыт наведением
+    property bool _peek: false          // в покое выехал по курсору у края
+    property bool _announce: false
+    property bool _vol: false
+    property bool _keys: false          // подсказка с клавишами под раскрытым островком
 
     readonly property string mode: forcedState !== "" ? forcedState
-        : (_hoverExpand || _announce) ? "expanded"
-        : (!Player.playing && _pausedLong) ? "minimal" : "compact"
-    readonly property real targetW: mode === "expanded" ? expandedW : mode === "minimal" ? minimalW : compactW
-    readonly property real targetH: mode === "expanded" ? expandedH : compactH
+        : !Player.hasTrack ? (_peek ? "peek" : "idle")
+        : _open ? "expanded"
+        : _announce ? "announcement"
+        : _vol ? "volume"
+        : "compact"
 
-    width: expandedW + 2 * ear + 24        // запас на перелёт пружины
-    height: expandedH + 12
+    readonly property int expandedH: notchH + 158
+    readonly property int targetW: mode === "expanded" ? 400
+        : mode === "announcement" ? 360
+        : mode === "peek" ? 260
+        : mode === "volume" ? 240
+        : mode === "idle" ? (mac ? 200 : 120)
+        : (mac ? 300 : 164)
+    readonly property int targetH: mode === "expanded" ? expandedH
+        : mode === "announcement" ? notchH + 52
+        : mode === "peek" ? notchH + 44
+        : mode === "idle" ? (mac ? notchH : 5)
+        : mac && mode === "compact" ? notchH
+        : notchH + 36
+
+    width: 400 + 2 * ear + 32
+    height: expandedH + 56 // запас на подсказку клавиш под островком
     color: "transparent"
     title: "Materialfy"
     flags: Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.WindowDoesNotAcceptFocus
-    // Без владельца: окно, принадлежащее главному, Windows прячет вместе с ним (свёрнуто, в трее)
     transientParent: null
-    screen: mainWindow.screen
-    x: screen.virtualX + Math.round((screen.width - width) / 2)
-    y: screen.virtualY
+    screen: targetScreen || (mainWindow ? mainWindow.screen : null)
+    x: screen ? (screen.virtualX + Math.round((screen.width - width) / 2)) : 0
+    y: screen ? screen.virtualY : 0
 
     property bool _ready: false
-    property bool _fullscreenBusy: false
-    visible: _ready && (!_fullscreenBusy || shotPath !== "")
+    property bool _fullscreen: false
+    visible: _ready && (!_fullscreen || shotPath !== "")
 
     Component.onCompleted: {
         WindowShell.makeToolWindow(root)
         _applyMask()
         _ready = true
     }
+    Component.onDestruction: WindowShell.keyHook(root, false)
+    onVisibleChanged: if (!visible) { _collapse(); WindowShell.keyHook(root, false) }
 
-    // ---- Вид: наведение, смена трека, долгая пауза ----
-    property bool _hoverExpand: false
-    property bool _announce: false
-    property bool _pausedLong: false
-    Timer { id: hoverIn; interval: 120; onTriggered: root._hoverExpand = true }
-    Timer { id: hoverOut; interval: 400; onTriggered: root._hoverExpand = false }
-    Timer { id: announceEnd; interval: 2500; onTriggered: root._announce = false }
+    // ---- Курсор: опрос 10 раз в секунду ----
+    // В покое — полоса у самой кромки над полоской (курсор «упёрся» в край), на Mac — вырез; иначе — сам островок.
+    // Зажата кнопка мыши (тащат окно к краю, выделяют) — не раскрываемся.
+    property int _dwell: 0
+    property bool _inside: false
+    on_InsideChanged: WindowShell.keyHook(root, _inside && mode !== "idle")
     Timer {
-        interval: 15000
-        running: !Player.playing
-        onTriggered: root._pausedLong = true
+        interval: 100
+        repeat: true
+        running: root.visible && root.forcedState === ""
+        onTriggered: {
+            const idle = root.mode === "idle"
+            const zw = idle ? (root.mac ? 220 : 320) : island.width
+            const zh = idle ? (root.mac ? root.notchH : 3) : island.height
+            const hit = WindowShell.cursorIn(root, Math.round((root.width - zw) / 2), 0, Math.round(zw), Math.round(zh))
+            const busy = islandMenu.opened || seek.dragging
+            root._inside = hit > 0 || busy
+            if (hit === 1 && !busy) {
+                root._dwell += 1
+                // ~100–200 мс у края или над островком: случайный пролёт мыши к вкладкам браузера не раскрывает
+                if (root._dwell >= (idle ? 2 : 1))
+                    root._expand()
+            } else if (hit === 0 && !busy) {
+                root._dwell = 0
+                if (root._open || root._peek)
+                    leave.start()
+            }
+            if (root._inside)
+                leave.stop()
+        }
     }
+    Timer { id: leave; interval: 350; onTriggered: root._collapse() }
+
+    function _expand() {
+        leave.stop()
+        if (!Player.hasTrack) {
+            _peek = true
+            return
+        }
+        if (_open)
+            return
+        _open = true
+        _announce = false
+        // подсказка с клавишами — первые три раскрытия
+        if (Settings.floatingKeyHints < 3) {
+            Settings.floatingKeyHints = Settings.floatingKeyHints + 1
+            _keys = true
+            keysTimer.restart()
+        }
+    }
+    function _collapse() {
+        _open = false
+        _peek = false
+        _keys = false
+    }
+    Timer { id: keysTimer; interval: 2800; onTriggered: root._keys = false }
+    Timer { id: announceEnd; interval: 2500; onTriggered: root._announce = false }
+    Timer { id: volTimer; interval: 1200; onTriggered: root._vol = false }
+
+    // Полноэкранное приложение на мониторе островка — прячемся (Windows; раз в 1,5 с)
+    Timer {
+        interval: 1500
+        repeat: true
+        running: Qt.platform.os === "windows" && root._ready
+        triggeredOnStart: true
+        onTriggered: root._fullscreen = WindowShell.fullscreenOn(root)
+    }
+
+    // ---- Смена трека: баннер, шторка текста, «танец» обложки ----
+    property string _lastUri: Player.uri
+    property string _prevTitle: Player.title
+    property string _prevArtist: Player.artist
+    property real _textSlideX: 0
+    property real _textSlideOpacity: 1
+    property string _danceShape: ""
     Connections {
         target: Player
-        function onStateChanged() { if (Player.playing) root._pausedLong = false }
-        // Новый трек — островок ненадолго раскрывается сам (важное обновление), если движение не убрано
         function onTrackChanged() {
             if (Player.uri === root._lastUri)
                 return
             const first = root._lastUri === ""
+            const oldTitle = root._prevTitle
+            const oldArtist = root._prevArtist
             root._lastUri = Player.uri
-            if (first || root.still || root._hoverExpand)
+            root._prevTitle = Player.title
+            root._prevArtist = Player.artist
+            if (first || !Player.hasTrack)
                 return
-            root._announce = true
-            announceEnd.restart()
+            if (!root._open) {
+                root._announce = true
+                announceEnd.restart()
+            }
+            if (!root.motion)
+                return
+            curtain.trigger(oldTitle, oldArtist)
+            textSlide.restart()
+            coverDance.restart()
         }
     }
-    property string _lastUri: Player.uri
 
-    // Полноэкранное приложение (видео, игра, презентация) — островок над ним не висит
-    Timer {
-        interval: 2000
-        repeat: true
-        running: Qt.platform.os === "windows"
-        triggeredOnStart: true
-        onTriggered: root._fullscreenBusy = WindowShell.fullscreenBusy()
+    // ---- Клавиши без фокуса и колесо ----
+    function floatingKey(code) {
+        switch (Number(code)) {
+        case 1: Player.previous(); break
+        case 2: Player.next(); break
+        case 3: nudgeVolume(0.05); break
+        case 4: nudgeVolume(-0.05); break
+        case 5: Player.togglePlay(); break
+        }
+    }
+    function nudgeVolume(d) {
+        if (Player.remote === true && Player.canSetVolume === false)
+            return
+        Player.volume = Math.max(0, Math.min(1, Player.volume + d))
+        if (!_open && Player.hasTrack) {
+            _vol = true
+            volTimer.restart()
+        }
+        cmpVolume.show()
+        expVolume.show()
     }
 
-    // ---- Маска окна: форма с запасом; пока форма растёт или сжимается — по большему из размеров ----
-    readonly property real _maskW: Math.ceil((Math.max(island.width, targetW) + 2 * ear + 4) / 8) * 8
-    readonly property real _maskH: Math.ceil((Math.max(island.height, targetH) + 4) / 8) * 8
+    // ---- Маска окна: ровно фигура островка; верх прямой (скругление выше кромки отрезано) ----
+    readonly property int _maskW: Math.max(1, Math.round(island.width + (mac && mode !== "idle" ? 2 * ear : 0)))
+    readonly property int _maskH: Math.max(1, Math.round(island.height + (keysPopover.visible ? 44 : 0)))
+    readonly property int _maskR: Math.round(island.radius)
     on_MaskWChanged: Qt.callLater(_applyMask)
     on_MaskHChanged: Qt.callLater(_applyMask)
-    onWidthChanged: Qt.callLater(_applyMask)
+    on_MaskRChanged: Qt.callLater(_applyMask)
     function _applyMask() {
         const w = Math.min(width, _maskW)
-        WindowShell.setMask(root, Math.floor((width - w) / 2), 0, w, Math.min(height, _maskH))
+        const r = keysPopover.visible ? 0 : _maskR
+        WindowShell.setMaskRounded(root, Math.floor((width - w) / 2), -r, w, Math.min(height, _maskH) + r, r)
     }
 
-    // ---- Форма ----
+    // ================= Тело островка =================
     Item {
         id: island
         anchors.horizontalCenter: parent.horizontalCenter
-        y: 0
         width: root.targetW
         height: root.targetH
-        // Пружина MD3 Expressive: раскрытие — с лёгким перелётом, сворачивание — ровно
-        Behavior on width {
-            enabled: !root.still
-            NumberAnimation {
-                duration: Theme.motion.spatialDefault
-                easing.type: root.mode === "expanded" ? Easing.OutBack : Easing.BezierSpline
-                easing.overshoot: 1.1
-                easing.bezierCurve: Theme.motion.emphasized
-            }
-        }
-        Behavior on height {
-            enabled: !root.still
-            NumberAnimation {
-                duration: Theme.motion.spatialDefault
-                easing.type: root.mode === "expanded" ? Easing.OutBack : Easing.BezierSpline
-                easing.overshoot: 1.1
-                easing.bezierCurve: Theme.motion.emphasized
-            }
-        }
+        readonly property real radius: root.mode === "idle" ? 3
+            : root.mode === "expanded" ? 30
+            : root.mode === "announcement" || root.mode === "peek" ? 22
+            : 18
+        // 0 — компактный, 1 — раскрытый: по нему слои переливаются друг в друга
+        readonly property real t: Math.max(0, Math.min(1, (height - root.notchH - 36) / (root.expandedH - root.notchH - 36)))
 
-        // 0 — компактный, 1 — раскрытый (с перелётом пружины чуть больше 1)
-        readonly property real t: Math.max(0, (height - root.compactH) / (root.expandedH - root.compactH))
-        readonly property real tc: Math.min(1, t)
-        readonly property real pad: 12 + 4 * tc
+        Behavior on width { enabled: root.motion; NumberAnimation { duration: Theme.motion.spatialDefault; easing.type: Easing.BezierSpline; easing.bezierCurve: [0.38, 1.21, 0.22, 1.0, 1.0, 1.0] } }
+        Behavior on height { enabled: root.motion; NumberAnimation { duration: Theme.motion.spatialDefault; easing.type: Easing.BezierSpline; easing.bezierCurve: [0.38, 1.21, 0.22, 1.0, 1.0, 1.0] } }
 
-        // тело: прямые верхние углы (у края экрана), скруглённые нижние
         Rectangle {
+            id: bg
             anchors.fill: parent
-            color: root.body
             topLeftRadius: 0
             topRightRadius: 0
-            bottomLeftRadius: Math.min(height / 2, 14 + 14 * island.tc)
-            bottomRightRadius: bottomLeftRadius
+            bottomLeftRadius: island.radius
+            bottomRightRadius: island.radius
             antialiasing: true
+            clip: true
+            color: root.mode === "idle" ? (root.colorMode ? Theme.primary : "#101114") : root.body
+            opacity: root.mode === "idle" && root.mac ? 0 : 1
+            border.width: root.mode === "idle" ? 1 : 0
+            border.color: Qt.rgba(1, 1, 1, 0.28)
+
+            // Цветной: обложка размыта под тёмным стеклом; переливается только раскрытый островок. clip режет
+            // по прямоугольнику — по фигуре островка обрезает маска
+            Item {
+                id: coverFill
+                anchors.fill: parent
+                visible: root._onCover && root.mode !== "idle"
+                layer.enabled: visible
+                layer.effect: MultiEffect {
+                    maskEnabled: true
+                    maskSource: coverMask
+                    maskThresholdMin: 0.5
+                    maskSpreadAtMin: 1.0
+                }
+                CoverBackdrop {
+                    anchors.fill: parent
+                    source: Player.cover
+                    mode: Settings.backdropMode
+                    blur: Settings.nowPlayingBlur
+                    flow: Settings.nowPlayingDrift
+                    running: root.mode === "expanded" && root.motion
+                }
+                Rectangle {
+                    anchors.fill: parent
+                    color: Qt.rgba(0, 0, 0, 0.42)
+                }
+            }
+            Rectangle {
+                id: coverMask
+                anchors.fill: parent
+                visible: false
+                layer.enabled: coverFill.visible
+                topLeftRadius: 0
+                topRightRadius: 0
+                bottomLeftRadius: island.radius
+                bottomRightRadius: island.radius
+            }
         }
-        // «Плечи»: вогнутые скругления, которыми вырез переходит в край экрана
+
+        // «Плечи»: вогнутые скругления у кромки экрана рядом с вырезом (Mac)
         component Ear: Item {
             id: earItem
             property bool mirrored: false
             width: root.ear
             height: root.ear
-            y: 0
+            visible: root.mac && root.mode !== "idle"
             clip: true
             Rectangle {
                 readonly property real r: root.ear + 30
@@ -190,149 +327,277 @@ Window {
         Ear { x: -root.ear }
         Ear { x: island.width; mirrored: true }
 
-        HoverHandler {
-            id: hover
-            onHoveredChanged: {
-                if (hovered) {
-                    hoverOut.stop()
-                    hoverIn.restart()
-                } else {
-                    hoverIn.stop()
-                    hoverOut.restart()
-                }
-            }
-        }
-
-        // Колесо — громкость, как у мини-плеера: щелчок ±5 %, тачпад плавно; проценты — на месте полосок
         WheelHandler {
             acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
             onWheel: event => {
-                if (Player.remote === true && Player.canSetVolume === false)
-                    return
                 const touchpad = event.pixelDelta.y !== 0 && event.angleDelta.y % 120 !== 0
-                const d = touchpad ? event.pixelDelta.y / 600 : event.angleDelta.y / 120 * 0.05
-                Player.volume = Math.max(0, Math.min(1, Player.volume + d))
-                volumeHint.shown = true
-                volumeHintHide.restart()
+                root.nudgeVolume(touchpad ? event.pixelDelta.y / 600 : event.angleDelta.y / 120 * 0.05)
+            }
+        }
+        TapHandler {
+            acceptedButtons: Qt.LeftButton
+            onTapped: {
+                if (root.mode === "peek")
+                    WindowShell.raiseMain()
+                else if (root.mode !== "expanded")
+                    root._expand()
             }
         }
         TapHandler {
             acceptedButtons: Qt.RightButton
-            onTapped: islandMenu.open()
+            onTapped: point => islandMenu.openAt(island.mapToItem(root.contentItem, point.position.x, point.position.y))
         }
 
-        // ---- Обложка: 22 px слева в компактном виде → 64 px в раскрытом ----
+        // ================= Компактный слой: compact / volume / announcement / peek =================
         Item {
-            id: cover
-            readonly property real size: 22 + (64 - 22) * island.t
-            x: Math.min(island.pad, (island.width - size) / 2)
-            y: 6 + 10 * island.t
-            width: size
-            height: size
-            MorphImage {
-                id: coverImage
-                anchors.fill: parent
-                visible: Player.cover !== ""
-                source: island.tc > 0.3 && Player.coverLarge !== "" ? Player.coverLarge : Player.cover
-                placeholderColor: "#262626"
-                fallbackKind: Player.album !== "" ? "album" : "track"
-                fallbackArtist: Player.artist.split(", ")[0]
-                fallbackTitle: Player.album !== "" ? Player.album : Player.title
-                shape: island.tc > 0.5 && Player.playing ? "cookie12" : "softSquare"
-            }
-            Rectangle {
-                anchors.fill: parent
-                visible: Player.cover === ""
-                radius: width * 0.28
-                color: "#262626"
-                Icon { anchors.centerIn: parent; name: Player.isEpisode ? "podcasts" : "music_note"; size: parent.width * 0.55; color: root.inkDim }
-            }
-            TapHandler { onTapped: WindowShell.raiseMain() }
-        }
+            id: compactLayer
+            x: 0
+            y: root.mac && root.mode !== "compact" ? root.notchH : 0
+            width: parent.width
+            height: parent.height - y
+            visible: root.mode !== "idle" && island.t < 0.7
+            opacity: Math.max(0, 1 - island.t * 1.6)
 
-        // ---- Полоски в такт (справа); на паузе — значок паузы; при смене громкости — проценты ----
-        Item {
-            id: trailing
-            width: 20
-            height: 16
-            x: island.width - island.pad - 2 - width
-            y: (root.compactH - height) / 2 + (20 - (root.compactH - height) / 2) * island.tc
-            opacity: Math.max(0, Math.min(1, (island.width - 90) / 40))
-            visible: opacity > 0
-
-            Bars {
-                anchors.fill: parent
-                opacity: Player.playing && !volumeHint.shown ? 1 : 0
-                Behavior on opacity { NumberAnimation { duration: Theme.motion.effectsDefault } }
-            }
-            Icon {
-                anchors.centerIn: parent
-                name: "pause"
-                fill: 1
-                size: 16
-                color: root.inkDim
-                opacity: !Player.playing && !volumeHint.shown ? 1 : 0
-                Behavior on opacity { NumberAnimation { duration: Theme.motion.effectsDefault } }
-            }
-        }
-        Row {
-            id: volumeHint
-            property bool shown: false
-            anchors.right: trailing.right
-            anchors.verticalCenter: trailing.verticalCenter
-            spacing: 3
-            opacity: shown ? 1 : 0
-            // в минимальном виде места справа нет — там только обложка
-            visible: opacity > 0 && trailing.visible
-            Behavior on opacity { NumberAnimation { duration: Theme.motion.effectsFast } }
-            Timer { id: volumeHintHide; interval: 1000; onTriggered: volumeHint.shown = false }
-            Icon { anchors.verticalCenter: parent.verticalCenter; name: "volume_up"; size: 14; fill: 1; color: root.accent }
-            Label {
-                anchors.verticalCenter: parent.verticalCenter
-                text: Math.round(Player.volume * 100) + "%"
-                type: "labelMedium"
-                color: root.ink
-            }
-        }
-
-        // ---- Раскрытый вид ----
-        Item {
-            id: details
-            anchors.fill: parent
-            opacity: Math.max(0, Math.min(1, (island.t - 0.55) / 0.45))
-            visible: opacity > 0
-            enabled: root.mode === "expanded"
-
-            // Название и исполнитель — справа от обложки; клик поднимает главное окно
-            Column {
-                x: cover.x + cover.width + 12
-                y: cover.y + 8
-                width: island.width - x - island.pad - trailing.width - 12
-                spacing: 2
-                Label {
-                    width: parent.width
-                    text: Player.title
-                    type: "titleMedium"
-                    color: root.ink
-                    elide: Text.ElideRight
-                }
-                Label {
-                    width: parent.width
-                    text: Player.artist
-                    type: "bodyMedium"
-                    color: root.inkDim
-                    elide: Text.ElideRight
-                }
-                TapHandler { onTapped: WindowShell.raiseMain() }
-            }
-
-            // Перемотка: прошло — волна — осталось
-            PlayerProgress { id: progress; active: details.visible && !seek.dragging }
+            // обложка слева (в покое — значок приложения)
             Item {
-                id: seekRow
-                x: island.pad
-                y: cover.y + 64 + 8
-                width: island.width - 2 * island.pad
+                id: cmpCover
+                x: root.mode === "announcement" || root.mode === "peek" ? 10 : 9
+                anchors.verticalCenter: parent.verticalCenter
+                width: root.mode === "announcement" ? 34 : root.mode === "peek" ? 28 : 22
+                height: width
+                Behavior on width { enabled: root.motion; NumberAnimation { duration: Theme.motion.spatialFast; easing.type: Easing.OutCubic } }
+
+                MorphImage {
+                    id: cmpCoverImg
+                    anchors.fill: parent
+                    visible: Player.hasTrack && Player.cover !== ""
+                    source: Player.cover
+                    eager: true
+                    fallbackKind: Player.album !== "" ? "album" : "track"
+                    fallbackArtist: Player.artist.split(", ")[0]
+                    fallbackTitle: Player.album !== "" ? Player.album : Player.title
+                    shape: root._danceShape !== "" ? root._danceShape : Player.playing ? "cookie12" : "softSquare"
+                    MaskSpin { target: cmpCoverImg; spinning: Settings.coverSpin && Player.playing && Player.isLocal === true && root.motion }
+                }
+                MorphShape {
+                    anchors.fill: parent
+                    visible: !cmpCoverImg.visible
+                    shape: "softSquare"
+                    color: Qt.alpha(root.ink, 0.14)
+                    Icon {
+                        anchors.centerIn: parent
+                        name: !Player.hasTrack ? "music_note" : Player.isEpisode ? "podcasts" : "music_note"
+                        size: Math.round(parent.width * 0.58)
+                        color: root.inkDim
+                    }
+                }
+                CoverVolume {
+                    id: cmpVolume
+                    anchors.fill: parent
+                    radius: Player.playing ? width / 2 : width * 0.3
+                    accent: root.accent
+                }
+            }
+
+            // баннер смены трека и peek: две строки текста
+            Item {
+                id: textBox
+                anchors.left: cmpCover.right
+                anchors.leftMargin: 10
+                anchors.right: root.mode === "peek" ? parent.right : cmpBars.left
+                anchors.rightMargin: root.mode === "peek" ? 14 : 8
+                anchors.verticalCenter: parent.verticalCenter
+                height: textCol.height
+                visible: root.mode === "announcement" || root.mode === "peek"
+                clip: true
+                Column {
+                    id: textCol
+                    width: parent.width
+                    spacing: 1
+                    transform: Translate { x: root.mode === "announcement" ? root._textSlideX : 0 }
+                    opacity: root.mode === "announcement" ? root._textSlideOpacity : 1
+                    Label {
+                        width: parent.width
+                        text: Player.hasTrack ? Player.title : I18n.t("Nothing playing")
+                        type: "labelLarge"
+                        weight: 600
+                        color: root.ink
+                        elide: Text.ElideRight
+                    }
+                    Label {
+                        width: parent.width
+                        text: !Player.hasTrack ? I18n.t("Click to open Materialfy")
+                            : Player.errorText !== "" ? Player.errorText : Player.artist
+                        type: "labelMedium"
+                        weight: 400
+                        color: Player.hasTrack && Player.errorText !== "" ? Theme.error : root.inkDim
+                        elide: Text.ElideRight
+                    }
+                }
+            }
+
+            // громкость: проценты по центру
+            Row {
+                anchors.centerIn: parent
+                visible: root.mode === "volume"
+                spacing: 6
+                Icon {
+                    anchors.verticalCenter: parent.verticalCenter
+                    name: Player.volume <= 0 ? "volume_off" : Player.volume < 0.4 ? "volume_down" : "volume_up"
+                    size: 16
+                    fill: 1
+                    color: root.accent
+                }
+                Label {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: Math.round(Player.volume * 100) + "%"
+                    type: "labelLarge"
+                    weight: 600
+                    font.features: { "tnum": 1 }
+                    color: root.ink
+                }
+            }
+
+            // полоски уровня справа, на паузе — значок паузы
+            Item {
+                id: cmpBars
+                anchors.right: parent.right
+                anchors.rightMargin: 12
+                anchors.verticalCenter: parent.verticalCenter
+                width: 22
+                height: 16
+                visible: root.mode === "compact" || root.mode === "announcement" || root.mode === "volume"
+                Bars {
+                    anchors.fill: parent
+                    visible: Player.playing
+                }
+                Icon {
+                    anchors.centerIn: parent
+                    name: "pause"
+                    size: 16
+                    fill: 1
+                    color: root.accent
+                    visible: !Player.playing
+                }
+            }
+
+            // шторка: старое название уезжает за лучом от обложки
+            AnnouncementCurtain {
+                id: curtain
+                anchors.fill: parent
+                visible: root.mode === "announcement" && running
+                cmpCover: cmpCover
+                motion: root.motion
+                ink: root.ink
+                inkDim: root.inkDim
+                accent: root.accent
+                colorMode: root.colorMode
+            }
+        }
+
+        // ================= Раскрытый слой =================
+        Item {
+            id: expLayer
+            anchors.fill: parent
+            visible: island.t > 0.2
+            opacity: Math.max(0, Math.min(1, (island.t - 0.2) / 0.65))
+            clip: true
+            readonly property int topY: root.notchH + 14
+
+            Item {
+                id: headerRow
+                x: 18
+                y: expLayer.topY
+                width: parent.width - 36
+                height: 52
+
+                Item {
+                    id: expCover
+                    width: 52
+                    height: 52
+                    MorphImage {
+                        id: expCoverImg
+                        anchors.fill: parent
+                        visible: Player.cover !== ""
+                        source: Player.coverLarge !== "" ? Player.coverLarge : Player.cover
+                        fallbackKind: Player.album !== "" ? "album" : "track"
+                        fallbackArtist: Player.artist.split(", ")[0]
+                        fallbackTitle: Player.album !== "" ? Player.album : Player.title
+                        shape: root._danceShape !== "" ? root._danceShape : Player.playing ? "cookie12" : "softSquare"
+                        pulse: root.motion && Player.playing && Settings.coverPulse ? Math.min(0.24, Player.level * 0.35) : 0
+                        MaskSpin { target: expCoverImg; spinning: Settings.coverSpin && Player.playing && Player.isLocal === true && root.motion }
+                    }
+                    MorphShape {
+                        anchors.fill: parent
+                        visible: Player.cover === ""
+                        shape: "softSquare"
+                        color: Qt.alpha(root.ink, 0.14)
+                        Icon { anchors.centerIn: parent; name: Player.isEpisode ? "podcasts" : "music_note"; size: 28; color: root.inkDim }
+                    }
+                    CoverVolume {
+                        id: expVolume
+                        anchors.fill: parent
+                        radius: Player.playing ? width / 2 : width * 0.3
+                        accent: root.accent
+                    }
+                    TapHandler { onTapped: WindowShell.raiseMain() }
+                }
+
+                Column {
+                    anchors.left: expCover.right
+                    anchors.leftMargin: 12
+                    anchors.right: sideButtons.left
+                    anchors.rightMargin: 8
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 2
+                    clip: true
+                    transform: Translate { x: root._textSlideX }
+                    opacity: root._textSlideOpacity
+                    Label {
+                        width: parent.width
+                        text: Player.title
+                        type: "titleSmall"
+                        color: root.ink
+                        elide: Text.ElideRight
+                    }
+                    Label {
+                        width: parent.width
+                        text: Player.errorText !== "" ? Player.errorText : Player.artist
+                        type: "bodySmall"
+                        color: Player.errorText !== "" ? Theme.error : root.inkDim
+                        elide: Text.ElideRight
+                    }
+                    TapHandler { onTapped: WindowShell.raiseMain() }
+                }
+
+                Row {
+                    id: sideButtons
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 2
+                    IslandBtn {
+                        readonly property string trackId: Player.track && Player.track.trackId ? String(Player.track.trackId) : ""
+                        readonly property bool liked: Library.likesRevision >= 0 && trackId !== "" && Library.isLiked(trackId)
+                        visible: Player.isEpisode !== true
+                        icon: "favorite"
+                        filled: liked
+                        tint: liked ? root.accent : root.inkDim
+                        onClicked: Library.toggleLike(Player.track)
+                    }
+                    IslandBtn {
+                        icon: "open_in_new"
+                        tint: root.inkDim
+                        onClicked: WindowShell.raiseMain()
+                    }
+                }
+            }
+
+            // время — волна — время
+            PlayerProgress { id: progress; active: expLayer.visible && !seek.dragging }
+            Item {
+                x: 18
+                y: expLayer.topY + 60
+                width: parent.width - 36
                 height: 16
                 Label {
                     id: elapsed
@@ -341,25 +606,26 @@ Window {
                     width: 34
                     text: root._time(seek.dragging ? seek.dragValue * Player.durationMs : Player.positionMs)
                     type: "labelSmall"
+                    font.features: { "tnum": 1 }
                     color: root.inkDim
                 }
                 WavyProgress {
                     id: seek
                     anchors.left: elapsed.right
                     anchors.right: remaining.left
-                    anchors.leftMargin: 4
-                    anchors.rightMargin: 4
+                    anchors.leftMargin: 6
+                    anchors.rightMargin: 6
                     anchors.verticalCenter: parent.verticalCenter
                     height: 14
                     thickness: 3
-                    amplitude: 2
-                    wavelength: 26
+                    amplitude: Player.playing && root.motion ? 2.5 : 0
+                    wavelength: 24
                     value: progress.value
-                    wavy: Player.playing
+                    wavy: Player.playing && root.motion
                     interactive: true
                     activeColor: root.accent
-                    stopColor: root.accent
-                    trackColor: Qt.rgba(1, 1, 1, 0.28)
+                    stopColor: activeColor
+                    trackColor: Qt.alpha(root.ink, 0.2)
                     onCommitted: v => Player.seek(v)
                 }
                 Label {
@@ -368,42 +634,96 @@ Window {
                     anchors.verticalCenter: parent.verticalCenter
                     width: 34
                     horizontalAlignment: Text.AlignRight
-                    text: "-" + root._time(Player.durationMs - (seek.dragging ? seek.dragValue * Player.durationMs : Player.positionMs))
+                    text: root._time(Player.durationMs)
                     type: "labelSmall"
+                    font.features: { "tnum": 1 }
                     color: root.inkDim
                 }
             }
 
-            // «Назад / играть / дальше» по центру, лайк справа
             Row {
                 anchors.horizontalCenter: parent.horizontalCenter
-                y: seekRow.y + seekRow.height + 4
-                spacing: 12
-                IslandButton { anchors.verticalCenter: parent.verticalCenter; icon: "skip_previous"; onClicked: Player.previous() }
+                y: expLayer.topY + 84
+                spacing: 14
+                IslandBtn {
+                    anchors.verticalCenter: parent.verticalCenter
+                    size: 40
+                    icon: "skip_previous"
+                    iconSize: 26
+                    filled: true
+                    onClicked: Player.previous()
+                }
                 PlayButton {
                     anchors.verticalCenter: parent.verticalCenter
-                    size: 38
+                    size: 46
                     playing: Player.playing
-                    containerColor: root.ink
-                    iconColor: root.body
-                    spin: Player.isLocal === true && !Theme.lowPower
+                    containerColor: root.accent
+                    iconColor: root.colorMode ? root.body : Theme.fgPrimaryFixed
+                    spin: root.motion && Player.isLocal === true
                     onClicked: Player.togglePlay()
                 }
-                IslandButton { anchors.verticalCenter: parent.verticalCenter; icon: "skip_next"; onClicked: Player.next() }
-            }
-            IslandButton {
-                readonly property string trackId: Player.track && Player.track.trackId ? String(Player.track.trackId) : ""
-                readonly property bool liked: Library.likesRevision >= 0 && trackId !== "" && Library.isLiked(trackId)
-                visible: !Player.isEpisode
-                x: island.width - island.pad - width
-                y: seekRow.y + seekRow.height + 4 + (38 - height) / 2
-                icon: "favorite"
-                filled: liked
-                tint: liked ? root.accent : root.inkDim
-                enabled: trackId !== ""
-                onClicked: Library.toggleLike(Player.track)
+                IslandBtn {
+                    anchors.verticalCenter: parent.verticalCenter
+                    size: 40
+                    icon: "skip_next"
+                    iconSize: 26
+                    filled: true
+                    onClicked: Player.next()
+                }
             }
         }
+    }
+
+    // ================= Подсказка с клавишами (первые три раскрытия) =================
+    Rectangle {
+        id: keysPopover
+        anchors.horizontalCenter: parent.horizontalCenter
+        y: island.height + 8
+        width: keysRow.implicitWidth + 24
+        height: 32
+        radius: 16
+        color: Qt.rgba(0.055, 0.06, 0.086, 0.94)
+        border.width: 1
+        border.color: Qt.rgba(1, 1, 1, 0.09)
+        visible: opacity > 0.01
+        opacity: root.mode === "expanded" && root._keys && island.t > 0.95 ? 1 : 0
+        Behavior on opacity { NumberAnimation { duration: Theme.motion.effectsDefault } }
+        onVisibleChanged: Qt.callLater(root._applyMask)
+
+        Row {
+            id: keysRow
+            anchors.centerIn: parent
+            spacing: 6
+            KbdKey { text: "←" }
+            KbdKey { text: "→" }
+            Label { text: I18n.t("tracks"); type: "labelSmall"; color: Qt.rgba(1, 1, 1, 0.72); anchors.verticalCenter: parent.verticalCenter }
+            Label { text: "·"; color: Qt.rgba(1, 1, 1, 0.35); anchors.verticalCenter: parent.verticalCenter }
+            KbdKey { text: "↑" }
+            KbdKey { text: "↓" }
+            Label { text: I18n.t("volume"); type: "labelSmall"; color: Qt.rgba(1, 1, 1, 0.72); anchors.verticalCenter: parent.verticalCenter }
+            Label { text: "·"; color: Qt.rgba(1, 1, 1, 0.35); anchors.verticalCenter: parent.verticalCenter }
+            KbdKey { text: I18n.t("Space") }
+            Label { text: I18n.t("pause"); type: "labelSmall"; color: Qt.rgba(1, 1, 1, 0.72); anchors.verticalCenter: parent.verticalCenter }
+        }
+    }
+
+    // ================= Анимации смены трека =================
+    ParallelAnimation {
+        id: textSlide
+        NumberAnimation { target: root; property: "_textSlideX"; from: 24; to: 0; duration: 460; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.motion.emphasizedDecelerate }
+        NumberAnimation { target: root; property: "_textSlideOpacity"; from: 0; to: 1; duration: 320; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.motion.emphasizedDecelerate }
+    }
+    // обложка: «цветок» → «печенье» с перелётом → обычная фигура
+    SequentialAnimation {
+        id: coverDance
+        PropertyAction { target: root; property: "_danceShape"; value: "flower8" }
+        NumberAnimation { targets: [expCover, cmpCover]; property: "scale"; from: 1; to: 0.88; duration: 130; easing.type: Easing.InQuad }
+        PauseAnimation { duration: 200 }
+        PropertyAction { target: root; property: "_danceShape"; value: "cookie12" }
+        NumberAnimation { targets: [expCover, cmpCover]; property: "scale"; to: 1.08; duration: 260; easing.type: Easing.OutBack; easing.overshoot: 1.35 }
+        PauseAnimation { duration: 260 }
+        NumberAnimation { targets: [expCover, cmpCover]; property: "scale"; to: 1; duration: 220; easing.type: Easing.OutQuad }
+        PropertyAction { target: root; property: "_danceShape"; value: "" }
     }
 
     function _time(ms) {
@@ -411,54 +731,84 @@ Window {
         return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0")
     }
 
-    // Кнопка на чёрном: белый значок, белый слой наведения
-    component IslandButton: Item {
-        id: button
+    FloatingMenu {
+        id: islandMenu
+        anchors.fill: parent
+        mainWindow: root.mainWindow
+    }
+
+    component IslandBtn: Item {
+        id: ibtn
         property string icon
+        property int iconSize: 20
         property bool filled: false
         property color tint: root.ink
+        property real size: 34
         signal clicked()
-        width: 32
-        height: 32
-        opacity: enabled ? 1 : 0.4
-        Icon { anchors.centerIn: parent; name: button.icon; size: 24; fill: button.filled ? 1 : 0; color: button.tint }
-        StateLayer {
+        width: size
+        height: size
+        scale: root.motion && tap.pressed ? 0.9 : 1
+        Behavior on scale { NumberAnimation { duration: Theme.motion.effectsFast } }
+        Rectangle {
             anchors.fill: parent
-            radius: width / 2
-            color: root.ink
-            onClicked: button.clicked()
+            radius: tap.pressed ? ibtn.size * 0.3 : ibtn.size / 2
+            color: Qt.alpha(root.ink, hover.hovered ? 0.12 : 0)
+            Behavior on radius { NumberAnimation { duration: Theme.motion.effectsFast } }
+        }
+        Icon {
+            anchors.centerIn: parent
+            name: ibtn.icon
+            size: ibtn.iconSize
+            fill: ibtn.filled ? 1 : 0
+            color: ibtn.tint
+        }
+        HoverHandler { id: hover }
+        TapHandler { id: tap; onTapped: ibtn.clicked() }
+    }
+
+    component KbdKey: Rectangle {
+        property alias text: klbl.text
+        width: Math.max(20, klbl.implicitWidth + 10)
+        height: 20
+        radius: 6
+        anchors.verticalCenter: parent.verticalCenter
+        color: "#2a2c36"
+        border.width: 1
+        border.color: Qt.rgba(1, 1, 1, 0.15)
+        Label {
+            id: klbl
+            anchors.centerIn: parent
+            type: "labelSmall"
+            weight: 600
+            color: "#ffffff"
         }
     }
 
-    // Полоски: свой уровень звука (локально) — по задержанной истории уровня, волной слева направо;
-    // чужое устройство — спокойная синусоида; слабый ПК — неподвижные
+    // Полоски уровня: настоящий уровень звука (своё воспроизведение) или ровное движение (другое устройство)
     component Bars: Item {
         id: bars
         property var levels: [0.45, 0.8, 0.6, 0.35]
         property var _history: []
         property real _peak: 0.05
         property real _phase: 0
-        readonly property bool live: Player.playing && !Theme.lowPower && root.visible
-
         Connections {
             target: Player
-            enabled: bars.live && Player.isLocal === true
+            enabled: Player.playing && Player.isLocal === true
             function onLevelChanged() {
                 const h = [Player.level].concat(bars._history).slice(0, 10)
                 bars._history = h
                 bars._peak = Math.max(0.05, bars._peak * 0.992, Player.level)
                 const gain = [0.85, 1, 0.9, 0.75]
-                bars.levels = gain.map((g, i) => Math.max(0.18, Math.min(1, (h[i * 3] ?? 0) / bars._peak * g)))
+                bars.levels = gain.map((g, i) => Math.max(0.2, Math.min(1, (h[i * 3] ?? 0) / bars._peak * g)))
             }
         }
         TickAnimation {
-            running: bars.live && Player.isLocal !== true
+            running: bars.visible && Player.playing && Player.isLocal !== true && root.motion
             onTriggered: {
                 bars._phase += frameTime
                 bars.levels = [0, 1, 2, 3].map(i => 0.25 + 0.75 * Math.abs(Math.sin(bars._phase * (2.1 + i * 0.7) + i * 1.3)))
             }
         }
-
         Repeater {
             model: 4
             Rectangle {
@@ -469,15 +819,8 @@ Window {
                 height: Math.max(3, bars.height * bars.levels[index])
                 anchors.verticalCenter: parent.verticalCenter
                 color: root.accent
-                Behavior on height { enabled: !Theme.lowPower; NumberAnimation { duration: 90; easing.type: Easing.OutQuad } }
+                Behavior on height { enabled: root.motion; NumberAnimation { duration: 90; easing.type: Easing.OutQuad } }
             }
         }
-    }
-
-    Platform.Menu {
-        id: islandMenu
-        Platform.MenuItem { text: I18n.t("Open Materialfy"); onTriggered: WindowShell.raiseMain() }
-        Platform.MenuSeparator {}
-        Platform.MenuItem { text: I18n.t("Turn off floating player"); onTriggered: Settings.floatingPlayer = "off" }
     }
 }

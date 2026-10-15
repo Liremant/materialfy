@@ -1,16 +1,21 @@
 import QtQuick
+import QtQuick.Effects
 import Md3
 import Materialfy.Core
 
-// Плеер в панели задач Windows: окно встраивается в Shell_TrayWnd слева от области уведомлений
-// (WindowShell.taskbarPlace, cpp/floating.cpp) — обложка, название и исполнитель, «играть» и «дальше»
-// («назад» — при наведении). Фон прозрачный: под ним акрил панели; текст — по теме панели задач.
-// Раз в 2 с окно встаёт на место заново (панель сменила размер, Explorer перезапустился). Не встроилось —
-// висит поверх панели там же; Explorer унёс окно с собой — lost(), Main.qml создаёт его заново.
+// Плеер в панели задач Windows: пилюля MD3 Expressive (чёрная или в тоне обложки) — обложка, название,
+// исполнитель и тонкая волна прогресса, «пуск» и «дальше» («назад» — при наведении). Окно встраивается
+// в Shell_TrayWnd (WindowShell.taskbarPlace, cpp/floating.cpp) или, если не вышло (Windhawk, второй монитор),
+// стоит над панелью, которой оно принадлежит. Раз в 2 с встаёт на место заново (панель сменила размер,
+// значки сдвинулись); Explorer унёс окно с собой при перезапуске — lost(), Main.qml создаёт его заново.
+// Зажать обложку или название и потянуть — виджет едет вдоль панели и липнет к местам (taskbarWidgetPos).
+// Колесо — громкость (уровень — на обложке), стрелки и пробел при наведении — как у островка.
 Window {
     id: root
 
-    // --set taskbarEmbed=false — сразу запасной вариант (окно поверх панели), для проверки
+    property var mainWindow: null
+    property var targetScreen: null
+    property int screenIndex: 0
     property bool embed: true
     signal lost()
     // --set floatingShot=<path.png>: снимок окна через 9 с без встраивания; --set taskbarTheme=dark|light — тема панели
@@ -22,37 +27,60 @@ Window {
         onTriggered: root.contentItem.grabToImage(result => result.saveToFile(root.shotPath))
     }
 
-    readonly property int slotWidth: 240
-    // 1 — в панели задач, 2 — поверх неё, 0 — некуда (вертикальная или узкая панель): окно спрятано
-    property int placement: 0
+    screen: targetScreen || (mainWindow ? mainWindow.screen : null)
 
-    // Тема самой панели задач (Параметры → Персонализация → Цвета → «Режим Windows»), не приложения
-    readonly property bool colorMode: Settings.floatingPlayerStyle === "color"
-    readonly property bool darkBar: forcedTheme !== "" ? forcedTheme === "dark"
-        : Settings.systemTaskbarTheme !== "" ? Settings.systemTaskbarTheme === "dark"
-        : Qt.styleHints.colorScheme !== Qt.ColorScheme.Light
-    readonly property color ink: colorMode ? Theme.fgPrimaryContainer : (darkBar ? "#ffffff" : "#1b1b1b")
-    readonly property color inkDim: colorMode ? Qt.alpha(Theme.fgPrimaryContainer, 0.72) : (darkBar ? Qt.rgba(1, 1, 1, 0.7) : Qt.rgba(0, 0, 0, 0.62))
-    readonly property color pillBg: colorMode ? Theme.primaryContainer : "transparent"
-
+    readonly property int slotWidth: 264
     width: slotWidth
     height: 40
     color: "transparent"
     title: "Materialfy"
     flags: Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.WindowDoesNotAcceptFocus
-    // Без владельца: окно, принадлежащее главному, Windows прячет вместе с ним
+    // Без владельца из Qt: окно, принадлежащее главному, Windows прячет вместе с ним (владелец — панель, см. C++)
     transientParent: null
 
+    readonly property bool motion: !Theme.reducedMotion && !Theme.lowPower
+    readonly property bool colorMode: Settings.floatingPlayerStyle === "color"
+    readonly property bool _onCover: colorMode && Player.cover !== ""
+    // На тёмном стекле над обложкой и на чёрном — светлые; цветной без обложки — тональный контейнер
+    readonly property color ink: colorMode && !_onCover ? Theme.fgPrimaryContainer : "#ffffff"
+    readonly property color inkDim: Qt.alpha(ink, 0.72)
+    // на чёрном — «фиксированный» акцент MD3: одинаково светлый в светлой и тёмной теме
+    readonly property color accent: colorMode ? ink : Theme.primaryFixedDim
+
+    // 1 — в панели задач, 2 — над ней, 0 — некуда (вертикальная, узкая или спрятанная панель): окно спрятано
+    property int placement: 0
     property bool _ready: false
-    property bool _fullscreenBusy: false
-    visible: _ready && placement > 0 && !(placement === 2 && _fullscreenBusy)
+    property bool _fullscreen: false
+    property bool dragActive: false
+    visible: _ready && placement > 0 && !(placement === 2 && _fullscreen)
+    // Qt при показе окна сбрасывает его владельца — вернуть панель сразу, а не через 2 с
+    onVisibleChanged: if (visible) Qt.callLater(place)
+
+    function currentPos() {
+        if (Settings.taskbarPositions !== "") {
+            try {
+                const map = JSON.parse(Settings.taskbarPositions)
+                if (map && map[String(screenIndex)] !== undefined)
+                    return map[String(screenIndex)]
+            } catch (e) {}
+        }
+        return Settings.taskbarWidgetPos || "tray"
+    }
+    function savePos(pos) {
+        let map = {}
+        try { map = Settings.taskbarPositions !== "" ? JSON.parse(Settings.taskbarPositions) : {} } catch (e) {}
+        map[String(screenIndex)] = pos
+        Settings.taskbarPositions = JSON.stringify(map)
+        if (screenIndex === 0)
+            Settings.taskbarWidgetPos = pos
+    }
 
     function place() {
         if (shotPath !== "") {
             placement = 1
             return
         }
-        const result = WindowShell.taskbarPlace(root, slotWidth, embed)
+        const result = WindowShell.taskbarPlace(root, slotWidth, height, embed, currentPos())
         if (result < 0) {
             placement = 0
             root.lost()
@@ -65,139 +93,323 @@ Window {
         place()
         _ready = true
     }
-    Component.onDestruction: WindowShell.taskbarDetach(root)
+    Component.onDestruction: {
+        WindowShell.keyHook(root, false)
+        WindowShell.taskbarDetach(root)
+    }
+
     Timer {
         interval: 2000
         repeat: true
-        running: true
+        running: root._ready && root.shotPath === ""
         onTriggered: {
-            root.place()
-            // поверх панели и полноэкранное приложение впереди — не висеть над ним (встроенное прячется с панелью)
-            root._fullscreenBusy = root.placement === 2 && WindowShell.fullscreenBusy()
+            if (!root.dragActive)
+                root.place()
+            root._fullscreen = root.placement === 2 && WindowShell.fullscreenOn(root)
         }
     }
+    Connections {
+        target: Settings
+        function onTaskbarWidgetPosChanged() { if (!root.dragActive) root.place() }
+        function onTaskbarPositionsChanged() { if (!root.dragActive) root.place() }
+    }
+
+    // Клавиши без фокуса: ← → треки, ↑ ↓ громкость, пробел
+    function floatingKey(code) {
+        switch (Number(code)) {
+        case 1: Player.previous(); break
+        case 2: Player.next(); break
+        case 3: nudgeVolume(0.05); break
+        case 4: nudgeVolume(-0.05); break
+        case 5: Player.togglePlay(); break
+        }
+    }
+    function nudgeVolume(d) {
+        if (Player.remote === true && Player.canSetVolume === false)
+            return
+        Player.volume = Math.max(0, Math.min(1, Player.volume + d))
+        coverVolume.show()
+        volumeShown.restart()
+    }
+    Timer { id: volumeShown; interval: 1100 }
 
     Item {
         id: content
         anchors.fill: parent
 
-        HoverHandler { id: hover }
-        // Слой подложки (в цветном режиме — пилюля primaryContainer, в чёрном — слой наведения)
-        Rectangle {
-            anchors.fill: parent
-            radius: root.colorMode ? height / 2 : 6
-            color: root.colorMode ? root.pillBg : root.ink
-            opacity: root.colorMode ? 1 : (hover.hovered ? 0.07 : 0)
-            Behavior on opacity { NumberAnimation { duration: Theme.motion.effectsFast } }
+        HoverHandler {
+            id: hover
+            onHoveredChanged: WindowShell.keyHook(root, hovered)
         }
-
-        // Колесо — громкость (±5 % за щелчок); проценты — вместо исполнителя на секунду
         WheelHandler {
             acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
             onWheel: event => {
-                if (Player.remote === true && Player.canSetVolume === false)
-                    return
                 const touchpad = event.pixelDelta.y !== 0 && event.angleDelta.y % 120 !== 0
-                const d = touchpad ? event.pixelDelta.y / 600 : event.angleDelta.y / 120 * 0.05
-                Player.volume = Math.max(0, Math.min(1, Player.volume + d))
-                volumeShown.restart()
+                root.nudgeVolume(touchpad ? event.pixelDelta.y / 600 : event.angleDelta.y / 120 * 0.05)
             }
         }
-        Timer { id: volumeShown; interval: 1000 }
+        TapHandler {
+            acceptedButtons: Qt.RightButton
+            onTapped: point => menu.openAt(Qt.point(point.position.x, point.position.y))
+        }
 
-        // Обложка и подписи — одна цель: клик поднимает главное окно
-        Item {
-            id: track
-            anchors.left: parent.left
-            anchors.right: buttons.left
-            anchors.top: parent.top
-            anchors.bottom: parent.bottom
-            anchors.leftMargin: 6
+        // ---- Пилюля ----
+        Rectangle {
+            id: pill
+            anchors.fill: parent
+            radius: height / 2
+            clip: true
+            color: root.colorMode ? Theme.primaryContainer : "#000000"
+            border.width: 1
+            border.color: Qt.rgba(1, 1, 1, root.colorMode ? 0.14 : 0.10)
 
+            // Цветной: обложка, размытая и неподвижная (виджет на экране всегда — фон не переливается);
+            // по форме пилюли обрезает маска (clip режет по прямоугольнику)
             Item {
-                id: cover
-                width: 28
-                height: 28
-                anchors.verticalCenter: parent.verticalCenter
-                MorphImage {
+                id: coverFill
+                anchors.fill: parent
+                visible: root._onCover
+                layer.enabled: visible
+                layer.effect: MultiEffect {
+                    maskEnabled: true
+                    maskSource: coverMask
+                    maskThresholdMin: 0.5
+                    maskSpreadAtMin: 1.0
+                }
+                TrackBackdrop {
                     anchors.fill: parent
-                    visible: Player.cover !== ""
                     source: Player.cover
-                    placeholderColor: Qt.alpha(root.ink, 0.12)
-                    fallbackKind: Player.album !== "" ? "album" : "track"
-                    fallbackArtist: Player.artist.split(", ")[0]
-                    fallbackTitle: Player.album !== "" ? Player.album : Player.title
-                    shape: "softSquare"
+                    mode: Settings.backdropMode
+                    blur: Settings.nowPlayingBlur
+                    flow: 0
+                    running: false
+                    followTheme: Settings.accentFromCover
                 }
                 Rectangle {
                     anchors.fill: parent
+                    color: Qt.rgba(0, 0, 0, 0.42)
+                }
+            }
+            Rectangle {
+                id: coverMask
+                anchors.fill: parent
+                visible: false
+                layer.enabled: coverFill.visible
+                radius: height / 2
+            }
+            // слой состояния MD3: 8 % при наведении
+            Rectangle {
+                anchors.fill: parent
+                color: root.ink
+                opacity: root.dragActive ? 0.12 : hover.hovered ? 0.08 : 0
+                Behavior on opacity { NumberAnimation { duration: Theme.motion.effectsFast } }
+            }
+        }
+        // при перетаскивании — обводка акцентом
+        Rectangle {
+            anchors.fill: parent
+            radius: height / 2
+            color: "transparent"
+            border.width: 2
+            border.color: Theme.primary
+            opacity: root.dragActive ? 1 : 0
+            Behavior on opacity { NumberAnimation { duration: Theme.motion.effectsFast } }
+        }
+
+        // ---- Обложка и подписи: клик — открыть Materialfy, зажать и тянуть — двигать виджет ----
+        Item {
+            id: track
+            anchors.left: parent.left
+            anchors.leftMargin: 4
+            anchors.right: buttons.left
+            anchors.rightMargin: 4
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+
+            Item {
+                id: cover
+                width: 32
+                height: 32
+                anchors.verticalCenter: parent.verticalCenter
+                scale: root.dragActive ? 0.92 : 1
+                Behavior on scale { NumberAnimation { duration: Theme.motion.effectsFast } }
+                MorphImage {
+                    id: coverImage
+                    anchors.fill: parent
+                    visible: Player.cover !== ""
+                    source: Player.cover
+                    eager: true
+                    fallbackKind: Player.album !== "" ? "album" : "track"
+                    fallbackArtist: Player.artist.split(", ")[0]
+                    fallbackTitle: Player.album !== "" ? Player.album : Player.title
+                    // MD3E: на паузе — мягкий квадрат, играет — «печенье»; при наведении — круг
+                    shape: hover.hovered ? "circle" : Player.playing ? "cookie12" : "softSquare"
+                }
+                MorphShape {
+                    anchors.fill: parent
                     visible: Player.cover === ""
-                    radius: 6
-                    color: Qt.alpha(root.ink, 0.12)
-                    Icon { anchors.centerIn: parent; name: Player.isEpisode ? "podcasts" : "music_note"; size: 16; color: root.inkDim }
+                    shape: "softSquare"
+                    color: Qt.alpha(root.ink, 0.14)
+                    Icon { anchors.centerIn: parent; name: Player.isEpisode ? "podcasts" : "music_note"; size: 18; color: root.inkDim }
+                }
+                CoverVolume {
+                    id: coverVolume
+                    anchors.fill: parent
+                    radius: hover.hovered || Player.playing ? width / 2 : width * 0.3
+                    accent: root.accent
                 }
             }
             Column {
+                id: texts
                 anchors.left: cover.right
+                anchors.leftMargin: 9
                 anchors.right: parent.right
-                anchors.leftMargin: 8
-                anchors.rightMargin: 4
                 anchors.verticalCenter: parent.verticalCenter
-                spacing: 0
+                anchors.verticalCenterOffset: -3
+                spacing: -2
                 Label {
                     width: parent.width
                     text: Player.title
                     type: "labelMedium"
+                    weight: 600
                     color: root.ink
                     elide: Text.ElideRight
                 }
                 Label {
                     width: parent.width
-                    text: volumeShown.running ? I18n.t("Volume") + " " + Math.round(Player.volume * 100) + "%" : Player.artist
+                    text: volumeShown.running ? I18n.t("Volume {0}%", Math.round(Player.volume * 100)) : Player.artist
                     type: "labelSmall"
                     weight: 400
                     color: root.inkDim
                     elide: Text.ElideRight
                 }
             }
-            TapHandler { onTapped: WindowShell.raiseMain() }
+            // тонкая волна прогресса под подписями; не бежит (виджет виден всегда), двигается с позицией трека
+            WavyProgress {
+                anchors.left: texts.left
+                anchors.right: parent.right
+                anchors.rightMargin: 4
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: 1
+                height: 5
+                thickness: 2
+                amplitude: 1.4
+                wavelength: 12
+                speed: 0
+                gap: 3
+                wavy: Player.playing
+                value: Player.position
+                activeColor: root.accent
+                stopColor: activeColor
+                trackColor: Qt.alpha(root.ink, 0.2)
+            }
+
+            MouseArea {
+                id: grab
+                anchors.fill: parent
+                acceptedButtons: Qt.LeftButton
+                cursorShape: root.dragActive ? Qt.ClosedHandCursor : Qt.PointingHandCursor
+                preventStealing: true
+                property point _start
+                // тянуть начинают, сдвинув мышь на 6 px или подержав 250 мс
+                Timer { id: holdTimer; interval: 250; onTriggered: grab._beginDrag() }
+                function _beginDrag() {
+                    if (root.dragActive || !pressed || root.shotPath !== "")
+                        return
+                    root.dragActive = true
+                    WindowShell.taskbarDrag(root, root.slotWidth, root.height, 0)
+                }
+                onPressed: mouse => {
+                    _start = Qt.point(mouse.x, mouse.y)
+                    holdTimer.restart()
+                }
+                onPositionChanged: mouse => {
+                    if (!root.dragActive && Math.abs(mouse.x - _start.x) + Math.abs(mouse.y - _start.y) > 6)
+                        _beginDrag()
+                    if (root.dragActive)
+                        WindowShell.taskbarDrag(root, root.slotWidth, root.height, 1)
+                }
+                onReleased: {
+                    holdTimer.stop()
+                    if (!root.dragActive) {
+                        WindowShell.raiseMain()
+                        return
+                    }
+                    const pos = WindowShell.taskbarDrag(root, root.slotWidth, root.height, 2)
+                    root.dragActive = false
+                    if (pos !== "")
+                        root.savePos(pos)
+                }
+                onCanceled: {
+                    holdTimer.stop()
+                    if (root.dragActive)
+                        WindowShell.taskbarDrag(root, root.slotWidth, root.height, 2)
+                    root.dragActive = false
+                    root.place()
+                }
+            }
         }
 
+        // ---- Кнопки: «назад» выезжает при наведении, «пуск» — заполненная фигура MD3E, «дальше» ----
         Row {
             id: buttons
             anchors.right: parent.right
-            anchors.rightMargin: 2
+            anchors.rightMargin: 4
             anchors.verticalCenter: parent.verticalCenter
             spacing: 0
-            // «назад» — только при наведении: место отдаётся названию
             BarButton {
                 icon: "skip_previous"
                 width: hover.hovered ? 30 : 0
                 opacity: hover.hovered ? 1 : 0
                 visible: width > 0.5
                 clip: true
-                Behavior on width { NumberAnimation { duration: Theme.motion.spatialFast; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.motion.emphasized } }
+                Behavior on width { enabled: root.motion; NumberAnimation { duration: Theme.motion.spatialFast; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.motion.emphasized } }
                 Behavior on opacity { NumberAnimation { duration: Theme.motion.effectsFast } }
                 onClicked: Player.previous()
             }
-            BarButton { icon: Player.playing ? "pause" : "play_arrow"; filled: true; onClicked: Player.togglePlay() }
-            BarButton { icon: "skip_next"; filled: true; onClicked: Player.next() }
+            PlayButton {
+                anchors.verticalCenter: parent.verticalCenter
+                size: 32
+                playing: Player.playing
+                containerColor: root.accent
+                iconColor: root.colorMode ? (root._onCover ? "#000000" : Theme.primaryContainer) : Theme.fgPrimaryFixed
+                spin: false
+                onClicked: Player.togglePlay()
+            }
+            BarButton {
+                icon: "skip_next"
+                onClicked: Player.next()
+            }
         }
+    }
+
+    FloatingMenu {
+        id: menu
+        anchors.fill: parent
+        mainWindow: root.mainWindow
     }
 
     component BarButton: Item {
         id: button
         property string icon
-        property bool filled: false
         signal clicked()
         width: 30
         height: 30
-        Icon { anchors.centerIn: parent; name: button.icon; size: 20; fill: button.filled ? 1 : 0; color: root.ink }
-        StateLayer {
+        anchors.verticalCenter: parent ? parent.verticalCenter : undefined
+        Rectangle {
             anchors.fill: parent
-            radius: 6
-            color: root.ink
-            onClicked: button.clicked()
+            radius: tap.pressed ? 9 : 15
+            color: Qt.alpha(root.ink, tap.pressed ? 0.16 : bhover.hovered ? 0.1 : 0)
+            Behavior on radius { NumberAnimation { duration: Theme.motion.effectsFast } }
         }
+        Icon {
+            anchors.centerIn: parent
+            name: button.icon
+            size: 20
+            fill: 1
+            color: root.ink
+        }
+        HoverHandler { id: bhover }
+        TapHandler { id: tap; onTapped: button.clicked() }
     }
 }

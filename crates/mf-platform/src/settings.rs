@@ -124,7 +124,8 @@ pub enum SettingKey {
     // Поведение
     CloseToTray,
     WheelStep,
-    /// плеер поверх всего вне главного окна: "off" | "island" (островок у верхнего края экрана) | "taskbar" (в панели задач Windows)
+    /// плеер поверх всего вне главного окна: "off" | "island" (островок у верхнего края экрана) | "taskbar" (в панели задач
+    /// Windows) | "both" (и то и другое, Windows)
     FloatingPlayer,
     /// вид островка и виджета: "black" (чёрный, как железо) | "color" (тёмный тон обложки со свечением)
     FloatingPlayerStyle,
@@ -132,6 +133,12 @@ pub enum SettingKey {
     TaskbarWidgetPos,
     /// сколько раз под раскрытым островком показана подсказка с клавишами (до 3)
     FloatingKeyHints,
+    /// мониторы для островка: "" / "0" (основной) | "0,1" | "all"
+    FloatingIslandScreens,
+    /// мониторы для панели задач: "" / "0" (основной) | "0,1" | "all"
+    TaskbarScreens,
+    /// позиции на панели задач для каждого монитора: JSON {"0":"tray","1":"appsRight"}
+    TaskbarPositions,
     // Updates
     /// check GitHub Releases for a new version on startup and every 6 h (no network when off)
     AutoUpdateCheck,
@@ -158,7 +165,7 @@ pub enum SettingType {
 }
 
 impl SettingKey {
-    pub const ALL: [SettingKey; 69] = [
+    pub const ALL: [SettingKey; 72] = [
         SettingKey::ThemeMode,
         SettingKey::SchemeVariant,
         SettingKey::AccentFromCover,
@@ -225,6 +232,9 @@ impl SettingKey {
         SettingKey::FloatingPlayerStyle,
         SettingKey::TaskbarWidgetPos,
         SettingKey::FloatingKeyHints,
+        SettingKey::FloatingIslandScreens,
+        SettingKey::TaskbarScreens,
+        SettingKey::TaskbarPositions,
         SettingKey::AutoUpdateCheck,
         SettingKey::UpdateChannel,
         SettingKey::SkippedVersion,
@@ -300,6 +310,9 @@ impl SettingKey {
             FloatingPlayerStyle => "floatingPlayerStyle",
             TaskbarWidgetPos => "taskbarWidgetPos",
             FloatingKeyHints => "floatingKeyHints",
+            FloatingIslandScreens => "floatingIslandScreens",
+            TaskbarScreens => "taskbarScreens",
+            TaskbarPositions => "taskbarPositions",
             AutoUpdateCheck => "autoUpdateCheck",
             UpdateChannel => "updateChannel",
             SkippedVersion => "skippedVersion",
@@ -389,6 +402,9 @@ impl SettingKey {
             FloatingPlayerStyle => Str("black".into()),
             TaskbarWidgetPos => Str("tray".into()),
             FloatingKeyHints => Int(0),
+            FloatingIslandScreens => Str(String::new()),
+            TaskbarScreens => Str(String::new()),
+            TaskbarPositions => Str(String::new()),
             AutoUpdateCheck => Bool(true),
             UpdateChannel => Str("stable".into()),
             SkippedVersion => Str(String::new()),
@@ -453,6 +469,7 @@ impl SettingKey {
                 SettingValue::Str(match s.as_str() {
                     "island" => "island",
                     "taskbar" => "taskbar",
+                    "both" => "both",
                     _ => "off",
                 }.into())
             }
@@ -1078,7 +1095,7 @@ mod tests {
 
     #[test]
     fn schema() {
-        assert_eq!(SettingKey::ALL.len(), 69);
+        assert_eq!(SettingKey::ALL.len(), 72);
         for key in SettingKey::ALL {
             assert_eq!(SettingKey::from_name(key.name()), Some(key));
             assert_eq!(key.default_value().value_type(), key.value_type());
@@ -1106,6 +1123,7 @@ mod tests {
         assert_eq!(SettingKey::LyricsVisibleLines.normalize(Str("one".into())), Str("one".into()));
         assert_eq!(SettingKey::FloatingPlayer.normalize(Str("island".into())), Str("island".into()));
         assert_eq!(SettingKey::FloatingPlayer.normalize(Str("taskbar".into())), Str("taskbar".into()));
+        assert_eq!(SettingKey::FloatingPlayer.normalize(Str("both".into())), Str("both".into()));
         assert_eq!(SettingKey::FloatingPlayer.normalize(Str("notch".into())), Str("off".into()));
         assert_eq!(SettingKey::FloatingPlayerStyle.normalize(Str("color".into())), Str("color".into()));
         assert_eq!(SettingKey::FloatingPlayerStyle.normalize(Str("pink".into())), Str("black".into()));

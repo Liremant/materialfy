@@ -96,6 +96,9 @@ pub mod qobject {
         #[qproperty(QString, taskbar_widget_pos, cxx_name = "taskbarWidgetPos", READ, WRITE = set_taskbar_widget_pos, NOTIFY = taskbar_widget_pos_changed)]
         /// сколько раз показана подсказка с клавишами под островком (0..3)
         #[qproperty(i32, floating_key_hints, cxx_name = "floatingKeyHints", READ, WRITE = set_floating_key_hints, NOTIFY = floating_key_hints_changed)]
+        #[qproperty(QString, floating_island_screens, cxx_name = "floatingIslandScreens", READ, WRITE = set_floating_island_screens, NOTIFY = floating_island_screens_changed)]
+        #[qproperty(QString, taskbar_screens, cxx_name = "taskbarScreens", READ, WRITE = set_taskbar_screens, NOTIFY = taskbar_screens_changed)]
+        #[qproperty(QString, taskbar_positions, cxx_name = "taskbarPositions", READ, WRITE = set_taskbar_positions, NOTIFY = taskbar_positions_changed)]
         #[qproperty(QStringList, audio_devices, cxx_name = "audioDevices", READ, NOTIFY = audio_devices_changed)]
         #[qproperty(QMap_QString_QVariant, cache_usage, cxx_name = "cacheUsage", READ, NOTIFY = cache_usage_changed)]
         #[qproperty(bool, engine_restart_pending, cxx_name = "engineRestartPending", READ, NOTIFY = engine_restart_pending_changed)]
@@ -169,6 +172,9 @@ pub mod qobject {
         fn set_floating_player_style(self: Pin<&mut Settings>, value: QString);
         fn set_taskbar_widget_pos(self: Pin<&mut Settings>, value: QString);
         fn set_floating_key_hints(self: Pin<&mut Settings>, value: i32);
+        fn set_floating_island_screens(self: Pin<&mut Settings>, value: QString);
+        fn set_taskbar_screens(self: Pin<&mut Settings>, value: QString);
+        fn set_taskbar_positions(self: Pin<&mut Settings>, value: QString);
 
         #[qsignal]
         #[cxx_name = "themeModeChanged"]
@@ -359,6 +365,15 @@ pub mod qobject {
         #[qsignal]
         #[cxx_name = "floatingKeyHintsChanged"]
         fn floating_key_hints_changed(self: Pin<&mut Settings>);
+        #[qsignal]
+        #[cxx_name = "floatingIslandScreensChanged"]
+        fn floating_island_screens_changed(self: Pin<&mut Settings>);
+        #[qsignal]
+        #[cxx_name = "taskbarScreensChanged"]
+        fn taskbar_screens_changed(self: Pin<&mut Settings>);
+        #[qsignal]
+        #[cxx_name = "taskbarPositionsChanged"]
+        fn taskbar_positions_changed(self: Pin<&mut Settings>);
         #[qsignal]
         #[cxx_name = "audioDevicesChanged"]
         fn audio_devices_changed(self: Pin<&mut Settings>);
@@ -595,6 +610,9 @@ settings! {
     floating_player_style: QString = FloatingPlayerStyle, set_floating_player_style, floating_player_style_changed;
     taskbar_widget_pos: QString = TaskbarWidgetPos, set_taskbar_widget_pos, taskbar_widget_pos_changed;
     floating_key_hints: i32 = FloatingKeyHints, set_floating_key_hints, floating_key_hints_changed;
+    floating_island_screens: QString = FloatingIslandScreens, set_floating_island_screens, floating_island_screens_changed;
+    taskbar_screens: QString = TaskbarScreens, set_taskbar_screens, taskbar_screens_changed;
+    taskbar_positions: QString = TaskbarPositions, set_taskbar_positions, taskbar_positions_changed;
     @readonly {
         proxy_mode: QString = ProxyMode, proxy_mode_changed;
         proxy_host: QString = ProxyHost, proxy_host_changed;

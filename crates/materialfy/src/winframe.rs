@@ -27,11 +27,15 @@ pub mod qobject {
         include!("floating.h");
         unsafe fn floating_tool_window(window: *mut QObject) -> bool;
         unsafe fn floating_set_mask(window: *mut QObject, x: i32, y: i32, w: i32, h: i32);
-        fn floating_fullscreen_busy() -> bool;
+        unsafe fn floating_set_mask_rounded(window: *mut QObject, x: i32, y: i32, w: i32, h: i32, radius: i32);
+        unsafe fn floating_fullscreen_on(window: *mut QObject) -> bool;
+        unsafe fn floating_cursor_in(window: *mut QObject, x: i32, y: i32, w: i32, h: i32) -> i32;
         unsafe fn floating_taskbar_place(window: *mut QObject, width: i32, height: i32, embed: bool, pos: &QString) -> i32;
         unsafe fn floating_taskbar_drag(window: *mut QObject, width: i32, height: i32, phase: i32) -> QString;
         unsafe fn floating_taskbar_detach(window: *mut QObject);
         unsafe fn floating_key_hook(window: *mut QObject, on: bool) -> bool;
+        unsafe fn floating_set_click_through(window: *mut QObject, enable: bool);
+        fn floating_windhawk_active() -> bool;
     }
 
     unsafe extern "RustQt" {
@@ -56,10 +60,19 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "setMask"]
         unsafe fn set_mask(self: &WindowShell, window: *mut QObject, x: i32, y: i32, w: i32, h: i32);
-        /// На переднем плане полноэкранное приложение или презентация (Windows)
+        /// Мышь ловит и рисуется только скруглённый прямоугольник (логические px окна); w <= 0 — всё окно
         #[qinvokable]
-        #[cxx_name = "fullscreenBusy"]
-        fn fullscreen_busy(self: &WindowShell) -> bool;
+        #[cxx_name = "setMaskRounded"]
+        unsafe fn set_mask_rounded(self: &WindowShell, window: *mut QObject, x: i32, y: i32, w: i32, h: i32, radius: i32);
+        /// На мониторе окна полноэкранное приложение (видео, игра, браузер по F11, презентация) — Windows
+        #[qinvokable]
+        #[cxx_name = "fullscreenOn"]
+        unsafe fn fullscreen_on(self: &WindowShell, window: *mut QObject) -> bool;
+        /// Курсор над прямоугольником окна (логические px), даже если окно прозрачно для мыши:
+        /// 0 — нет, 1 — да, 2 — да, но зажата кнопка мыши
+        #[qinvokable]
+        #[cxx_name = "cursorIn"]
+        unsafe fn cursor_in(self: &WindowShell, window: *mut QObject, x: i32, y: i32, w: i32, h: i32) -> i32;
         /// Встроить окно в панель задач Windows и поставить на место pos (taskbarWidgetPos): 1 — встроено,
         /// 2 — поверх панели, 0 — некуда, -1 — окно потеряно (перезапуск Explorer), создать заново. См. cpp/floating.h
         #[qinvokable]
@@ -76,6 +89,14 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "keyHook"]
         unsafe fn key_hook(self: &WindowShell, window: *mut QObject, on: bool) -> bool;
+        /// Пропуск кликов через окно: true — клики идут в окна под ним
+        #[qinvokable]
+        #[cxx_name = "setClickThrough"]
+        unsafe fn set_click_through(self: &WindowShell, window: *mut QObject, enable: bool);
+        /// Запущен Windhawk со стилем панели задач: виджет тогда — окно над панелью, а не в ней
+        #[qinvokable]
+        #[cxx_name = "windhawkActive"]
+        fn windhawk_active(self: &WindowShell) -> bool;
     }
 }
 
@@ -106,8 +127,24 @@ impl qobject::WindowShell {
         }
     }
 
-    fn fullscreen_busy(&self) -> bool {
-        qobject::floating_fullscreen_busy()
+    unsafe fn set_mask_rounded(&self, window: *mut cxx_qt::QObject, x: i32, y: i32, w: i32, h: i32, radius: i32) {
+        if !window.is_null() {
+            // SAFETY: то же
+            unsafe { qobject::floating_set_mask_rounded(window, x, y, w, h, radius) };
+        }
+    }
+
+    unsafe fn fullscreen_on(&self, window: *mut cxx_qt::QObject) -> bool {
+        // SAFETY: то же
+        !window.is_null() && unsafe { qobject::floating_fullscreen_on(window) }
+    }
+
+    unsafe fn cursor_in(&self, window: *mut cxx_qt::QObject, x: i32, y: i32, w: i32, h: i32) -> i32 {
+        if window.is_null() {
+            return 0;
+        }
+        // SAFETY: то же
+        unsafe { qobject::floating_cursor_in(window, x, y, w, h) }
     }
 
     unsafe fn taskbar_place(&self, window: *mut cxx_qt::QObject, width: i32, height: i32, embed: bool, pos: &QString) -> i32 {
@@ -136,6 +173,17 @@ impl qobject::WindowShell {
             // SAFETY: то же
             unsafe { qobject::floating_taskbar_detach(window) };
         }
+    }
+
+    unsafe fn set_click_through(&self, window: *mut cxx_qt::QObject, enable: bool) {
+        if !window.is_null() {
+            // SAFETY: то же
+            unsafe { qobject::floating_set_click_through(window, enable) };
+        }
+    }
+
+    fn windhawk_active(&self) -> bool {
+        qobject::floating_windhawk_active()
     }
 }
 

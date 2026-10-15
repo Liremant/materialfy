@@ -304,6 +304,14 @@ fn run_engine(cli: &Cli, rt: &tokio::runtime::Runtime, services: &Services) -> i
 
     let root = ffi::engine_root_object(&e);
     if root.is_null() {
+        let msg = format!("QQmlApplicationEngine failed to load root component from {}\n", entry.display());
+        let path = mf_platform::dirs::app_data_dir().join("crash.log");
+        let _ = std::fs::create_dir_all(mf_platform::dirs::app_data_dir());
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+            use std::io::Write as _;
+            let _ = f.write_all(msg.as_bytes());
+        }
+        eprintln!("{msg}");
         return 1;
     }
     if !cli.offline {
