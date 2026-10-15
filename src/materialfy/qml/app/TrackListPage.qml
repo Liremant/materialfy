@@ -48,6 +48,8 @@ Item {
 
     property bool searchOpen: false
     property string searchText
+    // запрос уходит в фильтр с задержкой: полный сброс модели на каждый символ дороги
+    onSearchTextChanged: searchDebounce.restart()
     readonly property var shownModel: model ? filter : null   // то, что в списке: всё или найденное
 
     signal trackActivated(int row)
@@ -114,7 +116,12 @@ Item {
     TrackFilter {
         id: filter
         source: page.model
-        query: page.searchText
+        // query ставит searchDebounce: привязка к page.searchText сбрасывала модель на каждый символ
+    }
+    Timer {
+        id: searchDebounce
+        interval: 200
+        onTriggered: filter.query = page.searchText
     }
 
     function _duration(ms) {
@@ -227,8 +234,10 @@ Item {
             liked: Library.likesRevision >= 0 && Library.isLiked(model.trackId)
             current: model.trackId === Player.trackId
             highlighted: (page._flashId !== "" && model.trackId === page._flashId) || page._flashRow === index
-            // pos — позиция в самом списке (для «Убрать из этого плейлиста»); при поиске неизвестна
-            track: filter.active ? page.shownModel.get(index) : Object.assign({}, page.shownModel.get(index), { pos: index })
+            // pos — позиция в самом списке (для «Убрать из этого плейлиста»); при поиске неизвестна.
+            // Словарь для меню TrackRow собирает сам, лениво (trackData()) — get(index) целиком
+            // (18 ролей в QVariantMap на каждую строку) здесь больше не нужен
+            pos: filter.active ? -1 : index
             z: dragging ? 10 : 0
             transform: Translate {
                 y: row.dragging ? list.dragOffset : list.shiftFor(row.index)
@@ -273,7 +282,8 @@ Item {
                 horizontalAlignment: Text.AlignHCenter
                 wrapMode: Text.Wrap
                 visible: filter.active && filter.count === 0 && !(page.model && page.model.loading)
-                text: I18n.t("Nothing in this list matches “{0}”", page.searchText.trim())
+                // цитируем filter.query, а не searchText: текст должен совпадать с тем, что реально отражает список
+                text: I18n.t("Nothing in this list matches “{0}”", filter.query.trim())
                 type: "bodyLarge"
                 color: Theme.fgSurfaceVariant
             }

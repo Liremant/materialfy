@@ -83,6 +83,8 @@ Item {
             // программный рендер — сразу: кадры раскрытия (два слоя и маска на весь экран) рисует процессор
             duration: Theme.lowPower ? 0 : Theme.reducedMotion ? Theme.motion.effectsDefault : root.open ? 820 : 620
             easing.type: Easing.Linear     // кривые — у каждой фазы свои, см. blob
+            // onFinished здесь не приходит (анимация внутри Behavior сигнал не шлёт).
+            // Linear заканчивается ровно на to — снап не нужен.
         }
     }
 
@@ -238,8 +240,16 @@ Item {
                     target: Player
                     function onLevelChanged() {
                         left.avgLevel += (Player.level - left.avgLevel) * 0.06
-                        left.beat = Math.max(0, Math.min(1, (Player.level - left.avgLevel) * 4))
+                        const b = Math.max(0, Math.min(1, (Player.level - left.avgLevel) * 4))
+                        // пишем только значимые сдвиги: каждый старт Behavior перерисовывает всё окно,
+                        // а события уровня приходят 30–60 раз в секунду
+                        if (Math.abs(b - left.beat) > 0.04)
+                            left.beat = b
                     }
+                }
+                Connections {
+                    target: Player
+                    function onStateChanged() { if (!Player.playing) left.beat = 0 }
                 }
 
                 NowPlayingCover {
@@ -509,6 +519,9 @@ Item {
                     visible: shown > 0.001
                     opacity: Math.pow(shown, 1.6)
                     transform: Translate { x: (1 - queueTab.shown) * 80 }
+                    // во время выезда строкам очереди нечего пересчитывать: отключаем интерактив,
+                    // чтобы hover-морфы и StateLayer не инвалидировали кадры анимации
+                    enabled: shown > 0.99
                     QueueView {
                         anchors.fill: parent
                         compact: true

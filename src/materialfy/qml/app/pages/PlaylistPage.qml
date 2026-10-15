@@ -21,8 +21,6 @@ TrackListPage {
         info = playlistId !== "" ? Library.playlistInfo(playlistId) : ({})
         _rev++
     }
-    Component.onCompleted: _reload()
-    onPlaylistIdChanged: _reload()
     Connections {
         target: Library
         function onPlaylistInfoChanged(id) { if (id === page.playlistId) page._reload() }
@@ -41,7 +39,43 @@ TrackListPage {
     overline: collaborative ? I18n.t("COLLABORATIVE PLAYLIST") : I18n.t("PLAYLIST")
     description: info.description ?? ""
     heroImage: (info.cover ?? "") !== "" ? info.cover : cover
-    model: playlistId !== "" ? Library.playlistTracks(playlistId) : null
+    // Модель треков: стабильный экземпляр по id + счётчик владельцев у моста. playlistTracks зовём
+    // один раз на открытие (guard _acquiredId — повторные оценки binding'ов счётчик не надувают),
+    // releasePlaylist — на скрытие (Router прячет ушедшую страницу), смену id и уничтожение:
+    // последний release отменяет идущее чтение; возврат на страницу перечитывает кэш кусками.
+    // Шапка (playlistInfo) независима и не releasing'ся.
+    property string _acquiredId: ""
+    // Скрытие страницы (Router прячет на каждом push, сцена — в мини-режиме) снимает владение:
+    // идущее чтение отменяется, но модель и строки остаются — «назад» не пересоздаёт список
+    // во время анимации и сохраняет прокрутку. Модель обнуляется при смене id и уничтожении.
+    function _syncModel() {
+        if (playlistId === _acquiredId)
+            return
+        _releaseModel()
+        if (playlistId !== "" && visible) {
+            _acquiredId = playlistId
+            model = Library.playlistTracks(playlistId)
+        }
+    }
+    function _releaseOwnership() {
+        if (_acquiredId === "")
+            return
+        Library.releasePlaylist(_acquiredId)
+        _acquiredId = ""
+    }
+    function _releaseModel() {
+        _releaseOwnership()
+        model = null
+    }
+    Component.onCompleted: { _reload(); _syncModel() }
+    onPlaylistIdChanged: { _reload(); _syncModel() }
+    onVisibleChanged: {
+        if (visible)
+            _syncModel()
+        else
+            _releaseOwnership()
+    }
+    Component.onDestruction: _releaseModel()
     emptyIcon: "queue_music"
     emptyTitle: I18n.t("This playlist has no tracks")
     emptyText: canEdit ? I18n.t("Tap “Edit playlist” to add tracks") : ""

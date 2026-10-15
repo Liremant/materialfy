@@ -29,5 +29,6 @@ Snackbar 1.0 Snackbar.qml
 TextField 1.0 TextField.qml
 MenuField 1.0 MenuField.qml
 singleton Ticker 1.0 Ticker.qml
+singleton ImageGate 1.0 ImageGate.qml
 TickAnimation 1.0 TickAnimation.qml
 ShapeMorph 1.0 ShapeMorph.qml

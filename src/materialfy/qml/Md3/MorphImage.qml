@@ -87,9 +87,68 @@ Item {
             return Math.max(16, Math.ceil(px / step) * step)
         }
         readonly property bool _sized: root.width > 0 && root.height > 0
-        source: !_sized || !(root.eager || root._shownOnce) || root.source.toString() === "" ? ""
+        // Гейт декода: реальный источник подставляется, только когда ImageGate дал слот.
+        // _hold — запрошено и ждёт очереди; null-источник никуда не уходит, заявка снимается.
+        property bool _gateOn: false
+        property bool _hold: false
+        readonly property string _want: !_sized || !(root.eager || root._shownOnce) || root.source.toString() === "" ? ""
               : root._fallback.toString() !== "" ? root._fallback
               : root._tries > 0 ? root.source + "#r" + root._tries : root.source
+        function qmlContinue() {
+            _gateOn = true
+            image.source = _want
+            if (image.status !== Image.Loading)
+                _releaseGate(false)
+        }
+        function _releaseGate(clearLoading) {
+            // слот держит и ожидающий (_hold), и загрузившийся (_gateOn) — иначе слоты утекают:
+            // очередь встаёт, и все обложки после первых двенадцати не грузятся никогда
+            if (_hold) {
+                _hold = false
+                ImageGate.cancel(image)   // слота у ждущего нет — только снять заявку
+            }
+            if (_gateOn) {
+                _gateOn = false
+                if (clearLoading && image.status === Image.Loading)
+                    image.source = ""
+                ImageGate.release(image)
+            }
+        }
+        function _requestGate() {
+            if (_want === "") {
+                _releaseGate(true)
+                image.source = ""
+            } else if (!_hold && !_gateOn) {
+                // в очередь ставим сам Image (у него qmlContinue): очередь зовёт continue на том,
+                // кого поставили — заявка от root промолчала бы в release и обложка не грузилась никогда
+                if (ImageGate.acquire(image)) {
+                    _gateOn = true
+                    image.source = _want
+                } else {
+                    _hold = true
+                    // reuseItems: пока строка ждёт очереди, retainWhileLoading показывает прошлую
+                    // запись — чужая обложка не должна висеть до своего хода
+                    image.source = ""
+                }
+            } else if (_gateOn) {
+                image.source = _want
+            }
+            // setSource с тем же URL ничего не делает и statusChanged не приходит: слот,
+            // выданный под грузку уже загруженной обложки, утечёт. Слот нужен только пока грузит.
+            if (_gateOn && image.status !== Image.Loading)
+                _releaseGate(false)
+        }
+        on_WantChanged: _requestGate()
+        // Скрытый queued Image снимается из очереди, а при повторном показе снова просит слот.
+        // Это слушает root.visible: сам Image всегда visible:false и его собственный сигнал здесь
+        // не сообщает о скрытии/показе MorphImage.
+        Connections {
+            target: root
+            function onVisibleChanged() { root.visible ? image._requestGate() : image._releaseGate(true) }
+        }
+        Component.onDestruction: _releaseGate(true)
+        // source управляется только переходами gate: imperative assignment не спорит с _want
+        // binding'ом и не создаёт цикл source → status → release → source.
         sourceSize: Qt.size(_fit(root.width * Screen.devicePixelRatio), _fit(root.height * Screen.devicePixelRatio))
         retainWhileLoading: true
         smooth: true
@@ -99,6 +158,8 @@ Item {
                 shown = true
             else if (status === Image.Error || status === Image.Null)
                 shown = false
+            if (status === Image.Ready || status === Image.Error)
+                _releaseGate(false)
             if (status === Image.Error)
                 root._failed()
         }

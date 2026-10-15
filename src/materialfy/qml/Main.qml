@@ -333,6 +333,7 @@ Window {
                         // startPage=artist:<id> (album:, playlist:, show:, episode:) — страница с параметром. Каталог
                         // читается через сессию librespot, поэтому такая страница открывается, когда сессия поднялась
                         Component.onCompleted: {
+                            Qt.callLater(router._prewarm)   // до любого return: работает и без deep-link
                             const [name, id] = win.startPage.split(":")
                             if (!id) {
                                 reset(name)
@@ -773,8 +774,13 @@ Window {
                 return
             if (nowPlaying.open)
                 nowPlaying.hide()
+            // Поиск уже открыт: дедуп reset не перестроит страницу и focus не случится сам — зовём явно.
+            if (router.currentName === "search" && router.currentItem && router.currentItem.focusSearch) {
+                router.currentItem.focusSearch()
+                return
+            }
             router.reset("search")
-            Qt.callLater(() => router.currentItem && router.currentItem.focusSearch && router.currentItem.focusSearch())
+            // фокус берёт сама SearchPage в Component.onCompleted — при инкубации reset currentItem ещё старый
         }
     }
     Shortcut { sequence: "Ctrl+,"; onActivated: router.reset("settings") }

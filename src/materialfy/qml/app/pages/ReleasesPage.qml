@@ -15,8 +15,32 @@ Page {
     readonly property var radar: Releases.radar ?? ({})
     readonly property string radarId: radar.playlistId ?? ""
     readonly property string radarUri: (radar.uri ?? "") !== "" ? radar.uri : (radarId !== "" ? "spotify:playlist:" + radarId : "")
-    // строки «Радара» читает библиотека, как у любого плейлиста (через сессию)
-    readonly property var radarTracks: radarId !== "" ? Library.playlistTracks(radarId) : null
+    // playlistTracks — ref-counted lifecycle API: this page is a second possible owner of Radar.
+    // Keep the model stable while visible and release it when the retained page is hidden/destroyed.
+    property var radarTracks: null
+    property string _radarOwnerId: ""
+    // Скрытие снимает владение (отмена чтения), модель остаётся: возврат на Releases
+    // не пересоздаёт строки. Обнуление — при смене id и уничтожении.
+    function _syncRadarModel() {
+        if (radarId === _radarOwnerId)
+            return
+        _releaseRadarModel()
+        if (radarId !== "" && visible) {
+            _radarOwnerId = radarId
+            radarTracks = Library.playlistTracks(radarId)
+        }
+    }
+    function _releaseRadarModel() {
+        if (_radarOwnerId !== "")
+            Library.releasePlaylist(_radarOwnerId)
+        _radarOwnerId = ""
+        radarTracks = null
+    }
+    function _releaseRadarOwnership() {
+        if (_radarOwnerId !== "")
+            Library.releasePlaylist(_radarOwnerId)
+        _radarOwnerId = ""
+    }
     readonly property bool radarPlaying: radarUri !== "" && Player.contextUri === radarUri
     property bool allTracks: false
     readonly property int shownTracks: 8
@@ -26,8 +50,17 @@ Page {
     readonly property var shown: filter === "all" ? releases : releases.filter(r => r.group === filter)
     property bool allReleases: false
 
-    Component.onCompleted: Releases.refresh(false)
-    onVisibleChanged: if (visible) Releases.refresh(false)
+    Component.onCompleted: { _syncRadarModel(); Releases.refresh(false) }
+    onRadarIdChanged: _syncRadarModel()
+    onVisibleChanged: {
+        if (visible) {
+            _syncRadarModel()
+            Releases.refresh(false)
+        } else {
+            _releaseRadarOwnership()
+        }
+    }
+    Component.onDestruction: _releaseRadarModel()
 
     function openRadar() {
         router.push("playlist", { playlistId: radarId, playlistTitle: radar.title ?? "", cover: radar.cover ?? "" })

@@ -241,14 +241,21 @@ Item {
                         iconColor: root.saved ? Theme.primary : Theme.fgSurfaceVariant
                         onClicked: Library.toggleSaved(root.uri)
                     }
-                    IconButton {
-                        id: moreButton
-                        icon: "more_horiz"
-                        size: "xs"
-                        visible: root.hovered || root.isCurrent
-                        onClicked: {
-                            const p = moreButton.mapToItem(null, 0, 0)
-                            Catalog.requestTrackMenuAt(root.trackData(), p.x, p.y, moreButton.width, moreButton.height)
+                    // «⋯» создаётся с первого наведения и остаётся (строк много, а наведена одна);
+                    // видимость — на самой кнопке, как и раньше
+                    Loader {
+                        // невидимый item всё равно занимает ширину в Row — прячем сам Loader
+                        active: root.hovered || root.isCurrent || item !== null
+                        visible: item !== null && item.visible
+                        sourceComponent: IconButton {
+                            id: moreButton
+                            icon: "more_horiz"
+                            size: "xs"
+                            visible: root.hovered || root.isCurrent
+                            onClicked: {
+                                const p = moreButton.mapToItem(null, 0, 0)
+                                Catalog.requestTrackMenuAt(root.trackData(), p.x, p.y, moreButton.width, moreButton.height)
+                            }
                         }
                     }
                 }
