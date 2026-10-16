@@ -557,14 +557,19 @@ floating_tool_window(QObject* object)
 bool
 floating_fullscreen_on(QObject* object)
 {
-  // Игра в исключительном полноэкранном режиме и режим презентации — на всех мониторах
+  const HMONITOR monitor = monitor_for(target_screen(qobject_cast<QWindow*>(object)));
+  // Игра в исключительном полноэкранном режиме и режим презентации: Windows говорит о них без монитора, а
+  // соседние мониторы и их панели задач видны как обычно (CS 4:3 на основном — виджет на втором остаётся).
+  // Такое окно всегда на переднем плане — прячемся, только если оно на нашем мониторе
   QUERY_USER_NOTIFICATION_STATE state{};
   if (SUCCEEDED(SHQueryUserNotificationState(&state))
-      && (state == QUNS_RUNNING_D3D_FULL_SCREEN || state == QUNS_PRESENTATION_MODE))
-    return true;
+      && (state == QUNS_RUNNING_D3D_FULL_SCREEN || state == QUNS_PRESENTATION_MODE)) {
+    const HWND front = GetForegroundWindow();
+    if (front && MonitorFromWindow(front, MONITOR_DEFAULTTONEAREST) == monitor)
+      return true;
+  }
   // Остальное (видео и браузер на весь экран, игры в окне без рамки) — только на своём мониторе: окно на переднем
   // плане или то, что видно в его центре (переднее окно может быть и на другом мониторе)
-  const HMONITOR monitor = monitor_for(target_screen(qobject_cast<QWindow*>(object)));
   if (covers_monitor(GetForegroundWindow(), monitor))
     return true;
   MONITORINFO info{};
