@@ -60,20 +60,36 @@ Item {
                 return
             }
             const name = names[at++]
-            if (keepAlive.indexOf(name) >= 0 && _kept[name] === undefined) {
-                let comp = _components[name]
-                if (!comp) {
-                    comp = Qt.createComponent(pages[name])
-                    _components[name] = comp
-                }
-                if (comp.status === Component.Error) {
+            let comp = _components[name]
+            if (!comp) {
+                comp = Qt.createComponent(pages[name])
+                _components[name] = comp
+            }
+            if (comp.status === Component.Error) {
+                console.error("Router prewarm:", comp.errorString())
+                return
+            }
+            // Параметрические страницы строить нельзя (нужны props): компиляция и есть прогрев.
+            if (keepAlive.indexOf(name) < 0)
+                return
+            if (_kept[name] !== undefined)
+                return
+            // ФИКС 4: тихая сборка асинхронной инкубацией — синхронный createObject строил
+            // полную страницу в один кадр (фриз сотни мс на Home).
+            const incubator = comp.incubateObject(
+                container,
+                { router: root, width: container.width, height: container.height, opacity: 0 },
+                Qt.Asynchronous)
+            incubator.onStatusChanged = function() {
+                if (incubator.status !== Component.Ready)
+                    return
+                const item = incubator.object
+                if (!item) {
                     console.error("Router prewarm:", comp.errorString())
                     return
                 }
-                // Тихая сборка вечной страницы: невидимая, без push, сразу в _kept.
-                const item = comp.createObject(container, { router: root, width: container.width, height: container.height })
-                if (!item) {
-                    console.error("Router prewarm:", comp.errorString())
+                if (_kept[name] !== undefined && _kept[name] !== item) {
+                    item.destroy()      // юзер открыл страницу раньше — экземпляр из _make уже живёт
                     return
                 }
                 item.width = Qt.binding(() => container.width)
@@ -168,7 +184,7 @@ Item {
         // keepAlive без живого экземпляра: home — синхронно (старт), остальные асинхронно —
         // единственная сборка не должна фризить, дальше страница живёт вечно
         // Страницы с параметрами: ключ = имя + props. Живой экземпляр с тем же ключом переиспользуем
-        // (инstant-возврат, скролл на месте); иначе строим инкубацией и кладём в LRU.
+        // (мгновенный возврат, скролл на месте); иначе строим инкубацией и кладём в LRU.
         const key = name + "|" + JSON.stringify(props ?? {})
         const keptKeyed = _takeKeptKeyed(key)
         if (keptKeyed && !stack.some(e => e.item === keptKeyed)) {
@@ -224,9 +240,19 @@ Item {
         item.width = Qt.binding(() => container.width)
         item.height = Qt.binding(() => container.height)
         item.opacity = 0
-        if (p.keep && _kept[p.name] === undefined)
-            _kept[p.name] = item
-        _rememberKeyed(p, item)
+        if (p.keep) {
+            if (_kept[p.name] !== undefined && _kept[p.name] !== item) {
+                // prewarm успел раньше: используем его экземпляр, созданный здесь — в утиль
+                item.destroy()
+                item = _kept[p.name]
+            } else if (_kept[p.name] === undefined) {
+                _kept[p.name] = item
+            }
+        }
+        // LRU — только страницам с параметрами (плейлисты, артисты): search/account/playback
+        // не должны переживать навигацию (сброс состояния при входе), без props их не кэшируем
+        if (keepAlive.indexOf(p.name) < 0 && Object.keys(p.props).length > 0)
+            _rememberKeyed(p, item)
         const entry = { name: p.name, props: p.props, item: item }
         if (p.kind === "prewarm") {
             // Тихий прогрев: страница скрыта в LRU, никакого стека и анимации.
@@ -244,6 +270,25 @@ Item {
             stack = [entry]
             _animate(p.prev, item, "fade")
         }
+    }
+
+    // Наведение на карточку: строим страницу после паузы (dwell) — курсор на пути к цели
+    // задевает десяток плиток, каждая со своим props, и без паузы инкубации переполняют
+    // очередь. hover-out отменяет запланированный прогрев.
+    function prewarmHover(name, props) {
+        hoverPrewarm.name = name
+        hoverPrewarm.props = props
+        hoverPrewarm.restart()
+    }
+    function prewarmHoverCancel() {
+        hoverPrewarm.stop()
+    }
+    Timer {
+        id: hoverPrewarm
+        interval: 200
+        property string name: ""
+        property var props: null
+        onTriggered: prewarmKeyed(name, props)
     }
 
     // Прогрев параметрической страницы (наведение на карточку): строим инкубацией без push,
@@ -284,8 +329,11 @@ Item {
         _keptKeyed.push({ key: key, name: p.name, item: item })
         while (_keptKeyed.length > keepAliveSlots) {
             const evicted = _keptKeyed.shift()
-            if (!stack.some(e => e.item === evicted.item))
+            if (!stack.some(e => e.item === evicted.item)) {
+                if (_kept[evicted.name] === evicted.item)
+                    delete _kept[evicted.name]   // страховка: не оставлять ссылку на мёртвый объект
                 evicted.item.destroy()
+            }
         }
     }
 

@@ -316,7 +316,7 @@ Window {
                         // (600–1200 мс), все следующие мгновенны. Параметрические (плейлисты,
                         // артисты) — LRU-слоты в keepAliveSlots.
                         keepAlive: ["home", "settings", "releases", "liked"]
-                        keepAliveSlots: 10
+                        keepAliveSlots: 6
                         pages: ({
                             home: Qt.resolvedUrl("app/pages/HomePage.qml"),
                             search: Qt.resolvedUrl("app/pages/SearchPage.qml"),
