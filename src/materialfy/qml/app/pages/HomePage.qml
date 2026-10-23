@@ -454,7 +454,8 @@ Page {
                             if (e.kind !== "playlist")
                                 return
                             const props = { playlistId: e.id, playlistTitle: e.title ?? "", cover: e.cover ?? "" }
-                            hovered ? router.prewarmHover("playlist", props) : router.prewarmHoverCancel()
+                            hovered ? router.prewarmHover("playlist", props)
+                                    : router.prewarmHoverCancel("playlist", props)
                         }
                     }
                 }

@@ -115,6 +115,13 @@ Item {
     function push(name, props) {
         if (_same(current, name, props) || _pendingSame(name, props))
             return
+        if (_pending && _pending.kind === "prewarm" && _pending.name === name
+                && JSON.stringify(_pending.props) === JSON.stringify(props ?? {})) {
+            // Клик по карточке, которую сейчас тихо прогреваем: превратить прогрев в переход
+            _pending.kind = "forward"
+            _pending.prev = currentItem
+            return
+        }
         if (_pending)
             _cancelPending()                // push A → push B: недостроенную A отменяем и строим B
         const prev = currentItem
@@ -235,19 +242,19 @@ Item {
             console.error("Router:", p.comp.errorString())
             return
         }
-        const item = incubator.object
+        let item = incubator.object
         // Кадра с чужим размером нет: до Ready страница прозрачна, binding навешиваем тем же кадром, что и анимацию
         item.width = Qt.binding(() => container.width)
         item.height = Qt.binding(() => container.height)
         item.opacity = 0
-        if (p.keep) {
-            if (_kept[p.name] !== undefined && _kept[p.name] !== item) {
-                // prewarm успел раньше: используем его экземпляр, созданный здесь — в утиль
-                item.destroy()
-                item = _kept[p.name]
-            } else if (_kept[p.name] === undefined) {
-                _kept[p.name] = item
-            }
+        if (p.keep && _kept[p.name] !== undefined && _kept[p.name] !== item) {
+            // prewarm успел раньше: его экземпляр уже живой, созданный здесь — в утиль
+            item.destroy()
+            item = _kept[p.name]
+            if (stack.some(e => e.item === item))
+                return                      // уже в стеке — переход завершён чужими руками
+        } else if (p.keep && _kept[p.name] === undefined) {
+            _kept[p.name] = item
         }
         // LRU — только страницам с параметрами (плейлисты, артисты): search/account/playback
         // не должны переживать навигацию (сброс состояния при входе), без props их не кэшируем
@@ -280,8 +287,10 @@ Item {
         hoverPrewarm.props = props
         hoverPrewarm.restart()
     }
-    function prewarmHoverCancel() {
-        hoverPrewarm.stop()
+    function prewarmHoverCancel(name, props) {
+        // общий таймер: отменять только свой прогрев, иначе переход A→B убьёт прогрев B
+        if (hoverPrewarm.name === name && JSON.stringify(hoverPrewarm.props) === JSON.stringify(props ?? {}))
+            hoverPrewarm.stop()
     }
     Timer {
         id: hoverPrewarm
@@ -299,7 +308,7 @@ Item {
         if (_pendingSame(name, props) || stack.some(e => _same(e, name, props)))
             return
         const key = name + "|" + JSON.stringify(props ?? {})
-        if (_takeKeptKeyed(key))
+        if (_hasKeptKeyed(key))
             return
         if (_pending !== null)
             return                          // не перебиваем настоящий переход
@@ -308,6 +317,10 @@ Item {
             return
         _components[name] = comp
         _incubate(comp, name, props, "prewarm")
+    }
+
+    function _hasKeptKeyed(key) {
+        return _keptKeyed.some(e => e.key === key)
     }
 
     function _takeKeptKeyed(key) {
@@ -329,11 +342,8 @@ Item {
         _keptKeyed.push({ key: key, name: p.name, item: item })
         while (_keptKeyed.length > keepAliveSlots) {
             const evicted = _keptKeyed.shift()
-            if (!stack.some(e => e.item === evicted.item)) {
-                if (_kept[evicted.name] === evicted.item)
-                    delete _kept[evicted.name]   // страховка: не оставлять ссылку на мёртвый объект
+            if (!stack.some(e => e.item === evicted.item))
                 evicted.item.destroy()
-            }
         }
     }
 
