@@ -19,6 +19,13 @@ Item {
     property point origin: Qt.point(width / 2, height - 60)
     property string tab: "lyrics"          // lyrics | queue | "" ("" — центр-режим: без очереди/текста)
     readonly property bool coverOnly: root.tab === ""
+    // Фоновая сборка вкладок после раскрытия плеера: первый клик без холодной сборки
+        Timer {
+        id: tabsWarmup
+        interval: 400
+        onTriggered: root._tabsWarmed = true
+    }
+property bool _tabsWarmed: false
     // узкое окно: одна колонка; текст/очередь открываются вместо плеера (sheetOpen) переключателем сверху
     property bool compact: false
     property bool sheetOpen: false
@@ -68,6 +75,8 @@ Item {
         open = true
         sheetOpen = false
         forceActiveFocus()
+        if (!root._tabsWarmed)
+            tabsWarmup.restart()
     }
     function hide() {
         open = false
@@ -523,9 +532,11 @@ Item {
                 enabled: !root.coverOnly
                 anchors.top: parent.top
                 anchors.bottom: parent.bottom
-                x: root.layoutCompact ? 0 : left.x + left.width + 48
+                // Геометрия — целевая (не от анимированной колонки): текст и очередь при возврате
+                // из центра раскладываются сразу, анимируется только прозрачность
+                x: root.layoutCompact ? 0 : left._normalX + left._normalW + 48
                 width: root.layoutCompact ? parent.width
-                    : Math.max(0, parent.width - x - Math.max(16, root.width * 0.06) * (1 - left._blend))
+                    : Math.max(0, parent.width - x - Math.max(16, root.width * 0.06))
 
                 component TabShift: NumberAnimation {
                     duration: 460
@@ -544,21 +555,34 @@ Item {
                     // во время выезда строкам очереди нечего пересчитывать: отключаем интерактив,
                     // чтобы hover-морфы и StateLayer не инвалидировали кадры анимации
                     enabled: shown > 0.99
-                    QueueView {
+                    // Сборка очереди асинхронно: холодная сборка на клик давала фриз
+                    Loader {
                         anchors.fill: parent
-                        compact: true
+                        asynchronous: true
+                        active: queueTab.shown > 0.001 || root._tabsWarmed
+                        sourceComponent: QueueView { anchors.fill: parent; compact: true }
                     }
                 }
 
-                LyricsView {
-                    id: lyricsView
+                // Текст песни собирается асинхронно: холодная сборка на клик давала фриз
+                Item {
+                    id: lyricsTab
                     property real shown: root.tab === "lyrics" ? 1 : 0
                     Behavior on shown { TabShift {} }
                     anchors.fill: parent
                     visible: shown > 0.001 && root.visible
                     opacity: Math.pow(shown, 1.6)
-                    transform: Translate { x: -(1 - lyricsView.shown) * 80 }
-                    baseFontSize: Math.max(26, Math.min(40, root.width / 36))
+                    transform: Translate { x: -(1 - lyricsTab.shown) * 80 }
+                    enabled: shown > 0.99
+                    Loader {
+                        anchors.fill: parent
+                        asynchronous: true
+                        active: lyricsTab.shown > 0.001 || root._tabsWarmed
+                        sourceComponent: LyricsView {
+                            anchors.fill: parent
+                            baseFontSize: Math.max(26, Math.min(40, root.width / 36))
+                        }
+                    }
                 }
             }
         }
