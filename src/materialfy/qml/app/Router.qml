@@ -113,11 +113,12 @@ Item {
     }
 
     function push(name, props) {
-        if (_same(current, name, props) || _pendingSame(name, props))
+        if (_same(current, name, props))
             return
-        if (_pending && _pending.kind === "prewarm" && _pending.name === name
-                && JSON.stringify(_pending.props) === JSON.stringify(props ?? {})) {
-            // Клик по карточке, которую сейчас тихо прогреваем: превратить прогрев в переход
+        if (_pending && _pending.name === name && JSON.stringify(_pending.props) === JSON.stringify(props ?? {})) {
+            if (_pending.kind !== "prewarm")
+                return                          // тот же запрос уже строится — не новый push
+            // Клик по карточке, которую сейчас тихо прогреваем: прогрев становится переходом
             _pending.kind = "forward"
             _pending.prev = currentItem
             return
@@ -251,10 +252,13 @@ Item {
             // prewarm успел раньше: его экземпляр уже живой, созданный здесь — в утиль
             item.destroy()
             item = _kept[p.name]
-            if (stack.some(e => e.item === item))
-                return                      // уже в стеке — переход завершён чужими руками
         } else if (p.keep && _kept[p.name] === undefined) {
             _kept[p.name] = item
+        }
+        if (p.kind === "forward" && stack.some(e => e.item === item)) {
+            // Страница уже открыта в глубине стека: свежую копию сожгли, дубль в стек не добавляем.
+            item.destroy()
+            return
         }
         // LRU — только страницам с параметрами (плейлисты, артисты): search/account/playback
         // не должны переживать навигацию (сброс состояния при входе), без props их не кэшируем

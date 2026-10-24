@@ -149,11 +149,6 @@ Item {
 
     // ---- Действия ----
     // Наведение на карточку: страница строится в фоне после паузы, клик открывает мгновенно.
-    function prewarmEntry(e) {
-        if (!e || e.kind !== "playlist")
-            return
-        router.prewarmHover("playlist", { playlistId: e.id, playlistTitle: e.title ?? "", cover: e.cover ?? "" })
-    }
     property var _prewarmedEntry: null
     function prewarmEntry(e) {
         if (!e || e.kind !== "playlist")
