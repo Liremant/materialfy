@@ -33,6 +33,9 @@ ApplicationWindow {
         id: router
         anchors.fill: parent
         keepAliveSlots: 6
+        // settings обязана быть keepAlive-страницей: иначе сценарий 2 строит свежую страницу
+        // и проходит даже с ломаным reset (in-stack _kept путь не проверяется)
+        keepAlive: ["home", "settings"]
         pages: ({
             home: Qt.resolvedUrl(Qt.resolvedUrl("../../../src/materialfy/qml/app/pages/HomePage.qml")),
             playlist: Qt.resolvedUrl(Qt.resolvedUrl("../../../src/materialfy/qml/app/pages/PlaylistPage.qml")),
@@ -88,6 +91,7 @@ ApplicationWindow {
     function startScenario3() {
         router.reset("home")
         router.prewarmKeyed("playlist", { playlistId: "w", playlistTitle: "W", cover: "" })
+        check("prewarm pending", router._pending !== null && router._pending.kind === "prewarm")
         router.push("playlist", { playlistId: "w", playlistTitle: "W", cover: "" })
         timerToScenario3.restart()
     }
