@@ -21,7 +21,14 @@ Item {
     property color handleColor: Theme.primary
 
     readonly property alias pressed: area.pressed
-    readonly property real position: to === from ? 0 : (value - from) / (to - from)
+    // Значение во время перетаскивания/колеса: показываем его вместо value, чтобы не
+    // перезаписывать value императивно — иначе биндинг value навсегда отваливается, и
+    // два слайдера на одном Player.volume перестают синхронизироваться (пишут, не читают).
+    property real _live: -1
+    readonly property real position: {
+        const v = _live >= 0 ? _live : value
+        return to === from ? 0 : (v - from) / (to - from)
+    }
 
     signal moved(real value)
 
@@ -33,8 +40,8 @@ Item {
         let v = from + p * (to - from)
         if (stepSize > 0)
             v = from + Math.round((v - from) / stepSize) * stepSize
-        if (v !== value) {
-            value = v
+        if (v !== _live) {
+            _live = v
             moved(v)
         }
     }
@@ -119,7 +126,7 @@ Item {
             anchors.centerIn: parent
             type: "labelLarge"
             color: Theme.fgInverseSurface
-            text: root.valueText(root.value)
+            text: root.valueText(root._live >= 0 ? root._live : root.value)
         }
     }
 
@@ -130,6 +137,7 @@ Item {
         preventStealing: true
         onPressed: mouse => root._setFromX(mouse.x)
         onPositionChanged: mouse => { if (pressed) root._setFromX(mouse.x) }
+        onReleased: root._live = -1
         onWheel: wheel => {
             if (!root.wheelEnabled) {
                 wheel.accepted = false
@@ -137,7 +145,7 @@ Item {
             }
             const step = root.stepSize > 0 ? root.stepSize : (root.to - root.from) / 50
             const v = Math.max(root.from, Math.min(root.to, root.value + (wheel.angleDelta.y > 0 ? step : -step)))
-            if (v !== root.value) { root.value = v; root.moved(v) }
+            if (v !== root._live) { root._live = v; root.moved(v) }
         }
     }
 }

@@ -20,12 +20,12 @@ Item {
     property string tab: "lyrics"          // lyrics | queue | "" ("" — центр-режим: без очереди/текста)
     readonly property bool coverOnly: root.tab === ""
     // Фоновая сборка вкладок после раскрытия плеера: первый клик без холодной сборки
-        Timer {
+    property bool _tabsWarmed: false
+    Timer {
         id: tabsWarmup
         interval: 400
         onTriggered: root._tabsWarmed = true
     }
-property bool _tabsWarmed: false
     // узкое окно: одна колонка; текст/очередь открываются вместо плеера (sheetOpen) переключателем сверху
     property bool compact: false
     property bool sheetOpen: false
