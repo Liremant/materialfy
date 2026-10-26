@@ -24,9 +24,11 @@ Item {
     // Значение во время перетаскивания/колеса: показываем его вместо value, чтобы не
     // перезаписывать value императивно — иначе биндинг value навсегда отваливается, и
     // два слайдера на одном Player.volume перестают синхронизироваться (пишут, не читают).
-    property real _live: -1
+    // NaN-сентинел: диапазоны бывают отрицательные (-500..500 у Sync), знак не годится
+    property real _live: NaN
+    property bool _liveActive: false
     readonly property real position: {
-        const v = _live >= 0 ? _live : value
+        const v = _liveActive ? _live : value
         return to === from ? 0 : (v - from) / (to - from)
     }
 
@@ -40,8 +42,9 @@ Item {
         let v = from + p * (to - from)
         if (stepSize > 0)
             v = from + Math.round((v - from) / stepSize) * stepSize
-        if (v !== _live) {
+        if (_liveActive === false || v !== _live) {
             _live = v
+            _liveActive = true
             moved(v)
         }
     }
@@ -126,7 +129,7 @@ Item {
             anchors.centerIn: parent
             type: "labelLarge"
             color: Theme.fgInverseSurface
-            text: root.valueText(root._live >= 0 ? root._live : root.value)
+            text: root.valueText(root._liveActive ? root._live : root.value)
         }
     }
 
@@ -137,7 +140,8 @@ Item {
         preventStealing: true
         onPressed: mouse => root._setFromX(mouse.x)
         onPositionChanged: mouse => { if (pressed) root._setFromX(mouse.x) }
-        onReleased: root._live = -1
+        onReleased: root._liveActive = false
+        onCanceled: root._liveActive = false
         onWheel: wheel => {
             if (!root.wheelEnabled) {
                 wheel.accepted = false
@@ -145,7 +149,19 @@ Item {
             }
             const step = root.stepSize > 0 ? root.stepSize : (root.to - root.from) / 50
             const v = Math.max(root.from, Math.min(root.to, root.value + (wheel.angleDelta.y > 0 ? step : -step)))
-            if (v !== root._live) { root._live = v; root.moved(v) }
+            if (root._liveActive === false || v !== root._live) {
+                root._live = v
+                root._liveActive = true
+                root.moved(v)
+            }
+            // колесо не шлёт release: live держится, пока биндинг value не догонит
+            wheelLive.restart()
         }
+    }
+
+    Timer {
+        id: wheelLive
+        interval: 150
+        onTriggered: root._liveActive = false
     }
 }
