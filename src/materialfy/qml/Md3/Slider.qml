@@ -148,7 +148,10 @@ Item {
                 return
             }
             const step = root.stepSize > 0 ? root.stepSize : (root.to - root.from) / 50
-            const v = Math.max(root.from, Math.min(root.to, root.value + (wheel.angleDelta.y > 0 ? step : -step)))
+            // База — live-значение, не биндинг: при лагающем свойстве (remote volume) быстрые
+            // шаги колеса в окне 150 мс считались бы от одного и того же старого value и терялись
+            const base = root._liveActive ? root._live : root.value
+            const v = Math.max(root.from, Math.min(root.to, base + (wheel.angleDelta.y > 0 ? step : -step)))
             if (root._liveActive === false || v !== root._live) {
                 root._live = v
                 root._liveActive = true
